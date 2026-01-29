@@ -1,0 +1,2 @@
+# Static assets: place logo.png here (StockStay house + checklist icon).
+# Vite serves files from public/ at the site root, so the app uses /logo.png.

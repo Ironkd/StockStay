@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Environment (never commit real URLs or secrets)
+.env
+.env.local
+.env.*.local
+
+# Build
+dist/
+build/
+
+# Logs and OS
+*.log
+.DS_Store

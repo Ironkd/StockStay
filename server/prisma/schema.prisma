@@ -1,0 +1,161 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id                  String   @id @default(uuid())
+  email               String   @unique
+  name                String
+  password            String
+  teamId              String?
+  teamRole            String?  @default("member") // "owner" or "member"
+  maxInventoryItems   Int?
+  allowedPages        String?  // JSON array of allowed page keys
+  allowedWarehouseIds String?  // JSON array of allowed warehouse IDs
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
+  @@index([teamId])
+  @@index([email])
+}
+
+model Team {
+  id            String   @id @default(uuid())
+  name          String
+  ownerId       String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Billing / plan info
+  plan          String   @default("free") // "free", "pro", etc.
+  maxWarehouses Int?     // null = unlimited, or explicit cap
+
+  members User[]
+  warehouses   Warehouse[]
+
+  @@index([ownerId])
+}
+
+model Warehouse {
+  id        String   @id @default(uuid())
+  teamId    String
+  name      String
+  location  String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  team      Team     @relation(fields: [teamId], references: [id])
+  items     Inventory[]
+
+  @@index([teamId])
+}
+
+model Inventory {
+  id               String   @id @default(uuid())
+  name             String
+  sku              String   @default("")
+  category         String   @default("")
+  location         String   @default("")
+  warehouseId      String?
+  quantity         Float    @default(0)
+  unit             String   @default("")
+  reorderPoint     Float    @default(0)
+  priceBoughtFor   Float?
+  markupPercentage Float?
+  finalPrice       Float?
+  tags             String   @default("[]") // JSON array
+  notes            String   @default("")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  warehouse        Warehouse? @relation(fields: [warehouseId], references: [id])
+
+  @@index([warehouseId])
+  @@index([category])
+}
+
+model Client {
+  id          String   @id @default(uuid())
+  name        String
+  email       String   @default("")
+  phone       String   @default("")
+  address     String   @default("") // Legacy field
+  streetAddress String? @default("")
+  city        String?  @default("")
+  province    String?  @default("")
+  postalCode  String?  @default("")
+  country     String?  @default("")
+  company     String   @default("")
+  notes       String   @default("")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([email])
+}
+
+model Invoice {
+  id            String   @id @default(uuid())
+  invoiceNumber String
+  clientId      String?
+  clientName    String   @default("")
+  date          String   // ISO date string
+  dueDate       String?  // ISO date string
+  items         String   // JSON array of invoice items
+  subtotal      Float    @default(0)
+  tax           Float    @default(0)
+  total         Float    @default(0)
+  status        String   @default("draft") // draft, sent, paid, overdue
+  notes         String   @default("")
+  saleId        String?  @unique // when set, this invoice was created from a sale
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([invoiceNumber])
+  @@index([saleId])
+}
+
+model Sale {
+  id        String   @id @default(uuid())
+  saleNumber String  @default("")
+  clientId  String?
+  clientName String @default("")
+  date      String   // ISO date string
+  items     String   // JSON array of sale items
+  subtotal  Float    @default(0)
+  tax       Float    @default(0)
+  total     Float    @default(0)
+  notes     String   @default("")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([date])
+}
+
+model Invitation {
+  id                String    @id @default(uuid())
+  teamId            String
+  email             String
+  teamRole          String    @default("member")
+  maxInventoryItems Int?
+  allowedPages      String?   // JSON array
+  allowedWarehouseIds String? // JSON array
+  status            String    @default("pending") // pending, accepted, expired
+  token             String    @unique
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime?
+  invitedByUserId   String?
+  acceptedAt        DateTime?
+  acceptedByUserId  String?
+
+  @@index([teamId])
+  @@index([token])
+  @@index([email])
+}

@@ -1,0 +1,170 @@
+{
+  "users": [
+    {
+      "id": "1",
+      "email": "demo@example.com",
+      "name": "Demo User",
+      "password": "$2a$10$UnrFfYW4RbIIe4UhFYnS0eI3YrgrUNGOIAUbb.F3hO6Q9N01Vz3ue",
+      "teamId": "d576647c-dfef-46a6-a9b2-7ec111498381",
+      "teamRole": "owner",
+      "allowedPages": null,
+      "allowedWarehouseIds": null
+    }
+  ],
+  "inventory": [
+    {
+      "id": "739df6bc-f0c1-4aac-9203-2c45142db4d5",
+      "name": "bowl cleaner",
+      "sku": "",
+      "category": "Bathroom",
+      "location": "",
+      "warehouseId": "ac87f305-e358-433d-8857-da9501c5087e",
+      "quantity": 5,
+      "unit": "packages",
+      "reorderPoint": 3,
+      "priceBoughtFor": 6,
+      "markupPercentage": 20,
+      "finalPrice": 7.2,
+      "tags": [],
+      "notes": "6 rolls per packages",
+      "createdAt": "2026-01-28T01:42:04.868Z",
+      "updatedAt": "2026-01-28T15:51:04.538Z"
+    },
+    {
+      "id": "27e9a93a-c0bf-4a12-a979-ba4819a97c82",
+      "name": "toilet paper",
+      "sku": "",
+      "category": "Bathroom",
+      "location": "",
+      "warehouseId": "ac87f305-e358-433d-8857-da9501c5087e",
+      "quantity": 5,
+      "unit": "pcs",
+      "reorderPoint": 3,
+      "priceBoughtFor": 6,
+      "markupPercentage": 20,
+      "finalPrice": 7.2,
+      "tags": [],
+      "notes": "",
+      "createdAt": "2026-01-28T02:00:37.689Z",
+      "updatedAt": "2026-01-28T15:56:29.810Z"
+    },
+    {
+      "id": "943085ad-a256-431d-88d4-0159e102e444",
+      "name": "toilet paper",
+      "sku": "",
+      "category": "Bathroom",
+      "location": "",
+      "warehouseId": "88dc1667-5002-414c-8984-2311f1e336a0",
+      "quantity": 10,
+      "unit": "units",
+      "reorderPoint": 3,
+      "priceBoughtFor": 10,
+      "markupPercentage": 20,
+      "finalPrice": 12,
+      "tags": [],
+      "notes": "6 rolls per unit",
+      "createdAt": "2026-01-28T02:09:01.266Z",
+      "updatedAt": "2026-01-28T15:49:44.247Z"
+    }
+  ],
+  "clients": [
+    {
+      "id": "4edcfaf9-a0c9-42e2-80b4-a109cb67ccc8",
+      "name": "David ",
+      "email": "95kirwandavid@gmail.com",
+      "phone": "7807720332",
+      "address": "3549 R35 Portland Ontario ",
+      "company": "Iron K",
+      "notes": "",
+      "createdAt": "2026-01-28T02:18:25.746Z",
+      "updatedAt": "2026-01-28T02:18:25.746Z"
+    },
+    {
+      "id": "b8bf209d-f66e-46d2-b102-cb82cd98ab7d",
+      "name": "John ",
+      "email": "davidk@ironk.ca",
+      "phone": "7807720332",
+      "address": "",
+      "streetAddress": "112 Belmont Crescent",
+      "city": "Hinton",
+      "province": "Alberta",
+      "postalCode": "T7V 1N6",
+      "country": "canada",
+      "company": "",
+      "notes": "",
+      "createdAt": "2026-01-28T02:20:22.724Z",
+      "updatedAt": "2026-01-28T02:20:22.724Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": "5113775c-be68-4964-be50-8446f4342360",
+      "invoiceNumber": "INV-2026-01",
+      "clientId": "b8bf209d-f66e-46d2-b102-cb82cd98ab7d",
+      "clientName": "John ",
+      "date": "2026-01-28",
+      "dueDate": "2026-02-27",
+      "items": [
+        {
+          "id": "e9cf8f68-ee85-4dce-8404-a3d1e31411a4",
+          "name": "bowl cleaner",
+          "quantity": 5,
+          "unitPrice": 7.2,
+          "total": 36
+        },
+        {
+          "id": "e870dbc9-2c7c-4c63-92e9-7a4031d40e06",
+          "name": "toilet paper",
+          "quantity": 5,
+          "unitPrice": 7.2,
+          "total": 36,
+          "inventoryItemId": "27e9a93a-c0bf-4a12-a979-ba4819a97c82",
+          "sku": ""
+        }
+      ],
+      "subtotal": 72,
+      "tax": 5,
+      "total": 75.6,
+      "status": "sent",
+      "notes": "Auto-generated from sales",
+      "createdAt": "2026-01-28T15:51:04.539Z",
+      "updatedAt": "2026-01-28T15:56:29.810Z"
+    }
+  ],
+  "sales": [
+    {
+      "id": "5a32876d-24f5-4019-bda6-5dcef6c2b4ac",
+      "saleNumber": "1",
+      "clientId": "b8bf209d-f66e-46d2-b102-cb82cd98ab7d",
+      "date": "2026-01-28",
+      "items": [
+        {
+          "id": "380d4686-5c54-41a3-8141-31c1dbc5e6b5",
+          "inventoryItemId": "739df6bc-f0c1-4aac-9203-2c45142db4d5",
+          "inventoryItemName": "bowl cleaner",
+          "sku": "",
+          "quantity": 5,
+          "unitPrice": 7.2,
+          "total": 36
+        }
+      ],
+      "tax": 5,
+      "notes": "",
+      "clientName": "John ",
+      "subtotal": 36,
+      "total": 37.8,
+      "createdAt": "2026-01-28T15:51:04.538Z",
+      "updatedAt": "2026-01-28T15:51:04.538Z"
+    }
+  ],
+  "teams": [
+    {
+      "id": "d576647c-dfef-46a6-a9b2-7ec111498381",
+      "name": "Demo User's Team",
+      "ownerId": "1",
+      "createdAt": "2026-01-28T15:50:05.167Z",
+      "updatedAt": "2026-01-28T15:50:05.167Z"
+    }
+  ],
+  "invitations": []
+}
