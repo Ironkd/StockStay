@@ -40,6 +40,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === "production";
 
+// Trust proxy so rate limiting works behind Railway/load balancers (fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
+app.set("trust proxy", 1);
+
 // Require JWT_SECRET in production – never use default secret when deployed
 if (isProduction && !process.env.JWT_SECRET) {
   console.error("FATAL: JWT_SECRET must be set in production. Set it in your environment.");
@@ -359,7 +362,8 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       message: responseMessage,
     });
   } catch (error) {
-    console.error("Signup error:", error);
+    console.error("Signup error:", error?.message || error);
+    console.error("Signup error code:", error?.code);
 
     // Return helpful messages for known failures
     const code = error?.code;
