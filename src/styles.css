@@ -569,6 +569,17 @@ button.secondary:hover {
   width: 100%;
 }
 
+.login-form .province-select,
+.login-form select.province-select {
+  width: 100%;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #ffffff;
+  cursor: pointer;
+}
+
 .login-form .phone-country-select {
   flex: 0 0 auto;
   width: 140px;

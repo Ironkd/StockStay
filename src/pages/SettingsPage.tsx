@@ -27,8 +27,13 @@ export const SettingsPage: React.FC = () => {
   const [teamPlan, setTeamPlan] = useState<string>("free");
   const [teamMaxWarehouses, setTeamMaxWarehouses] = useState<number | null>(1);
   const [teamWarehouseCount, setTeamWarehouseCount] = useState<number>(0);
+  const [billingPortalAvailable, setBillingPortalAvailable] = useState<boolean>(false);
+  const [effectivePlan, setEffectivePlan] = useState<string>("free");
+  const [isOnTrial, setIsOnTrial] = useState<boolean>(false);
   const [members, setMembers] = useState<TeamMember[]>([]);
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
+  const [billingLoading, setBillingLoading] = useState<boolean>(false);
+  const [billingError, setBillingError] = useState<string>("");
   const [inviteEmail, setInviteEmail] = useState<string>("");
   const [inviteRole, setInviteRole] = useState<"member" | "viewer">("member");
   const [inviteMaxInventory, setInviteMaxInventory] = useState<string>("");
@@ -72,6 +77,9 @@ export const SettingsPage: React.FC = () => {
           : null
       );
       setTeamWarehouseCount(response.team.warehouseCount ?? 0);
+      setBillingPortalAvailable(response.team.billingPortalAvailable ?? false);
+      setEffectivePlan(response.team.effectivePlan ?? response.team.plan ?? "free");
+      setIsOnTrial(response.team.isOnTrial ?? false);
       setMembers(response.members);
       setInvitations(response.invitations);
     } catch (error) {
@@ -234,9 +242,69 @@ export const SettingsPage: React.FC = () => {
                 disabled
               />
             </div>
-            {teamPlan === "free" && (
+            {isOwner && (effectivePlan === "free" || isOnTrial) && (
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  className="button primary"
+                  disabled={billingLoading}
+                  onClick={async () => {
+                    setBillingError("");
+                    setBillingLoading(true);
+                    try {
+                      const { url } = await teamApi.createCheckoutSession({ plan: "pro", billingPeriod: "monthly" });
+                      if (url) window.location.href = url;
+                    } catch (e) {
+                      setBillingError(
+                        e instanceof Error ? e.message : "Failed to start checkout."
+                      );
+                    } finally {
+                      setBillingLoading(false);
+                    }
+                  }}
+                >
+                  {billingLoading ? "Loading…" : "Upgrade to Pro"}
+                </button>
+                {billingError && (
+                  <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>
+                    {billingError}
+                  </p>
+                )}
+              </div>
+            )}
+            {isOwner && billingPortalAvailable && (
+              <div style={{ marginTop: "12px" }}>
+                <button
+                  type="button"
+                  className="button secondary"
+                  disabled={billingLoading}
+                  onClick={async () => {
+                    setBillingError("");
+                    setBillingLoading(true);
+                    try {
+                      const { url } = await teamApi.createCustomerPortalSession();
+                      if (url) window.location.href = url;
+                    } catch (e) {
+                      setBillingError(
+                        e instanceof Error ? e.message : "Failed to open billing portal."
+                      );
+                    } finally {
+                      setBillingLoading(false);
+                    }
+                  }}
+                >
+                  {billingLoading ? "Loading…" : "Manage subscription"}
+                </button>
+              </div>
+            )}
+            {teamPlan === "free" && !isOwner && (
               <p style={{ fontSize: "0.9rem", marginTop: "4px" }}>
-                Free plan includes 1 warehouse. Upgrade to allow multiple warehouses.
+                Free plan includes 1 warehouse. Team owners can upgrade to allow more.
+              </p>
+            )}
+            {teamPlan === "free" && isOwner && !billingPortalAvailable && !billingError && (
+              <p style={{ fontSize: "0.9rem", marginTop: "4px" }}>
+                Free plan includes 1 warehouse. Upgrade to Pro for more warehouses and team features.
               </p>
             )}
           </>

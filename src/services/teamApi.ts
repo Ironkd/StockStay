@@ -31,9 +31,22 @@ export interface TeamResponse {
     plan?: string | null;
     maxWarehouses?: number | null;
     warehouseCount?: number;
+    effectivePlan?: string;
+    isOnTrial?: boolean;
+    trialEndsAt?: string | null;
+    trialStatus?: { daysRemaining: number; expired: boolean } | null;
+    billingPortalAvailable?: boolean;
   };
   members: TeamMember[];
   invitations: TeamInvitation[];
+}
+
+export interface BillingCheckoutResponse {
+  url: string;
+}
+
+export interface BillingPortalResponse {
+  url: string;
 }
 
 export const teamApi = {
@@ -68,6 +81,28 @@ export const teamApi = {
     }>("/team/invitations/accept", {
       method: "POST",
       body: JSON.stringify({ token })
+    });
+  },
+
+  /** Create Stripe Checkout session for a plan. Returns URL to redirect to. */
+  createCheckoutSession: async (params?: {
+    successUrl?: string;
+    cancelUrl?: string;
+    plan?: "pro" | "starter";
+    billingPeriod?: "monthly" | "annual";
+    stripeTrialDays?: number;
+  }): Promise<BillingCheckoutResponse> => {
+    return apiRequest<BillingCheckoutResponse>("/billing/create-checkout-session", {
+      method: "POST",
+      body: JSON.stringify(params ?? {})
+    });
+  },
+
+  /** Create Stripe Customer Portal session (manage subscription). Returns URL to redirect to. */
+  createCustomerPortalSession: async (returnUrl?: string): Promise<BillingPortalResponse> => {
+    return apiRequest<BillingPortalResponse>("/billing/customer-portal", {
+      method: "POST",
+      body: JSON.stringify({ returnUrl })
     });
   }
 };

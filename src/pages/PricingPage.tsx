@@ -1,17 +1,115 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { teamApi } from "../services/teamApi";
 
 export const PricingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [billingPeriod, setBillingPeriod] = React.useState<'monthly' | 'annual'>('monthly');
+  const [billingPeriod, setBillingPeriod] = useState<'monthly' | 'annual'>('monthly');
+  const [teamPlan, setTeamPlan] = useState<string | null>(null);
+  const [billingPortalAvailable, setBillingPortalAvailable] = useState(false);
+  const [proButtonLoading, setProButtonLoading] = useState(false);
+  const [starterButtonLoading, setStarterButtonLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) {
+      setTeamPlan(null);
+      setBillingPortalAvailable(false);
+      return;
+    }
+    teamApi.getTeam().then((r) => {
+      setTeamPlan(r.team.effectivePlan ?? r.team.plan ?? "free");
+      setBillingPortalAvailable(r.team.billingPortalAvailable ?? false);
+    }).catch(() => {
+      setTeamPlan("free");
+      setBillingPortalAvailable(false);
+    });
+  }, [user?.id]);
+
+  const isOwner = user?.teamRole === "owner";
 
   const handleGetStarted = () => {
     if (user) {
       navigate("/settings");
     } else {
       navigate("/login?mode=signup");
+    }
+  };
+
+  const handleProAction = async () => {
+    if (!user) {
+      navigate("/login?mode=signup");
+      return;
+    }
+    if (!isOwner) {
+      navigate("/settings");
+      return;
+    }
+    if (teamPlan === "pro" && billingPortalAvailable) {
+      setProButtonLoading(true);
+      try {
+        const { url } = await teamApi.createCustomerPortalSession();
+        if (url) window.location.href = url;
+      } finally {
+        setProButtonLoading(false);
+      }
+      return;
+    }
+    if (teamPlan === "pro") {
+      navigate("/settings");
+      return;
+    }
+    setProButtonLoading(true);
+    try {
+      const { url } = await teamApi.createCheckoutSession({
+        plan: "pro",
+        billingPeriod,
+      });
+      if (url) window.location.href = url;
+      else navigate("/settings");
+    } catch {
+      navigate("/settings");
+    } finally {
+      setProButtonLoading(false);
+    }
+  };
+
+  const handleStarterAction = async () => {
+    if (!user) {
+      navigate("/login?mode=signup");
+      return;
+    }
+    if (!isOwner) {
+      navigate("/settings");
+      return;
+    }
+    if (teamPlan === "starter" && billingPortalAvailable) {
+      setStarterButtonLoading(true);
+      try {
+        const { url } = await teamApi.createCustomerPortalSession();
+        if (url) window.location.href = url;
+      } finally {
+        setStarterButtonLoading(false);
+      }
+      return;
+    }
+    if (teamPlan === "starter") {
+      navigate("/settings");
+      return;
+    }
+    setStarterButtonLoading(true);
+    try {
+      const { url } = await teamApi.createCheckoutSession({
+        plan: "starter",
+        billingPeriod,
+      });
+      if (url) window.location.href = url;
+      else navigate("/settings");
+    } catch {
+      navigate("/settings");
+    } finally {
+      setStarterButtonLoading(false);
     }
   };
 
@@ -103,6 +201,9 @@ export const PricingPage: React.FC = () => {
               <div className="pricing-badge">⭐ Most Popular</div>
               <div className="pricing-header">
                 <h3>Starter</h3>
+                <p style={{ color: '#10b981', fontWeight: '600', fontSize: '14px', margin: '0 0 12px 0' }}>
+                  🎁 14-day free trial, then billed
+                </p>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
                     <>
@@ -128,11 +229,25 @@ export const PricingPage: React.FC = () => {
                 <li>✓ Email support</li>
                 <li>✓ Everything in Free</li>
               </ul>
-              <button onClick={handleGetStarted} className="pricing-button primary">
-                Start Starter Plan
-              </button>
+              {user && isOwner && teamPlan === "starter" && !billingPortalAvailable ? (
+                <button onClick={() => navigate("/settings")} className="pricing-button primary">
+                  Current plan
+                </button>
+              ) : user && isOwner && teamPlan === "starter" && billingPortalAvailable ? (
+                <button onClick={handleStarterAction} className="pricing-button primary" disabled={starterButtonLoading}>
+                  {starterButtonLoading ? "Loading…" : "Manage subscription"}
+                </button>
+              ) : user && isOwner && teamPlan !== "starter" ? (
+                <button onClick={handleStarterAction} className="pricing-button primary" disabled={starterButtonLoading}>
+                  {starterButtonLoading ? "Loading…" : "Start Free Trial"}
+                </button>
+              ) : (
+                <button onClick={handleGetStarted} className="pricing-button primary">
+                  Start Free Trial
+                </button>
+              )}
               <p style={{ textAlign: 'center', marginTop: '16px', color: '#64748b', fontSize: '14px' }}>
-                {billingPeriod === 'monthly' ? 'Billed monthly' : 'Billed annually'}
+                14-day free trial, then {billingPeriod === 'monthly' ? 'billed monthly' : 'billed annually'}
               </p>
             </div>
 
@@ -142,7 +257,7 @@ export const PricingPage: React.FC = () => {
                 <div className="plan-icon">🔥</div>
                 <h3>Pro</h3>
                 <p style={{ color: '#10b981', fontWeight: '600', fontSize: '14px', margin: '0 0 12px 0' }}>
-                  🎁 Free 14-day trial
+                  🎁 14-day free trial, then billed
                 </p>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
@@ -170,11 +285,27 @@ export const PricingPage: React.FC = () => {
                 <li>✓ Priority support</li>
                 <li>✓ Everything in Starter</li>
               </ul>
-              <button onClick={handleGetStarted} className="pricing-button">
-                Start Free Trial
-              </button>
+              {user && isOwner && teamPlan === "pro" && !billingPortalAvailable ? (
+                <button onClick={() => navigate("/settings")} className="pricing-button">
+                  Current plan
+                </button>
+              ) : user && isOwner && teamPlan === "pro" && billingPortalAvailable ? (
+                <button onClick={handleProAction} className="pricing-button" disabled={proButtonLoading}>
+                  {proButtonLoading ? "Loading…" : "Manage subscription"}
+                </button>
+              ) : user && isOwner && teamPlan !== "pro" ? (
+                <button onClick={handleProAction} className="pricing-button" disabled={proButtonLoading}>
+                  {proButtonLoading ? "Loading…" : "Start Free Trial"}
+                </button>
+              ) : (
+                <button onClick={handleGetStarted} className="pricing-button">
+                  Start Free Trial
+                </button>
+              )}
               <p style={{ textAlign: 'center', marginTop: '16px', color: '#64748b', fontSize: '14px' }}>
-                No credit card required • Auto-downgrades to Free after trial
+                {user && isOwner && teamPlan === "pro"
+                  ? "Manage your subscription in Settings or above."
+                  : "14-day free trial, then billed monthly or annually"}
               </p>
             </div>
           </div>

@@ -61,12 +61,18 @@ model Team {
   trialEndsAt   DateTime?
   trialPlan     String?  // The plan they're trialing (e.g., "pro")
 
+  // Stripe billing
+  stripeCustomerId    String?  // Stripe Customer ID for billing
+  stripeSubscriptionId String? // Active subscription ID (when set, plan is paid)
+  stripeSubscriptionStatus String? // active, canceled, past_due, etc.
+
   members User[]
   warehouses   Warehouse[]
 
   @@index([ownerId])
   @@index([isOnTrial])
   @@index([trialEndsAt])
+  @@index([stripeCustomerId])
 }
 
 model Warehouse {

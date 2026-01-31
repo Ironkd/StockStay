@@ -75,5 +75,10 @@ Data is stored in `server/data.json`. This file is automatically created on firs
 
 - `PORT` - Server port (default: 3000)
 - `JWT_SECRET` - Secret key for JWT tokens (default: "your-secret-key-change-in-production")
+- `DATABASE_URL` - PostgreSQL connection string (e.g. Supabase)
+- `CORS_ORIGIN` - Frontend origin(s) in production
+- `APP_URL` / `FRONTEND_URL` - Frontend base URL (password reset, checkout redirects)
+
+**Stripe (Pro billing):** See [STRIPE_SETUP.md](./STRIPE_SETUP.md). Set `STRIPE_SECRET_KEY`, `STRIPE_PRO_PRICE_ID`, and `STRIPE_WEBHOOK_SECRET` for "Upgrade to Pro" and subscription sync.
 
 **Important**: Change the JWT_SECRET in production!

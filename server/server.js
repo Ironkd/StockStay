@@ -29,6 +29,12 @@ import {
   downgradeExpiredTrials,
   getTrialStatus,
 } from "./trialManager.js";
+import {
+  createCheckoutSession,
+  createCustomerPortalSession,
+  handleWebhook,
+  isBillingConfigured,
+} from "./billing.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -57,6 +63,26 @@ app.use(
       : undefined
   )
 );
+
+// Stripe webhook must receive raw body for signature verification (before express.json)
+app.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json" }),
+  async (req, res) => {
+    const signature = req.headers["stripe-signature"];
+    if (!signature) {
+      return res.status(400).send("Missing Stripe-Signature header");
+    }
+    try {
+      await handleWebhook(req.body, signature);
+      res.json({ received: true });
+    } catch (err) {
+      console.error("[BILLING] Webhook error:", err.message);
+      res.status(400).send(err.message);
+    }
+  }
+);
+
 app.use(express.json());
 
 // Rate limit for login – prevent brute force (10 attempts per 15 min per IP)
@@ -246,7 +272,7 @@ const signupValidation = [
   body("fullName").trim().notEmpty().withMessage("Full name is required"),
   body("address").optional().trim(),
   body("phoneNumber").optional().trim(),
-  body("startProTrial").optional().isBoolean(),
+  body("startProTrial").optional().toBoolean(),
 ];
 
 app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, res) => {
@@ -313,7 +339,31 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
     });
   } catch (error) {
     console.error("Signup error:", error);
-    res.status(500).json({ message: "Internal server error" });
+
+    // Return helpful messages for known failures
+    const code = error?.code;
+    const msg = error?.message || "";
+
+    if (code === "P2002") {
+      return res.status(400).json({
+        message: "An account with this email already exists. Sign in or use a different email.",
+      });
+    }
+    if (code === "P2003" || msg.includes("Foreign key") || msg.includes("foreign key")) {
+      return res.status(500).json({
+        message: "Database setup error. Ensure all migrations have been run (e.g. npx prisma migrate deploy in the server folder).",
+      });
+    }
+    if (msg.includes("column") && (msg.includes("does not exist") || msg.includes("undefined"))) {
+      return res.status(500).json({
+        message: "Database schema is out of date. Run migrations in the server folder: npx prisma migrate deploy",
+      });
+    }
+
+    const isDev = process.env.NODE_ENV !== "production";
+    res.status(500).json({
+      message: isDev && msg ? msg : "Something went wrong creating your account. Please try again.",
+    });
   }
 });
 
@@ -581,6 +631,73 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error creating warehouse:", error);
     res.status(500).json({ message: "Error creating warehouse" });
+  }
+});
+
+// ==================== BILLING (STRIPE) ROUTES ====================
+
+const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173";
+
+app.post("/api/billing/create-checkout-session", authenticateToken, async (req, res) => {
+  try {
+    if (!isBillingConfigured()) {
+      return res.status(503).json({ message: "Billing is not configured. Contact support." });
+    }
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You must belong to a team to upgrade." });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can manage billing." });
+    }
+    const base = (APP_URL || "").replace(/\/$/, "");
+    const successUrl = req.body.successUrl || `${base}/dashboard?checkout=success`;
+    const cancelUrl = req.body.cancelUrl || `${base}/pricing?checkout=cancelled`;
+    const plan = req.body.plan === "starter" ? "starter" : "pro";
+    const billingPeriod = req.body.billingPeriod === "annual" ? "annual" : "monthly";
+    const stripeTrialDays = typeof req.body.stripeTrialDays === "number" ? req.body.stripeTrialDays : 14;
+    const { url } = await createCheckoutSession({
+      teamId: currentUser.teamId,
+      customerEmail: currentUser.email,
+      successUrl,
+      cancelUrl,
+      plan,
+      billingPeriod,
+      stripeTrialDays,
+    });
+    res.json({ url });
+  } catch (error) {
+    console.error("Create checkout session error:", error);
+    res.status(500).json({ message: error.message || "Failed to create checkout session." });
+  }
+});
+
+app.post("/api/billing/customer-portal", authenticateToken, async (req, res) => {
+  try {
+    if (!isBillingConfigured()) {
+      return res.status(503).json({ message: "Billing is not configured. Contact support." });
+    }
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You must belong to a team." });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can manage billing." });
+    }
+    const team = await teamOps.findById(currentUser.teamId);
+    if (!team?.stripeCustomerId) {
+      return res.status(400).json({ message: "No billing account found. Subscribe to Pro first." });
+    }
+    const base = (APP_URL || "").replace(/\/$/, "");
+    const returnUrl = req.body.returnUrl || `${base}/settings`;
+    const { url } = await createCustomerPortalSession({
+      customerId: team.stripeCustomerId,
+      returnUrl,
+    });
+    res.json({ url });
+  } catch (error) {
+    console.error("Customer portal error:", error);
+    res.status(500).json({ message: error.message || "Failed to open billing portal." });
   }
 });
 
@@ -1522,6 +1639,8 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         isOnTrial: team.isOnTrial || false,
         trialEndsAt: team.trialEndsAt,
         trialStatus,
+        // Billing: true if team has Stripe customer (can open portal to manage subscription)
+        billingPortalAvailable: Boolean(team.stripeCustomerId),
       },
       members: membersFormatted,
       invitations: invitationsFormatted,

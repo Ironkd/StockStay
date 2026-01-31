@@ -28,6 +28,24 @@ function getPasswordError(value: string): string | null {
   return null;
 }
 
+const PROVINCES = [
+  { value: "", label: "Select province" },
+  { value: "AB", label: "Alberta" },
+  { value: "BC", label: "British Columbia" },
+  { value: "MB", label: "Manitoba" },
+  { value: "NB", label: "New Brunswick" },
+  { value: "NL", label: "Newfoundland and Labrador" },
+  { value: "NS", label: "Nova Scotia" },
+  { value: "NT", label: "Northwest Territories" },
+  { value: "NU", label: "Nunavut" },
+  { value: "ON", label: "Ontario" },
+  { value: "PE", label: "Prince Edward Island" },
+  { value: "QC", label: "Quebec" },
+  { value: "SK", label: "Saskatchewan" },
+  { value: "YT", label: "Yukon" },
+  { value: "Other", label: "Other" },
+];
+
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -253,13 +271,19 @@ export const LoginPage: React.FC = () => {
                     />
                   </label>
                   <label>
-                    <span>Province / State</span>
-                    <input
-                      type="text"
+                    <span>Province</span>
+                    <select
                       value={province}
                       onChange={(e) => setProvince(e.target.value)}
-                      placeholder="ON, BC, etc."
-                    />
+                      className="province-select"
+                      aria-label="Province"
+                    >
+                      {PROVINCES.map((p) => (
+                        <option key={p.value || "empty"} value={p.value}>
+                          {p.label}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
                 <label>

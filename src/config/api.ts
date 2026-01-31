@@ -14,7 +14,8 @@ export const apiRequest = async <T>(
   options: RequestInit = {}
 ): Promise<T> => {
   const token = getAuthToken();
-  
+  const url = `${API_BASE_URL}${endpoint}`;
+
   const headers: HeadersInit = {
     "Content-Type": "application/json",
     ...options.headers,
@@ -24,10 +25,21 @@ export const apiRequest = async <T>(
     headers["Authorization"] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (networkErr) {
+    const msg =
+      networkErr instanceof Error
+        ? networkErr.message
+        : "Network error";
+    throw new Error(
+      `${msg}. Request URL: ${url}. Check VITE_API_BASE_URL and CORS (backend must allow this origin).`
+    );
+  }
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ message: "An error occurred" }));
