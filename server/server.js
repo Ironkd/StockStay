@@ -52,6 +52,27 @@ const corsOrigins = CORS_ORIGIN
   ? CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
   : [];
 
+// Handle OPTIONS first (before any other middleware) so preflight never gets 502
+app.options("*", (req, res) => {
+  const origin = req.headers.origin;
+  const allowed =
+    corsOrigins.length === 0 ||
+    (origin && corsOrigins.includes(origin));
+  if (allowed && origin) {
+    res.setHeader("Access-Control-Allow-Origin", origin);
+  }
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  res.setHeader("Access-Control-Max-Age", "86400");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
+  res.status(204).end();
+});
+
+// Root path – respond first so "Cannot GET /" never appears
+app.get("/", (req, res) => {
+  res.status(200).json({ status: "ok", service: "StockStay API", docs: "/api/health" });
+});
+
 // Security: secure headers
 app.use(helmet());
 
@@ -1797,6 +1818,15 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
 // Health check
 app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Server is running" });
+});
+
+// CORS debug: call this from the same origin as your app to see what origin the server received.
+// Add that exact value to CORS_ORIGIN on Railway if it's missing.
+app.get("/api/cors-check", (req, res) => {
+  res.json({
+    origin: req.headers.origin || "(no Origin header)",
+    note: "Add this exact origin to Railway CORS_ORIGIN if signup fails with 'Load failed'.",
+  });
 });
 
 // ==================== TRIAL MANAGEMENT ====================
