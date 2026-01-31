@@ -257,7 +257,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       return res.status(400).json({ message: firstError.msg || "Validation failed" });
     }
 
-    const { email, password, fullName, address, phoneNumber, startProTrial } = req.body;
+    const { email, password, fullName, address, phoneNumber, startProTrial: wantsProTrial } = req.body;
 
     const existing = await userOps.findByEmail(email);
     if (existing) {
@@ -280,7 +280,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
     await teamOps.create(teamData);
 
     // Start Pro trial if requested
-    if (startProTrial === true) {
+    if (wantsProTrial === true) {
       await startProTrial(teamId);
       console.log(`[TRIAL] Started 14-day Pro trial for new team ${teamId}`);
     }
@@ -304,7 +304,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
 
     await sendVerificationEmail(email, verificationToken, fullName.trim());
 
-    const responseMessage = startProTrial === true
+    const responseMessage = wantsProTrial === true
       ? "Account created with 14-day Pro trial! Please check your email to verify your address before signing in."
       : "Account created. Please check your email to verify your address before signing in.";
 
