@@ -5,6 +5,7 @@ import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { LoginPage } from "./pages/LoginPage";
 import { LandingPage } from "./pages/LandingPage";
+import { PricingPage } from "./pages/PricingPage";
 import { TermsPage } from "./pages/TermsPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { HomePage } from "./pages/HomePage";
@@ -14,6 +15,8 @@ import { InvoicesPage } from "./pages/InvoicesPage";
 import { SalesPage } from "./pages/SalesPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 
 export const App: React.FC = () => {
   return (
@@ -22,8 +25,12 @@ export const App: React.FC = () => {
         <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
+          <Route path="/pricing" element={<PricingPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
+          <Route path="/reset-password" element={<ResetPasswordPage />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route
             path="/dashboard"
             element={

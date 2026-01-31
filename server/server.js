@@ -5,6 +5,7 @@ import rateLimit from "express-rate-limit";
 import { body, validationResult } from "express-validator";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import crypto from "crypto";
 import {
   initDemoUser,
   userOps,
@@ -15,8 +16,19 @@ import {
   invoiceOps,
   saleOps,
   invitationOps,
+  passwordResetTokenOps,
   prisma,
 } from "./db.js";
+import { sendVerificationEmail } from "./email.js";
+import {
+  startProTrial,
+  isTrialExpired,
+  getEffectivePlan,
+  getPlanLimits,
+  canCreateWarehouse,
+  downgradeExpiredTrials,
+  getTrialStatus,
+} from "./trialManager.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -28,7 +40,11 @@ if (isProduction && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
-const CORS_ORIGIN = process.env.CORS_ORIGIN; // e.g. https://app.staystock.com
+// CORS: single origin or comma-separated list (e.g. https://stockstay.com,https://stockstay.ca)
+const CORS_ORIGIN = process.env.CORS_ORIGIN;
+const corsOrigins = CORS_ORIGIN
+  ? CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
+  : [];
 
 // Security: secure headers
 app.use(helmet());
@@ -36,8 +52,8 @@ app.use(helmet());
 // Middleware – restrict origin in production for security
 app.use(
   cors(
-    CORS_ORIGIN
-      ? { origin: CORS_ORIGIN, credentials: true }
+    corsOrigins.length > 0
+      ? { origin: corsOrigins, credentials: true }
       : undefined
   )
 );
@@ -48,6 +64,15 @@ const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { message: "Too many login attempts. Please try again in 15 minutes." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limit for forgot-password (5 per 15 min per IP)
+const forgotPasswordRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  message: { message: "Too many reset requests. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -93,69 +118,25 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     const { email, password } = req.body;
 
     console.log(`[LOGIN] Attempting login for: ${email}`);
-    let user = await userOps.findByEmail(email);
-    console.log(`[LOGIN] User found:`, user ? `Yes (${user.email})` : 'No');
+    const user = await userOps.findByEmail(email);
+    console.log(`[LOGIN] User found:`, user ? `Yes (${user.email})` : "No");
 
-    // For demo purposes, accept any email/password combination
-    // In production, you'd verify the password with bcrypt
     if (!user) {
-      console.log(`[LOGIN] User not found - creating new user...`);
-      // Create a new user and personal team for demo
-      const hashedPassword = await bcrypt.hash(password, 10);
-      const teamId = crypto.randomUUID();
+      return res
+        .status(401)
+        .json({ message: "Account not found. Please sign up first." });
+    }
 
-      // Create team first
-      await teamOps.create({
-        id: teamId,
-        name: `${email.split("@")[0]}'s Team`,
-        ownerId: crypto.randomUUID(),
-      });
-
-      const newUserId = crypto.randomUUID();
-      
-      // Update team with correct ownerId
-      await teamOps.update(teamId, { ownerId: newUserId });
-
-      // Create user
-      user = await userOps.create({
-        id: newUserId,
-        email,
-        name: email.split("@")[0],
-        password: hashedPassword,
-        teamId,
-        teamRole: "owner",
-        maxInventoryItems: null,
-        allowedPages: null,
-        allowedWarehouseIds: null,
-      });
-
-      const token = jwt.sign(
-        { id: user.id, email: user.email },
-        JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      return res.json({
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          teamId: user.teamId,
-          teamRole: user.teamRole,
-          maxInventoryItems: user.maxInventoryItems,
-          allowedPages: user.allowedPages,
-          allowedWarehouseIds: user.allowedWarehouseIds,
-        },
-        token,
+    // Require email verification before login
+    if (!user.emailVerified) {
+      return res.status(403).json({
+        message:
+          "Please verify your email before signing in. Check your inbox for the verification link.",
       });
     }
 
-    // Verify password for existing users
-    console.log(`[LOGIN] Verifying password for existing user...`);
     const isPasswordValid = await bcrypt.compare(password, user.password);
-    console.log(`[LOGIN] Password valid:`, isPasswordValid);
     if (!isPasswordValid) {
-      console.log(`[LOGIN] Password mismatch - returning 401`);
       return res.status(401).json({ message: "Invalid credentials" });
     }
 
@@ -213,6 +194,238 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       });
     }
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Sign up: create user with emailVerified=false, send verification email
+const signupRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 20,
+  message: { message: "Too many sign-up attempts. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const PASSWORD_RULES = {
+  minLength: 8,
+  hasUpper: /[A-Z]/,
+  hasLower: /[a-z]/,
+  hasNumber: /\d/,
+  hasSymbol: /[^A-Za-z0-9]/,
+};
+
+function passwordStrengthMessage(value) {
+  if (!value || value.length < PASSWORD_RULES.minLength) {
+    return "Password must be at least 8 characters";
+  }
+  if (!PASSWORD_RULES.hasUpper.test(value)) {
+    return "Password must contain at least one uppercase letter";
+  }
+  if (!PASSWORD_RULES.hasLower.test(value)) {
+    return "Password must contain at least one lowercase letter";
+  }
+  if (!PASSWORD_RULES.hasNumber.test(value)) {
+    return "Password must contain at least one number";
+  }
+  if (!PASSWORD_RULES.hasSymbol.test(value)) {
+    return "Password must contain at least one symbol (e.g. !@#$%^&*)";
+  }
+  return null;
+}
+
+const signupValidation = [
+  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+  body("password")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters")
+    .custom((value) => {
+      const msg = passwordStrengthMessage(value);
+      if (msg) return Promise.reject(msg);
+      return true;
+    }),
+  body("fullName").trim().notEmpty().withMessage("Full name is required"),
+  body("address").optional().trim(),
+  body("phoneNumber").optional().trim(),
+  body("startProTrial").optional().isBoolean(),
+];
+
+app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const firstError = errors.array()[0];
+      return res.status(400).json({ message: firstError.msg || "Validation failed" });
+    }
+
+    const { email, password, fullName, address, phoneNumber, startProTrial } = req.body;
+
+    const existing = await userOps.findByEmail(email);
+    if (existing) {
+      return res.status(400).json({ message: "An account with this email already exists. Sign in or use a different email." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const teamId = crypto.randomUUID();
+    const newUserId = crypto.randomUUID();
+    const verificationToken = crypto.randomUUID();
+    const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
+
+    // Create team (with or without trial)
+    const teamData = {
+      id: teamId,
+      name: `${fullName}'s Team`,
+      ownerId: newUserId,
+    };
+
+    await teamOps.create(teamData);
+
+    // Start Pro trial if requested
+    if (startProTrial === true) {
+      await startProTrial(teamId);
+      console.log(`[TRIAL] Started 14-day Pro trial for new team ${teamId}`);
+    }
+
+    const user = await userOps.create({
+      id: newUserId,
+      email,
+      name: fullName.trim(),
+      password: hashedPassword,
+      address: (address || "").trim() || null,
+      phone: (phoneNumber || "").trim() || null,
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpiresAt: verificationExpiresAt,
+      teamId,
+      teamRole: "owner",
+      maxInventoryItems: null,
+      allowedPages: null,
+      allowedWarehouseIds: null,
+    });
+
+    await sendVerificationEmail(email, verificationToken, fullName.trim());
+
+    const responseMessage = startProTrial === true
+      ? "Account created with 14-day Pro trial! Please check your email to verify your address before signing in."
+      : "Account created. Please check your email to verify your address before signing in.";
+
+    res.status(201).json({
+      message: responseMessage,
+    });
+  } catch (error) {
+    console.error("Signup error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Verify email: token from link in email
+app.get("/api/auth/verify-email", async (req, res) => {
+  try {
+    const token = req.query.token;
+    if (!token || typeof token !== "string") {
+      return res.status(400).json({ message: "Verification token is required." });
+    }
+
+    const user = await userOps.findByEmailVerificationToken(token);
+    if (!user) {
+      return res.status(400).json({
+        message: "Invalid or expired verification link. You can request a new one by signing up again or contacting support.",
+      });
+    }
+
+    await userOps.update(user.id, {
+      emailVerified: true,
+      emailVerificationToken: null,
+      emailVerificationExpiresAt: null,
+    });
+
+    res.json({ message: "Email verified successfully. You can now sign in." });
+  } catch (error) {
+    console.error("Verify email error:", error);
+    res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+// Forgot password: create token, send reset link email
+const forgotPasswordValidation = [
+  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+];
+app.post("/api/auth/forgot-password", forgotPasswordRateLimiter, forgotPasswordValidation, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const firstError = errors.array()[0];
+      return res.status(400).json({ message: firstError.msg || "Validation failed" });
+    }
+    const { email } = req.body;
+    const user = await userOps.findByEmail(email);
+    const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || "https://stockstay.com";
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+
+    if (user) {
+      const token = crypto.randomBytes(32).toString("hex");
+      const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+      await passwordResetTokenOps.deleteByUserId(user.id);
+      await passwordResetTokenOps.create({ userId: user.id, token, expiresAt });
+      const resetLink = `${APP_URL.replace(/\/$/, "")}/reset-password?token=${token}`;
+
+      if (RESEND_API_KEY) {
+        try {
+          const { Resend } = await import("resend");
+          const resend = new Resend(RESEND_API_KEY);
+          const fromEmail = process.env.RESEND_FROM_EMAIL || "Stock Stay <onboarding@resend.dev>";
+          await resend.emails.send({
+            from: fromEmail,
+            to: user.email,
+            subject: "Reset your Stock Stay password",
+            html: `
+              <p>Hi${user.name ? ` ${user.name}` : ""},</p>
+              <p>We received a request to reset your password for Stock Stay.</p>
+              <p><a href="${resetLink}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:#fff;text-decoration:none;border-radius:6px;">Reset password</a></p>
+              <p>Or copy this link: ${resetLink}</p>
+              <p>This link expires in 1 hour. If you didn't request this, you can ignore this email.</p>
+              <p>— Stock Stay</p>
+            `,
+          });
+        } catch (err) {
+          console.error("[FORGOT-PASSWORD] Resend error:", err.message);
+          console.log("[FORGOT-PASSWORD] Reset link (email failed):", resetLink);
+        }
+      } else {
+        console.log("[FORGOT-PASSWORD] RESEND_API_KEY not set. Reset link:", resetLink);
+      }
+    }
+
+    res.json({ message: "If an account exists with that email, we've sent a password reset link." });
+  } catch (error) {
+    console.error("Forgot password error:", error);
+    res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
+});
+
+// Reset password: validate token, set new password
+const resetPasswordValidation = [
+  body("token").notEmpty().trim().withMessage("Reset token is required"),
+  body("password").notEmpty().trim().isLength({ min: 8 }).withMessage("Password must be at least 8 characters"),
+];
+app.post("/api/auth/reset-password", resetPasswordValidation, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const firstError = errors.array()[0];
+      return res.status(400).json({ message: firstError.msg || "Validation failed" });
+    }
+    const { token, password } = req.body;
+    const record = await passwordResetTokenOps.findByToken(token);
+    if (!record) {
+      return res.status(400).json({ message: "Invalid or expired reset link. Please request a new one." });
+    }
+    const hashedPassword = await bcrypt.hash(password, 10);
+    await userOps.update(record.userId, { password: hashedPassword });
+    await passwordResetTokenOps.deleteByUserId(record.userId);
+    res.json({ message: "Password reset successfully. You can sign in now." });
+  } catch (error) {
+    console.error("Reset password error:", error);
+    res.status(500).json({ message: "Something went wrong. Please try again." });
   }
 });
 
@@ -319,23 +532,38 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Team not found." });
     }
 
-    // Derive effective limits
-    const effectivePlan = team.plan || "free";
-    const effectiveMaxWarehouses =
-      typeof team.maxWarehouses === "number"
-        ? team.maxWarehouses
-        : effectivePlan === "free"
-        ? 1
-        : null; // null = unlimited for paid plans
+    // Check if trial has expired and downgrade if needed
+    if (team.isOnTrial && isTrialExpired(team)) {
+      await prisma.team.update({
+        where: { id: team.id },
+        data: {
+          plan: 'free',
+          isOnTrial: false,
+          trialEndsAt: null,
+          trialPlan: null,
+          maxWarehouses: 1,
+        },
+      });
+      team.plan = 'free';
+      team.isOnTrial = false;
+      team.maxWarehouses = 1;
+      console.log(`[TRIAL] Auto-downgraded team ${team.id} from expired trial`);
+    }
 
+    // Use trial manager to check warehouse limits
     const currentCount = await warehouseOps.countByTeam(team.id);
+    const warehouseCheck = canCreateWarehouse(team, currentCount);
 
-    if (effectiveMaxWarehouses !== null && currentCount >= effectiveMaxWarehouses) {
+    if (!warehouseCheck.canCreate) {
+      const effectivePlan = getEffectivePlan(team);
       return res.status(403).json({
         message:
           effectivePlan === "free"
             ? "Free plan allows only 1 warehouse. Upgrade your plan to add more."
-            : "Warehouse limit reached for your current plan.",
+            : `Warehouse limit reached for your current plan (${warehouseCheck.limit} max).`,
+        limit: warehouseCheck.limit,
+        current: warehouseCheck.current,
+        plan: warehouseCheck.plan,
       });
     }
 
@@ -1276,6 +1504,10 @@ app.get("/api/team", authenticateToken, async (req, res) => {
 
     // Count warehouses for basic plan/usage info
     const warehouseCount = await warehouseOps.countByTeam(team.id);
+    
+    // Get trial status
+    const trialStatus = getTrialStatus(team);
+    const effectivePlan = getEffectivePlan(team);
 
     res.json({
       team: {
@@ -1283,8 +1515,13 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         name: team.name,
         ownerId: team.ownerId,
         plan: team.plan || "free",
+        effectivePlan, // The actual plan considering trial status
         maxWarehouses: team.maxWarehouses,
         warehouseCount,
+        // Trial information
+        isOnTrial: team.isOnTrial || false,
+        trialEndsAt: team.trialEndsAt,
+        trialStatus,
       },
       members: membersFormatted,
       invitations: invitationsFormatted,
@@ -1443,9 +1680,79 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok", message: "Server is running" });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+// ==================== TRIAL MANAGEMENT ====================
+
+// Background job to downgrade expired trials
+// Runs every hour
+const TRIAL_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour
+
+async function checkAndDowngradeTrials() {
+  try {
+    console.log('[TRIAL] Checking for expired trials...');
+    const downgraded = await downgradeExpiredTrials();
+    if (downgraded > 0) {
+      console.log(`[TRIAL] Successfully downgraded ${downgraded} expired trial(s)`);
+    }
+  } catch (error) {
+    console.error('[TRIAL] Error checking expired trials:', error);
+  }
+}
+
+// Run trial check on startup
+checkAndDowngradeTrials();
+
+// Schedule recurring checks
+setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
+console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
+
+// Manual endpoint to start a Pro trial (for testing or admin use)
+app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
+  try {
+    const user = await userOps.findById(req.user.id);
+    if (!user || !user.teamId) {
+      return res.status(404).json({ message: "Team not found for user" });
+    }
+
+    // Only owners can start trials
+    if (user.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can start trials" });
+    }
+
+    const team = await teamOps.findById(user.teamId);
+    if (!team) {
+      return res.status(404).json({ message: "Team not found" });
+    }
+
+    // Check if already on trial or paid plan
+    if (team.isOnTrial) {
+      return res.status(400).json({ message: "Team is already on a trial" });
+    }
+
+    if (team.plan !== 'free') {
+      return res.status(400).json({ message: "Trials are only available for free plan teams" });
+    }
+
+    const updatedTeam = await startProTrial(team.id);
+    const trialStatus = getTrialStatus(updatedTeam);
+
+    res.json({
+      message: "14-day Pro trial started successfully!",
+      trial: trialStatus,
+      team: {
+        plan: updatedTeam.plan,
+        effectivePlan: getEffectivePlan(updatedTeam),
+        maxWarehouses: updatedTeam.maxWarehouses,
+      },
+    });
+  } catch (error) {
+    console.error("Error starting trial:", error);
+    res.status(500).json({ message: "Error starting trial" });
+  }
+});
+
+// Start server (bind to 0.0.0.0 so Railway can reach the process)
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log(`📝 API available at http://localhost:${PORT}/api`);
   console.log(`\nDemo credentials:`);
   console.log(`  Email: demo@example.com`);

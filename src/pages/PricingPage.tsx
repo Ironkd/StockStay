@@ -2,130 +2,49 @@ import React from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 
-export const LandingPage: React.FC = () => {
+export const PricingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [billingPeriod, setBillingPeriod] = React.useState<'monthly' | 'annual'>('monthly');
 
-  // If user is already logged in, redirect to dashboard
-  React.useEffect(() => {
-    if (user) {
-      navigate("/dashboard");
-    }
-  }, [user, navigate]);
-
   const handleGetStarted = () => {
-    navigate("/login?mode=signup");
+    if (user) {
+      navigate("/settings");
+    } else {
+      navigate("/login?mode=signup");
+    }
   };
 
   return (
     <div className="landing-page">
-      {/* Hero Section */}
-      <section className="landing-hero">
+      {/* Navigation */}
+      <section className="landing-hero" style={{ paddingBottom: '40px' }}>
         <div className="landing-container">
           <nav className="landing-nav">
-            <div className="landing-logo">
+            <Link to="/" className="landing-logo">
               <img src="/logo.png" alt="Stock Stay" className="logo-img" />
-              <span className="logo-text"><span className="brand-stock">Stock</span><span className="brand-stay">Stay</span></span>
-            </div>
+              <span className="logo-text">
+                <span className="brand-stock">Stock</span>
+                <span className="brand-stay">Stay</span>
+              </span>
+            </Link>
             <div className="landing-nav-links">
-              <button onClick={() => navigate("/login")} className="nav-button secondary">
-                Sign In
-              </button>
-              <button onClick={handleGetStarted} className="nav-button primary">
-                Get Started
-              </button>
+              {user ? (
+                <button onClick={() => navigate("/dashboard")} className="nav-button primary">
+                  Go to Dashboard
+                </button>
+              ) : (
+                <>
+                  <button onClick={() => navigate("/login")} className="nav-button secondary">
+                    Sign In
+                  </button>
+                  <button onClick={handleGetStarted} className="nav-button primary">
+                    Get Started
+                  </button>
+                </>
+              )}
             </div>
           </nav>
-
-          <div className="hero-content">
-            <h1 className="hero-title">
-              Stock Stay. Why Pick Us?
-            </h1>
-            <p className="hero-domain">stockstay.com</p>
-            <p className="hero-subtitle hero-lead">
-              Stock Stay is an inventory management platform that helps you track stock levels,
-              manage multiple warehouses, create and send invoices, and collaborate with your team, all in one place. Built for small teams and growing businesses.
-            </p>
-            <p className="hero-subtitle">
-              Streamline operations, get low stock alerts, and keep your inventory under control at <strong>stockstay.com</strong>.
-            </p>
-            <div className="hero-cta">
-              <button onClick={handleGetStarted} className="cta-button primary">
-                Start Free Trial
-              </button>
-              <button onClick={handleGetStarted} className="cta-button secondary">
-                Watch Demo
-              </button>
-            </div>
-            <p className="hero-note">No credit card required. Free plan available</p>
-          </div>
-        </div>
-      </section>
-
-      {/* Features Section */}
-      <section id="features" className="landing-features">
-        <div className="landing-container">
-          <h2 className="section-title">Everything You Need to Manage Inventory</h2>
-          <p className="section-subtitle">
-            Powerful features designed to help you stay organized and efficient
-          </p>
-
-          <div className="features-grid">
-            <div className="feature-card">
-              <div className="feature-icon">📊</div>
-              <h3>Real Time Tracking</h3>
-              <p>
-                Monitor stock levels in real time across multiple warehouses.
-                Get instant alerts when items are running low.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">🏢</div>
-              <h3>Multi Warehouse Support</h3>
-              <p>
-                Manage inventory across multiple locations. Start with one free warehouse,
-                add more as you grow.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">📋</div>
-              <h3>Smart Categories</h3>
-              <p>
-                Organize your inventory with custom categories and tags.
-                Find what you need instantly with powerful search and filters.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">💰</div>
-              <h3>Invoice Management</h3>
-              <p>
-                Create and manage invoices seamlessly. Track payments,
-                send reminders, and manage your client relationships.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">📈</div>
-              <h3>Analytics & Reports</h3>
-              <p>
-                Get insights into your inventory with detailed analytics.
-                Track trends, identify bestsellers, and make data driven decisions.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">👥</div>
-              <h3>Team Collaboration</h3>
-              <p>
-                Invite team members, assign roles, and collaborate seamlessly.
-                Control access with granular permissions.
-              </p>
-            </div>
-          </div>
         </div>
       </section>
 
@@ -134,7 +53,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Simple, Transparent Pricing</h2>
           <p className="section-subtitle">
-            Start free, upgrade when you need more
+            Choose the plan that fits your business. All plans include core inventory management features.
           </p>
 
           {/* Billing Toggle */}
@@ -168,10 +87,15 @@ export const LandingPage: React.FC = () => {
                 <li>✓ 1 warehouse</li>
                 <li>✓ Unlimited products</li>
                 <li>✓ Basic inventory tracking</li>
+                <li>✓ Client management</li>
+                <li>✓ Basic reports</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Get Started Free
               </button>
+              <p style={{ textAlign: 'center', marginTop: '16px', color: '#64748b', fontSize: '14px' }}>
+                No credit card required
+              </p>
             </div>
 
             {/* Starter Plan */}
@@ -193,7 +117,7 @@ export const LandingPage: React.FC = () => {
                   )}
                 </div>
                 {billingPeriod === 'annual' && (
-                  <div className="annual-savings">Save $36, 2 months free</div>
+                  <div className="annual-savings">Save $36 — 2 months free</div>
                 )}
               </div>
               <ul className="pricing-features">
@@ -201,11 +125,15 @@ export const LandingPage: React.FC = () => {
                 <li>✓ PDF & CSV exports</li>
                 <li>✓ Invoices</li>
                 <li>✓ Inventory history</li>
+                <li>✓ Email support</li>
                 <li>✓ Everything in Free</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button primary">
                 Start Starter Plan
               </button>
+              <p style={{ textAlign: 'center', marginTop: '16px', color: '#64748b', fontSize: '14px' }}>
+                {billingPeriod === 'monthly' ? 'Billed monthly' : 'Billed annually'}
+              </p>
             </div>
 
             {/* Pro Plan */}
@@ -214,7 +142,7 @@ export const LandingPage: React.FC = () => {
                 <div className="plan-icon">🔥</div>
                 <h3>Pro</h3>
                 <p style={{ color: '#10b981', fontWeight: '600', fontSize: '14px', margin: '0 0 12px 0' }}>
-                  🎁 Free 14 day trial
+                  🎁 Free 14-day trial
                 </p>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
@@ -230,7 +158,7 @@ export const LandingPage: React.FC = () => {
                   )}
                 </div>
                 {billingPeriod === 'annual' && (
-                  <div className="annual-savings">Save $78, 2 months free</div>
+                  <div className="annual-savings">Save $78 — 2 months free</div>
                 )}
               </div>
               <ul className="pricing-features">
@@ -239,11 +167,63 @@ export const LandingPage: React.FC = () => {
                 <li>✓ Warehouse permissions</li>
                 <li>✓ Advanced reports</li>
                 <li>✓ Inventory value tracking</li>
+                <li>✓ Priority support</li>
                 <li>✓ Everything in Starter</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Start Free Trial
               </button>
+              <p style={{ textAlign: 'center', marginTop: '16px', color: '#64748b', fontSize: '14px' }}>
+                No credit card required • Auto-downgrades to Free after trial
+              </p>
+            </div>
+          </div>
+
+          {/* FAQ or Additional Info */}
+          <div style={{ maxWidth: '800px', margin: '80px auto 0', textAlign: 'center' }}>
+            <h3 style={{ fontSize: '28px', marginBottom: '16px' }}>Frequently Asked Questions</h3>
+            
+            <div style={{ textAlign: 'left', marginTop: '40px' }}>
+              <div style={{ marginBottom: '32px' }}>
+                <h4 style={{ fontSize: '18px', marginBottom: '8px', color: '#0f172a' }}>
+                  Can I switch plans at any time?
+                </h4>
+                <p style={{ color: '#64748b', lineHeight: '1.6' }}>
+                  Yes! You can upgrade or downgrade your plan at any time. When upgrading, you'll be charged 
+                  the prorated difference. When downgrading, the change takes effect at the end of your 
+                  current billing period.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '32px' }}>
+                <h4 style={{ fontSize: '18px', marginBottom: '8px', color: '#0f172a' }}>
+                  What happens if I exceed my warehouse limit?
+                </h4>
+                <p style={{ color: '#64748b', lineHeight: '1.6' }}>
+                  You'll be prompted to upgrade to a higher plan. Your existing data remains safe and 
+                  accessible—you just won't be able to add new warehouses until you upgrade.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '32px' }}>
+                <h4 style={{ fontSize: '18px', marginBottom: '8px', color: '#0f172a' }}>
+                  Do you offer refunds?
+                </h4>
+                <p style={{ color: '#64748b', lineHeight: '1.6' }}>
+                  Yes! If you're not satisfied within the first 30 days, we'll give you a full refund, 
+                  no questions asked.
+                </p>
+              </div>
+
+              <div style={{ marginBottom: '32px' }}>
+                <h4 style={{ fontSize: '18px', marginBottom: '8px', color: '#0f172a' }}>
+                  Is my data secure?
+                </h4>
+                <p style={{ color: '#64748b', lineHeight: '1.6' }}>
+                  Absolutely. We use industry-standard encryption and security practices. Your data is 
+                  backed up regularly and stored securely in the cloud.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -254,7 +234,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="cta-title">Ready to Get Started?</h2>
           <p className="cta-subtitle">
-            Join businesses managing their inventory with Stock Stay at stockstay.com
+            Join businesses managing their inventory with Stock Stay
           </p>
           <button onClick={handleGetStarted} className="cta-button large">
             Start Your Free Trial
@@ -268,10 +248,14 @@ export const LandingPage: React.FC = () => {
           <div className="footer-content">
             <div className="footer-brand">
               <img src="/logo.png" alt="Stock Stay" className="logo-img footer-logo-img" />
-              <span className="logo-text"><span className="brand-stock">Stock</span><span className="brand-stay">Stay</span></span>
+              <span className="logo-text">
+                <span className="brand-stock">Stock</span>
+                <span className="brand-stay">Stay</span>
+              </span>
             </div>
             <div className="footer-links">
-              <a href="#features">Features</a>
+              <Link to="/">Home</Link>
+              <a href="/#features">Features</a>
               <Link to="/pricing">Pricing</Link>
               <Link to="/terms">Terms</Link>
               <Link to="/privacy">Privacy</Link>
@@ -279,7 +263,7 @@ export const LandingPage: React.FC = () => {
             </div>
           </div>
           <div className="footer-copyright">
-            <p>© 2026 Stock Stay stockstay.com</p>
+            <p>© 2026 Stock Stay · stockstay.com</p>
           </div>
         </div>
       </footer>

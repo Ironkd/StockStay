@@ -7,22 +7,42 @@ datasource db {
 }
 
 model User {
-  id                  String   @id @default(uuid())
-  email               String   @unique
-  name                String
-  password            String
-  teamId              String?
-  teamRole            String?  @default("member") // "owner" or "member"
-  maxInventoryItems   Int?
-  allowedPages        String?  // JSON array of allowed page keys
-  allowedWarehouseIds String?  // JSON array of allowed warehouse IDs
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
+  id                         String    @id @default(uuid())
+  email                      String    @unique
+  name                       String
+  password                   String
+  address                    String?   @default("")
+  phone                      String?   @default("")
+  emailVerified              Boolean   @default(false)
+  emailVerificationToken     String?
+  emailVerificationExpiresAt DateTime?
+  teamId                     String?
+  teamRole                   String?   @default("member") // "owner" or "member"
+  maxInventoryItems          Int?
+  allowedPages               String?   // JSON array of allowed page keys
+  allowedWarehouseIds        String?   // JSON array of allowed warehouse IDs
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
-  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team                Team?                 @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  passwordResetTokens PasswordResetToken[]
 
   @@index([teamId])
   @@index([email])
+  @@index([emailVerificationToken])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(uuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([token])
+  @@index([userId])
 }
 
 model Team {
@@ -33,13 +53,20 @@ model Team {
   updatedAt     DateTime @updatedAt
 
   // Billing / plan info
-  plan          String   @default("free") // "free", "pro", etc.
+  plan          String   @default("free") // "free", "starter", "pro"
   maxWarehouses Int?     // null = unlimited, or explicit cap
+  
+  // Trial fields
+  isOnTrial     Boolean  @default(false)
+  trialEndsAt   DateTime?
+  trialPlan     String?  // The plan they're trialing (e.g., "pro")
 
   members User[]
   warehouses   Warehouse[]
 
   @@index([ownerId])
+  @@index([isOnTrial])
+  @@index([trialEndsAt])
 }
 
 model Warehouse {

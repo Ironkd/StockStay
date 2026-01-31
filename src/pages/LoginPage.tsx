@@ -1,39 +1,112 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { authApi } from "../services/authApi";
+
+const PASSWORD_MIN_LENGTH = 8;
+const PASSWORD_HAS_UPPER = /[A-Z]/;
+const PASSWORD_HAS_LOWER = /[a-z]/;
+const PASSWORD_HAS_NUMBER = /\d/;
+const PASSWORD_HAS_SYMBOL = /[^A-Za-z0-9]/;
+
+function getPasswordError(value: string): string | null {
+  if (!value || value.length < PASSWORD_MIN_LENGTH) {
+    return "Password must be at least 8 characters";
+  }
+  if (!PASSWORD_HAS_UPPER.test(value)) {
+    return "Password must contain at least one uppercase letter";
+  }
+  if (!PASSWORD_HAS_LOWER.test(value)) {
+    return "Password must contain at least one lowercase letter";
+  }
+  if (!PASSWORD_HAS_NUMBER.test(value)) {
+    return "Password must contain at least one number";
+  }
+  if (!PASSWORD_HAS_SYMBOL.test(value)) {
+    return "Password must contain at least one symbol (e.g. !@#$%^&*)";
+  }
+  return null;
+}
 
 export const LoginPage: React.FC = () => {
-  const [usernameOrEmail, setUsernameOrEmail] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [fullName, setFullName] = useState("");
+  const [address, setAddress] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [startProTrial, setStartProTrial] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [isSignUpMode, setIsSignUpMode] = useState(
+    () => new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("mode") === "signup"
+  );
+  const [signupSuccess, setSignupSuccess] = useState("");
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
   const { login } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  // Sync sign-up mode when URL changes (e.g. client-side nav to /login?mode=signup)
+  React.useEffect(() => {
+    const mode = new URLSearchParams(location.search).get("mode");
+    if (mode === "signup") setIsSignUpMode(true);
+  }, [location.search]);
+
+  const resetSuccessMessage = location.state?.message;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSignupSuccess("");
     setLoading(true);
 
-    if (!usernameOrEmail || !password) {
-      setError("Please enter both username/email and password");
+    if (isSignUpMode) {
+      if (!email || !password || !fullName.trim()) {
+        setError("Please enter email, password, and full name");
+        setLoading(false);
+        return;
+      }
+      const passwordError = getPasswordError(password);
+      if (passwordError) {
+        setError(passwordError);
+        setLoading(false);
+        return;
+      }
+      try {
+        await authApi.signup({
+          email: email.trim(),
+          password,
+          fullName: fullName.trim(),
+          address: address.trim() || undefined,
+          phoneNumber: phoneNumber.trim() || undefined,
+          startProTrial,
+        });
+        const trialMessage = startProTrial
+          ? " Your 14-day Pro trial has been activated!"
+          : "";
+        setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
+        setPassword("");
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Sign up failed");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    if (!email || !password) {
+      setError("Please enter both email and password");
       setLoading(false);
       return;
     }
 
-    try {
-      // Convert usernameOrEmail to email format
-      // If it contains @, use it as email, otherwise treat as username and append @example.com
-      const email = usernameOrEmail.includes("@")
-        ? usernameOrEmail
-        : `${usernameOrEmail}@example.com`;
+    const emailNormalized = email.includes("@") ? email : `${email}@example.com`;
 
-      const success = await login(email, password);
+    try {
+      const success = await login(emailNormalized, password);
       if (success) {
         navigate("/dashboard");
       } else {
@@ -46,7 +119,7 @@ export const LoginPage: React.FC = () => {
     }
   };
 
-  const handleForgotPassword = (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setForgotPasswordMessage("");
 
@@ -55,16 +128,21 @@ export const LoginPage: React.FC = () => {
       return;
     }
 
-    // In a real app, this would send a password reset email
-    // For demo purposes, we'll just show a success message
-    setForgotPasswordMessage(
-      `Password reset instructions have been sent to ${forgotPasswordEmail}`
-    );
-    setTimeout(() => {
-      setShowForgotPassword(false);
-      setForgotPasswordEmail("");
-      setForgotPasswordMessage("");
-    }, 3000);
+    try {
+      await authApi.forgotPassword(forgotPasswordEmail);
+      setForgotPasswordMessage(
+        "If an account exists with that email, we've sent a password reset link. Check your inbox."
+      );
+      setTimeout(() => {
+        setShowForgotPassword(false);
+        setForgotPasswordEmail("");
+        setForgotPasswordMessage("");
+      }, 5000);
+    } catch (err) {
+      setForgotPasswordMessage(
+        err instanceof Error ? err.message : "Something went wrong. Please try again."
+      );
+    }
   };
 
   return (
@@ -88,19 +166,64 @@ export const LoginPage: React.FC = () => {
 
         {!showForgotPassword ? (
           <form onSubmit={handleSubmit} className="login-form">
+            {resetSuccessMessage && (
+              <div className="forgot-password-message success">{resetSuccessMessage}</div>
+            )}
             {error && <div className="error-message">{error}</div>}
+            {signupSuccess && (
+              <div className="success-message" role="alert">
+                {signupSuccess}
+              </div>
+            )}
+
+            {isSignUpMode && (
+              <label>
+                <span>Full name</span>
+                <input
+                  type="text"
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                  placeholder="Your full name"
+                  required
+                  autoFocus={isSignUpMode}
+                />
+              </label>
+            )}
 
             <label>
-              <span>Username or Email</span>
+              <span>Email</span>
               <input
-                type="text"
-                value={usernameOrEmail}
-                onChange={(e) => setUsernameOrEmail(e.target.value)}
-                placeholder="username or your@email.com"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="your@email.com"
                 required
-                autoFocus
+                autoFocus={!isSignUpMode}
               />
             </label>
+
+            {isSignUpMode && (
+              <>
+                <label>
+                  <span>Address</span>
+                  <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => setAddress(e.target.value)}
+                    placeholder="Street, city, postal code"
+                  />
+                </label>
+                <label>
+                  <span>Phone number</span>
+                  <input
+                    type="tel"
+                    value={phoneNumber}
+                    onChange={(e) => setPhoneNumber(e.target.value)}
+                    placeholder="+1 234 567 8900"
+                  />
+                </label>
+              </>
+            )}
 
             <label>
               <span>Password</span>
@@ -109,8 +232,9 @@ export const LoginPage: React.FC = () => {
                   type={showPassword ? "text" : "password"}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="Enter your password"
+                  placeholder={isSignUpMode ? "8+ chars, upper, lower, number, symbol" : "Enter your password"}
                   required
+                  minLength={isSignUpMode ? 8 : undefined}
                 />
                 <button
                   type="button"
@@ -150,6 +274,28 @@ export const LoginPage: React.FC = () => {
                 </button>
               </div>
             </label>
+            {isSignUpMode && (
+              <p className="password-requirements">
+                At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
+              </p>
+            )}
+
+            {isSignUpMode && (
+              <label className="trial-checkbox">
+                <input
+                  type="checkbox"
+                  checked={startProTrial}
+                  onChange={(e) => setStartProTrial(e.target.checked)}
+                />
+                <span>
+                  🎁 Start 14-day Pro trial <span style={{ color: '#10b981', fontWeight: '600' }}>(Free)</span>
+                  <br />
+                  <small style={{ color: '#64748b', fontSize: '12px' }}>
+                    Get 10 warehouses, team members & advanced features. No credit card required.
+                  </small>
+                </span>
+              </label>
+            )}
 
             {!isSignUpMode && (
               <div className="forgot-password-link">
@@ -174,7 +320,10 @@ export const LoginPage: React.FC = () => {
                   <button
                     type="button"
                     className="auth-switch-button"
-                    onClick={() => setIsSignUpMode(false)}
+                    onClick={() => {
+                      setIsSignUpMode(false);
+                      setSignupSuccess("");
+                    }}
                   >
                     Sign in
                   </button>
@@ -188,6 +337,7 @@ export const LoginPage: React.FC = () => {
                     onClick={() => {
                       setIsSignUpMode(true);
                       setShowForgotPassword(false);
+                      setSignupSuccess("");
                     }}
                   >
                     Sign up
@@ -247,9 +397,9 @@ export const LoginPage: React.FC = () => {
           </form>
         )}
 
-        {!showForgotPassword && (
+        {!showForgotPassword && !isSignUpMode && (
           <p className="login-hint">
-            Demo: Use <strong>demo@example.com</strong> / <strong>demo123</strong> or any email/password
+            Demo: Use <strong>demo@example.com</strong> / <strong>demo123</strong>
           </p>
         )}
       </div>

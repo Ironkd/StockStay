@@ -101,6 +101,7 @@ export async function initDemoUser() {
         maxInventoryItems: null,
         allowedPages: null,
         allowedWarehouseIds: null,
+        emailVerified: true,
       },
     });
       console.log('✅ Demo user initialized');
@@ -127,6 +128,22 @@ export const userOps = {
 
   async findByEmail(email) {
     const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) return null;
+    return {
+      ...user,
+      allowedPages: parseJson(user.allowedPages),
+      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+    };
+  },
+
+  async findByEmailVerificationToken(token) {
+    if (!token) return null;
+    const user = await prisma.user.findFirst({
+      where: {
+        emailVerificationToken: token,
+        emailVerificationExpiresAt: { gt: new Date() },
+      },
+    });
     if (!user) return null;
     return {
       ...user,
@@ -176,6 +193,31 @@ export const userOps = {
       allowedPages: parseJson(u.allowedPages),
       allowedWarehouseIds: parseJson(u.allowedWarehouseIds),
     }));
+  },
+};
+
+// Password reset token operations
+export const passwordResetTokenOps = {
+  async create(data) {
+    return prisma.passwordResetToken.create({ data });
+  },
+
+  async findByToken(token) {
+    if (!token) return null;
+    const record = await prisma.passwordResetToken.findUnique({
+      where: { token },
+      include: { user: true },
+    });
+    if (!record || record.expiresAt < new Date()) return null;
+    return record;
+  },
+
+  async deleteByToken(token) {
+    await prisma.passwordResetToken.deleteMany({ where: { token } });
+  },
+
+  async deleteByUserId(userId) {
+    await prisma.passwordResetToken.deleteMany({ where: { userId } });
   },
 };
 

@@ -16,7 +16,31 @@ export interface LoginResponse {
   token: string;
 }
 
+export interface SignupPayload {
+  email: string;
+  password: string;
+  fullName: string;
+  address?: string;
+  phoneNumber?: string;
+  startProTrial?: boolean;
+}
+
 export const authApi = {
+  signup: async (payload: SignupPayload): Promise<{ message: string }> => {
+    const response = await apiRequest<{ message: string }>("/auth/signup", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    return response;
+  },
+
+  verifyEmail: async (token: string): Promise<{ message: string }> => {
+    const response = await apiRequest<{ message: string }>(
+      `/auth/verify-email?token=${encodeURIComponent(token)}`
+    );
+    return response;
+  },
+
   login: async (email: string, password: string): Promise<LoginResponse> => {
     const response = await apiRequest<LoginResponse>("/auth/login", {
       method: "POST",
@@ -58,5 +82,19 @@ export const authApi = {
     }
 
     return response;
+  },
+
+  forgotPassword: async (email: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email })
+    });
+  },
+
+  resetPassword: async (token: string, password: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, password })
+    });
   }
 };
