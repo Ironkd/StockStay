@@ -26,8 +26,8 @@ export interface SignupPayload {
 }
 
 export const authApi = {
-  signup: async (payload: SignupPayload): Promise<{ message: string }> => {
-    const response = await apiRequest<{ message: string }>("/auth/signup", {
+  signup: async (payload: SignupPayload): Promise<{ message: string; checkoutUrl?: string }> => {
+    const response = await apiRequest<{ message: string; checkoutUrl?: string }>("/auth/signup", {
       method: "POST",
       body: JSON.stringify(payload),
     });

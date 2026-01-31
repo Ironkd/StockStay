@@ -358,8 +358,29 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       ? "Account created with 14-day Pro trial! Please check your email to verify your address before signing in."
       : "Account created. Please check your email to verify your address before signing in.";
 
+    let checkoutUrl = null;
+    if (wantsProTrial === true && isBillingConfigured()) {
+      try {
+        const base = (process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+        const { url } = await createCheckoutSession({
+          teamId,
+          customerEmail: email,
+          successUrl: `${base}/login?trial_started=1`,
+          cancelUrl: `${base}/login?mode=signup&checkout=cancelled`,
+          plan: "pro",
+          billingPeriod: "monthly",
+          stripeTrialDays: 14,
+        });
+        checkoutUrl = url;
+      } catch (billingErr) {
+        console.error("Signup: could not create trial checkout session:", billingErr);
+        // Still return success; they have the app trial, they can add card later from Settings
+      }
+    }
+
     res.status(201).json({
       message: responseMessage,
+      ...(checkoutUrl && { checkoutUrl }),
     });
   } catch (error) {
     console.error("Signup error:", error?.message || error);

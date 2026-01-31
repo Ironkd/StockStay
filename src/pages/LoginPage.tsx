@@ -66,6 +66,7 @@ export const LoginPage: React.FC = () => {
     () => new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("mode") === "signup"
   );
   const [signupSuccess, setSignupSuccess] = useState("");
+  const [checkoutUrlForTrial, setCheckoutUrlForTrial] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
@@ -80,11 +81,15 @@ export const LoginPage: React.FC = () => {
   }, [location.search]);
 
   const resetSuccessMessage = location.state?.message;
+  const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
+  const trialStartedFromUrl = params.get("trial_started") === "1";
+  const checkoutCancelledFromUrl = params.get("checkout") === "cancelled";
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSignupSuccess("");
+    setCheckoutUrlForTrial(null);
     setLoading(true);
 
     if (isSignUpMode) {
@@ -110,7 +115,7 @@ export const LoginPage: React.FC = () => {
       const prefix = phoneCountry === "CA" ? "+1" : "+1";
       const phoneStr = phoneNumber.trim() ? `${prefix} ${phoneNumber.trim().replace(/\D/g, "")}` : undefined;
       try {
-        await authApi.signup({
+        const response = await authApi.signup({
           email: email.trim(),
           password,
           fullName,
@@ -122,6 +127,9 @@ export const LoginPage: React.FC = () => {
           ? " Your 14-day Pro trial has been activated!"
           : "";
         setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
+        if (response.checkoutUrl) {
+          setCheckoutUrlForTrial(response.checkoutUrl);
+        }
         setPassword("");
         setConfirmPassword("");
       } catch (err) {
@@ -200,16 +208,65 @@ export const LoginPage: React.FC = () => {
         </p>
 
         {!showForgotPassword ? (
+          signupSuccess ? (
+            <div className="login-form signup-success-view">
+              <div className="success-message" role="alert">
+                {signupSuccess}
+              </div>
+              {checkoutUrlForTrial ? (
+                <>
+                  <div className="signup-payment-copy">
+                    <p>We use this to prevent spam and ensure access for active hosts.</p>
+                    <p><strong>You won&apos;t be charged until your trial ends.</strong></p>
+                  </div>
+                  <button
+                    type="button"
+                    className="login-button"
+                    onClick={() => { window.location.href = checkoutUrlForTrial; }}
+                  >
+                    Add payment method
+                  </button>
+                  <button
+                    type="button"
+                    className="login-button secondary signup-skip-payment"
+                    onClick={() => setCheckoutUrlForTrial(null)}
+                  >
+                    I&apos;ll add it later
+                  </button>
+                </>
+              ) : (
+                <>
+                  <p className="signup-success-hint">Check your inbox for the verification link, then sign in below.</p>
+                  <button
+                    type="button"
+                    className="login-button"
+                    onClick={() => {
+                      setSignupSuccess("");
+                      setCheckoutUrlForTrial(null);
+                      setIsSignUpMode(false);
+                    }}
+                  >
+                    Sign in
+                  </button>
+                </>
+              )}
+            </div>
+          ) : (
           <form onSubmit={handleSubmit} className="login-form">
             {resetSuccessMessage && (
               <div className="forgot-password-message success">{resetSuccessMessage}</div>
             )}
-            {error && <div className="error-message">{error}</div>}
-            {signupSuccess && (
-              <div className="success-message" role="alert">
-                {signupSuccess}
+            {trialStartedFromUrl && (
+              <div className="forgot-password-message success" role="alert">
+                Payment method added. Your 14-day trial is active. Verify your email to sign in.
               </div>
             )}
+            {checkoutCancelledFromUrl && (
+              <div className="forgot-password-message success" role="alert">
+                You can add a payment method later from Settings to continue Pro after your trial.
+              </div>
+            )}
+            {error && <div className="error-message">{error}</div>}
 
             {isSignUpMode && (
               <>
@@ -465,6 +522,7 @@ export const LoginPage: React.FC = () => {
                       setIsSignUpMode(true);
                       setShowForgotPassword(false);
                       setSignupSuccess("");
+                      setCheckoutUrlForTrial(null);
                     }}
                   >
                     Sign up
@@ -473,6 +531,7 @@ export const LoginPage: React.FC = () => {
               )}
             </div>
           </form>
+          )
         ) : (
           <form onSubmit={handleForgotPassword} className="login-form">
             <h2>Reset Password</h2>

@@ -34,6 +34,7 @@ export const SettingsPage: React.FC = () => {
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [billingLoading, setBillingLoading] = useState<boolean>(false);
   const [billingError, setBillingError] = useState<string>("");
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
   const [inviteEmail, setInviteEmail] = useState<string>("");
   const [inviteRole, setInviteRole] = useState<"member" | "viewer">("member");
   const [inviteMaxInventory, setInviteMaxInventory] = useState<string>("");
@@ -244,6 +245,22 @@ export const SettingsPage: React.FC = () => {
             </div>
             {isOwner && (effectivePlan === "free" || isOnTrial) && (
               <div style={{ marginTop: "12px" }}>
+                <div className="billing-period-toggle" style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
+                  <button
+                    type="button"
+                    className={`billing-option ${billingPeriod === "monthly" ? "active" : ""}`}
+                    onClick={() => setBillingPeriod("monthly")}
+                  >
+                    Monthly
+                  </button>
+                  <button
+                    type="button"
+                    className={`billing-option ${billingPeriod === "annual" ? "active" : ""}`}
+                    onClick={() => setBillingPeriod("annual")}
+                  >
+                    Annual <span className="savings-badge">Save 17%</span>
+                  </button>
+                </div>
                 <button
                   type="button"
                   className="button primary"
@@ -252,7 +269,7 @@ export const SettingsPage: React.FC = () => {
                     setBillingError("");
                     setBillingLoading(true);
                     try {
-                      const { url } = await teamApi.createCheckoutSession({ plan: "pro", billingPeriod: "monthly" });
+                      const { url } = await teamApi.createCheckoutSession({ plan: "pro", billingPeriod });
                       if (url) window.location.href = url;
                     } catch (e) {
                       setBillingError(
@@ -263,7 +280,7 @@ export const SettingsPage: React.FC = () => {
                     }
                   }}
                 >
-                  {billingLoading ? "Loading…" : "Upgrade to Pro"}
+                  {billingLoading ? "Loading…" : `Upgrade to Pro (${billingPeriod === "monthly" ? "Monthly" : "Annual"})`}
                 </button>
                 {billingError && (
                   <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>

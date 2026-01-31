@@ -725,6 +725,47 @@ button.secondary:hover {
   border: 1px solid #86efac;
 }
 
+.login-form.signup-success-view {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+
+.login-form.signup-success-view .success-message {
+  width: 100%;
+  margin: 0;
+}
+
+.signup-success-hint {
+  margin: 0;
+  font-size: 14px;
+  color: #64748b;
+  text-align: center;
+}
+
+.signup-payment-copy {
+  width: 100%;
+  padding: 12px 0;
+  margin: 0;
+  font-size: 14px;
+  color: #475569;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.signup-payment-copy p {
+  margin: 0 0 6px 0;
+}
+
+.signup-payment-copy p:last-child {
+  margin-bottom: 0;
+}
+
+.signup-skip-payment {
+  margin-top: 4px;
+}
+
 .forgot-password-link {
   display: flex;
   justify-content: flex-end;
@@ -800,6 +841,17 @@ button.secondary:hover {
   font-size: 14px;
   font-weight: 600;
   margin-top: 8px;
+}
+
+.login-button.secondary {
+  background: transparent;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+.login-button.secondary:hover {
+  background: #f8fafc;
+  color: #475569;
 }
 
 .login-hint {
