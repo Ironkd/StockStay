@@ -549,6 +549,20 @@ export const invitationOps = {
       allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
     };
   },
+
+  async delete(id) {
+    await prisma.invitation.delete({ where: { id } });
+  },
+
+  async findById(id) {
+    const invitation = await prisma.invitation.findUnique({ where: { id } });
+    if (!invitation) return null;
+    return {
+      ...invitation,
+      allowedPages: parseJson(invitation.allowedPages),
+      allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
+    };
+  },
 };
 
 export { prisma };

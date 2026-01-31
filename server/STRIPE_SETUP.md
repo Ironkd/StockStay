@@ -107,9 +107,20 @@ npx prisma migrate deploy
 
 ## 8. Flow overview
 
-- **Checkout**: User clicks "Upgrade to Pro" (Settings or Pricing) → backend creates a Stripe Checkout Session → user is redirected to Stripe → pays → redirected to `success_url` (e.g. `/dashboard?checkout=success`).
-- **Webhook**: Stripe sends `customer.subscription.created/updated/deleted` to `/api/billing/webhook`. The server updates the team’s `plan`, `maxWarehouses`, and Stripe-related fields.
-- **Customer portal**: "Manage subscription" opens Stripe’s Customer Portal (cancel, update payment method) using the team’s `stripeCustomerId`.
+- **Manage subscription**: In Settings, team owners click "Manage subscription" → backend ensures a Stripe Customer exists, then opens Stripe’s Customer Portal. In the portal users can subscribe (Pro monthly/annual, Starter), change billing (monthly ↔ yearly), cancel, or downgrade.
+- **Webhook**: Stripe sends `customer.subscription.created/updated/deleted` to `/api/billing/webhook`. The server updates the team’s `plan`, `maxWarehouses`, `billingInterval`, and Stripe-related fields.
+- **Checkout** (Pricing/signup): Direct Checkout links still work for trials and Pricing page; the main in-app flow is via the Customer Portal.
+
+## 8b. Customer Portal configuration (monthly/yearly, cancel, downgrade)
+
+So that "Manage subscription" shows **monthly and yearly** options and allows **cancel** and **downgrade**:
+
+1. Stripe Dashboard → **Settings** → **Billing** → **Customer portal**.
+2. Under **Products**, add the products/prices you want customers to see (e.g. Pro monthly, Pro annual, Starter monthly, Starter annual). Customers can then subscribe or switch between them.
+3. Enable **Customers can cancel their subscriptions** (and optional cancellation reasons).
+4. Optionally configure a **Cancellation** flow (e.g. downgrade to Free or Starter before canceling).
+
+After saving, opening "Manage subscription" from the app will show these options on the Stripe-hosted page.
 
 ## 9. Testing
 

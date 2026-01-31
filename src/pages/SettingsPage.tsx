@@ -12,16 +12,10 @@ import {
 
 export const SettingsPage: React.FC = () => {
   const { user } = useAuth();
-  const {
-    items,
-    clearAll: clearInventory,
-    exportToJson: exportInventory
-  } = useInventory();
+  const { items, clearAll: clearInventory } = useInventory();
   const { clients } = useClients();
   const { invoices } = useInvoices();
   const { warehouses } = useWarehouses();
-
-  const [exportFormat, setExportFormat] = useState<"json" | "csv">("json");
 
   const [teamName, setTeamName] = useState<string>("");
   const [teamPlan, setTeamPlan] = useState<string>("free");
@@ -34,7 +28,7 @@ export const SettingsPage: React.FC = () => {
   const [invitations, setInvitations] = useState<TeamInvitation[]>([]);
   const [billingLoading, setBillingLoading] = useState<boolean>(false);
   const [billingError, setBillingError] = useState<string>("");
-  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
+  const [billingInterval, setBillingInterval] = useState<string | null>(null);
   const [inviteEmail, setInviteEmail] = useState<string>("");
   const [inviteRole, setInviteRole] = useState<"member" | "viewer">("member");
   const [inviteMaxInventory, setInviteMaxInventory] = useState<string>("");
@@ -49,7 +43,25 @@ export const SettingsPage: React.FC = () => {
   const [teamLoading, setTeamLoading] = useState<boolean>(false);
   const [teamError, setTeamError] = useState<string>("");
 
+  const [manageTeamModalOpen, setManageTeamModalOpen] = useState<boolean>(false);
+  const [editingMember, setEditingMember] = useState<TeamMember | null>(null);
+  const [editingInvitation, setEditingInvitation] = useState<TeamInvitation | null>(null);
+  const [editRole, setEditRole] = useState<"member" | "viewer">("member");
+  const [editMaxInventory, setEditMaxInventory] = useState<string>("");
+  const [editPages, setEditPages] = useState<string[]>([]);
+  const [editWarehouseIds, setEditWarehouseIds] = useState<string[]>([]);
+  const [manageTeamError, setManageTeamError] = useState<string>("");
+  const [manageTeamSaving, setManageTeamSaving] = useState<boolean>(false);
+
   const isOwner = user?.teamRole === "owner";
+
+  const formatCurrentPlan = (plan: string, interval: string | null, onTrial: boolean) => {
+    if (plan === "free") return "Free";
+    const planLabel = plan.charAt(0).toUpperCase() + plan.slice(1);
+    if (onTrial) return `${planLabel} (trial)`;
+    const intervalLabel = interval === "year" ? "Annual" : interval === "month" ? "Monthly" : null;
+    return intervalLabel ? `${planLabel} (${intervalLabel})` : planLabel;
+  };
 
   const availablePages = useMemo(
     () => [
@@ -79,6 +91,7 @@ export const SettingsPage: React.FC = () => {
       );
       setTeamWarehouseCount(response.team.warehouseCount ?? 0);
       setBillingPortalAvailable(response.team.billingPortalAvailable ?? false);
+      setBillingInterval(response.team.billingInterval ?? null);
       setEffectivePlan(response.team.effectivePlan ?? response.team.plan ?? "free");
       setIsOnTrial(response.team.isOnTrial ?? false);
       setMembers(response.members);
@@ -99,30 +112,6 @@ export const SettingsPage: React.FC = () => {
     loadTeam();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
-
-  const handleExportAll = () => {
-    const data = {
-      inventory: items,
-      clients,
-      invoices,
-      exportedAt: new Date().toISOString()
-    };
-
-    if (exportFormat === "json") {
-      const blob = new Blob([JSON.stringify(data, null, 2)], {
-        type: "application/json"
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `inventory-export-${new Date().toISOString().split("T")[0]}.json`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } else {
-      // CSV export would go here
-      alert("CSV export coming soon!");
-    }
-  };
 
   const handleClearAll = () => {
     if (
@@ -175,6 +164,109 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
+  const openEditMember = (member: TeamMember) => {
+    setEditingMember(member);
+    setEditingInvitation(null);
+    setEditRole(member.teamRole === "viewer" ? "viewer" : "member");
+    setEditMaxInventory(
+      typeof member.maxInventoryItems === "number" ? String(member.maxInventoryItems) : ""
+    );
+    setEditPages(Array.isArray(member.allowedPages) ? [...member.allowedPages] : []);
+    setEditWarehouseIds(
+      Array.isArray(member.allowedWarehouseIds) ? [...member.allowedWarehouseIds] : []
+    );
+    setManageTeamError("");
+  };
+
+  const openEditInvitation = (invitation: TeamInvitation) => {
+    setEditingInvitation(invitation);
+    setEditingMember(null);
+    setEditRole(invitation.teamRole === "viewer" ? "viewer" : "member");
+    setEditMaxInventory(
+      typeof invitation.maxInventoryItems === "number"
+        ? String(invitation.maxInventoryItems)
+        : ""
+    );
+    setEditPages(Array.isArray(invitation.allowedPages) ? [...invitation.allowedPages] : []);
+    setEditWarehouseIds(
+      Array.isArray(invitation.allowedWarehouseIds) ? [...invitation.allowedWarehouseIds] : []
+    );
+    setManageTeamError("");
+  };
+
+  const cancelEdit = () => {
+    setEditingMember(null);
+    setEditingInvitation(null);
+    setManageTeamError("");
+  };
+
+  const saveEdit = async () => {
+    setManageTeamError("");
+    setManageTeamSaving(true);
+    try {
+      if (editingMember) {
+        const maxInventory =
+          editMaxInventory.trim() === ""
+            ? null
+            : Number.parseInt(editMaxInventory, 10);
+        await teamApi.updateMember(editingMember.id, {
+          teamRole: editRole,
+          maxInventoryItems:
+            typeof maxInventory === "number" && !Number.isNaN(maxInventory)
+              ? maxInventory
+              : null,
+          allowedPages: editPages.length > 0 ? editPages : null,
+          allowedWarehouseIds: editWarehouseIds.length > 0 ? editWarehouseIds : null,
+        });
+        setEditingMember(null);
+      } else if (editingInvitation) {
+        const maxInventory =
+          editMaxInventory.trim() === ""
+            ? null
+            : Number.parseInt(editMaxInventory, 10);
+        await teamApi.updateInvitation(editingInvitation.id, {
+          teamRole: editRole,
+          maxInventoryItems:
+            typeof maxInventory === "number" && !Number.isNaN(maxInventory)
+              ? maxInventory
+              : null,
+          allowedPages: editPages.length > 0 ? editPages : null,
+          allowedWarehouseIds: editWarehouseIds.length > 0 ? editWarehouseIds : null,
+        });
+        setEditingInvitation(null);
+      }
+      await loadTeam();
+    } catch (error) {
+      setManageTeamError(
+        error instanceof Error ? error.message : "Failed to save. Please try again."
+      );
+    } finally {
+      setManageTeamSaving(false);
+    }
+  };
+
+  const handleRemoveMember = async (member: TeamMember) => {
+    if (!window.confirm(`Remove ${member.name || member.email} from the team?`)) return;
+    try {
+      await teamApi.removeMember(member.id);
+      await loadTeam();
+      if (editingMember?.id === member.id) cancelEdit();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to remove member.");
+    }
+  };
+
+  const handleRevokeInvitation = async (invitation: TeamInvitation) => {
+    if (!window.confirm(`Revoke invitation for ${invitation.email}?`)) return;
+    try {
+      await teamApi.revokeInvitation(invitation.id);
+      await loadTeam();
+      if (editingInvitation?.id === invitation.id) cancelEdit();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "Failed to revoke invitation.");
+    }
+  };
+
   return (
     <div className="settings-page">
       <h2>Settings</h2>
@@ -220,14 +312,10 @@ export const SettingsPage: React.FC = () => {
         ) : (
           <>
             <div className="settings-item">
-              <label>Current Plan</label>
+              <label>Current plan</label>
               <input
                 type="text"
-                value={
-                  teamPlan === "free"
-                    ? "Free"
-                    : teamPlan.charAt(0).toUpperCase() + teamPlan.slice(1)
-                }
+                value={formatCurrentPlan(teamPlan, billingInterval, isOnTrial)}
                 disabled
               />
             </div>
@@ -243,57 +331,11 @@ export const SettingsPage: React.FC = () => {
                 disabled
               />
             </div>
-            {isOwner && (effectivePlan === "free" || isOnTrial) && (
+            {isOwner && (
               <div style={{ marginTop: "12px" }}>
-                <div className="billing-period-toggle" style={{ display: "flex", gap: "8px", marginBottom: "12px" }}>
-                  <button
-                    type="button"
-                    className={`billing-option ${billingPeriod === "monthly" ? "active" : ""}`}
-                    onClick={() => setBillingPeriod("monthly")}
-                  >
-                    Monthly
-                  </button>
-                  <button
-                    type="button"
-                    className={`billing-option ${billingPeriod === "annual" ? "active" : ""}`}
-                    onClick={() => setBillingPeriod("annual")}
-                  >
-                    Annual <span className="savings-badge">Save 17%</span>
-                  </button>
-                </div>
                 <button
                   type="button"
                   className="button primary"
-                  disabled={billingLoading}
-                  onClick={async () => {
-                    setBillingError("");
-                    setBillingLoading(true);
-                    try {
-                      const { url } = await teamApi.createCheckoutSession({ plan: "pro", billingPeriod });
-                      if (url) window.location.href = url;
-                    } catch (e) {
-                      setBillingError(
-                        e instanceof Error ? e.message : "Failed to start checkout."
-                      );
-                    } finally {
-                      setBillingLoading(false);
-                    }
-                  }}
-                >
-                  {billingLoading ? "Loading…" : `Upgrade to Pro (${billingPeriod === "monthly" ? "Monthly" : "Annual"})`}
-                </button>
-                {billingError && (
-                  <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>
-                    {billingError}
-                  </p>
-                )}
-              </div>
-            )}
-            {isOwner && billingPortalAvailable && (
-              <div style={{ marginTop: "12px" }}>
-                <button
-                  type="button"
-                  className="button secondary"
                   disabled={billingLoading}
                   onClick={async () => {
                     setBillingError("");
@@ -312,16 +354,19 @@ export const SettingsPage: React.FC = () => {
                 >
                   {billingLoading ? "Loading…" : "Manage subscription"}
                 </button>
+                <p style={{ fontSize: "0.9rem", color: "#64748b", marginTop: "8px" }}>
+                  Upgrade, change billing (monthly or yearly), cancel, or downgrade to Starter or Free — all in the Stripe portal.
+                </p>
+                {billingError && (
+                  <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>
+                    {billingError}
+                  </p>
+                )}
               </div>
             )}
             {teamPlan === "free" && !isOwner && (
               <p style={{ fontSize: "0.9rem", marginTop: "4px" }}>
                 Free plan includes 1 warehouse. Team owners can upgrade to allow more.
-              </p>
-            )}
-            {teamPlan === "free" && isOwner && !billingPortalAvailable && !billingError && (
-              <p style={{ fontSize: "0.9rem", marginTop: "4px" }}>
-                Free plan includes 1 warehouse. Upgrade to Pro for more warehouses and team features.
               </p>
             )}
           </>
@@ -340,6 +385,21 @@ export const SettingsPage: React.FC = () => {
               <label>Team Name</label>
               <input type="text" value={teamName} disabled />
             </div>
+
+            {isOwner && (
+              <div className="settings-item" style={{ marginBottom: "12px" }}>
+                <button
+                  type="button"
+                  className="button primary"
+                  onClick={() => {
+                    setManageTeamModalOpen(true);
+                    cancelEdit();
+                  }}
+                >
+                  Manage team
+                </button>
+              </div>
+            )}
 
             <div className="settings-item">
               <label>Team Members</label>
@@ -512,34 +572,6 @@ export const SettingsPage: React.FC = () => {
       </section>
 
       <section className="panel">
-        <h3>Data Management</h3>
-        <div className="settings-item">
-          <label>Export Format</label>
-          <select
-            value={exportFormat}
-            onChange={(e) =>
-              setExportFormat(e.target.value as "json" | "csv")
-            }
-          >
-            <option value="json">JSON</option>
-            <option value="csv">CSV (Coming Soon)</option>
-          </select>
-        </div>
-        <div className="settings-actions">
-          <button className="clear-button" onClick={handleExportAll}>
-            Export All Data
-          </button>
-          <button
-            className="clear-button"
-            onClick={exportInventory}
-            style={{ marginLeft: "8px" }}
-          >
-            Export Inventory Only
-          </button>
-        </div>
-      </section>
-
-      <section className="panel">
         <h3>Statistics</h3>
         <div className="stats-list">
           <div className="stat-item">
@@ -572,6 +604,258 @@ export const SettingsPage: React.FC = () => {
           Clear All Inventory Data
         </button>
       </section>
+
+      {manageTeamModalOpen && isOwner && (
+        <div
+          className="modal-overlay"
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+          }}
+          onClick={() => {
+            if (!editingMember && !editingInvitation) setManageTeamModalOpen(false);
+          }}
+        >
+          <div
+            className="modal-content"
+            style={{
+              background: "var(--bg)",
+              padding: "24px",
+              borderRadius: "8px",
+              maxWidth: "560px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 4px 20px rgba(0,0,0,0.2)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3 style={{ margin: 0 }}>Manage team</h3>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  setManageTeamModalOpen(false);
+                  cancelEdit();
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {(editingMember || editingInvitation) ? (
+              <>
+                <p style={{ marginBottom: "12px", color: "var(--text-secondary)" }}>
+                  {editingMember
+                    ? `Edit access for ${editingMember.name || editingMember.email}`
+                    : `Edit invitation for ${editingInvitation?.email}`}
+                </p>
+                <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "4px" }}>Role</label>
+                    <select
+                      value={editRole}
+                      onChange={(e) => setEditRole(e.target.value as "member" | "viewer")}
+                    >
+                      <option value="member">Member (edit access)</option>
+                      <option value="viewer">Viewer (read-only)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "4px" }}>
+                      Max inventory items (optional)
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      placeholder="Unlimited"
+                      value={editMaxInventory}
+                      onChange={(e) => setEditMaxInventory(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label style={{ display: "block", marginBottom: "4px" }}>
+                      Page access (Home is always allowed)
+                    </label>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                      {availablePages.map((page) => (
+                        <label key={page.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                          <input
+                            type="checkbox"
+                            checked={editPages.includes(page.key)}
+                            onChange={(e) => {
+                              setEditPages((prev) =>
+                                e.target.checked ? [...prev, page.key] : prev.filter((p) => p !== page.key)
+                              );
+                            }}
+                          />
+                          <span>{page.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  {warehouses.length > 0 && (
+                    <div>
+                      <label style={{ display: "block", marginBottom: "4px" }}>
+                        Warehouse access (optional)
+                      </label>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+                        {warehouses.map((warehouse) => (
+                          <label
+                            key={warehouse.id}
+                            style={{ display: "flex", alignItems: "center", gap: 4 }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={editWarehouseIds.includes(warehouse.id)}
+                              onChange={(e) => {
+                                setEditWarehouseIds((prev) =>
+                                  e.target.checked
+                                    ? [...prev, warehouse.id]
+                                    : prev.filter((id) => id !== warehouse.id)
+                                );
+                              }}
+                            />
+                            <span>{warehouse.name}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+                {manageTeamError && (
+                  <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>
+                    {manageTeamError}
+                  </p>
+                )}
+                <div style={{ display: "flex", gap: "8px", marginTop: "16px" }}>
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={manageTeamSaving}
+                    onClick={saveEdit}
+                  >
+                    {manageTeamSaving ? "Saving…" : "Save"}
+                  </button>
+                  <button type="button" className="button secondary" onClick={cancelEdit}>
+                    Cancel
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <div style={{ marginBottom: "16px" }}>
+                  <strong>Team members</strong>
+                  {members.length === 0 ? (
+                    <p style={{ margin: "8px 0 0", color: "var(--text-secondary)" }}>No members yet.</p>
+                  ) : (
+                    <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0" }}>
+                      {members.map((member) => (
+                        <li
+                          key={member.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <span>
+                            {member.name || member.email} ({member.email}) – {member.teamRole}
+                            {member.teamRole === "owner" && " (you)"}
+                          </span>
+                          {member.teamRole !== "owner" && (
+                            <span style={{ display: "flex", gap: "8px" }}>
+                              <button
+                                type="button"
+                                className="button secondary"
+                                style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                                onClick={() => openEditMember(member)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="button"
+                                style={{
+                                  padding: "4px 8px",
+                                  fontSize: "0.85rem",
+                                  backgroundColor: "var(--error)",
+                                  color: "white",
+                                  border: "none",
+                                }}
+                                onClick={() => handleRemoveMember(member)}
+                              >
+                                Remove
+                              </button>
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <div>
+                  <strong>Pending invitations</strong>
+                  {invitations.length === 0 ? (
+                    <p style={{ margin: "8px 0 0", color: "var(--text-secondary)" }}>No pending invitations.</p>
+                  ) : (
+                    <ul style={{ listStyle: "none", padding: 0, margin: "8px 0 0" }}>
+                      {invitations.map((invitation) => (
+                        <li
+                          key={invitation.id}
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            padding: "8px 0",
+                            borderBottom: "1px solid var(--border)",
+                          }}
+                        >
+                          <span>
+                            {invitation.email} – {invitation.teamRole} – {invitation.status}
+                          </span>
+                          <span style={{ display: "flex", gap: "8px" }}>
+                            <button
+                              type="button"
+                              className="button secondary"
+                              style={{ padding: "4px 8px", fontSize: "0.85rem" }}
+                              onClick={() => openEditInvitation(invitation)}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="button"
+                              style={{
+                                padding: "4px 8px",
+                                fontSize: "0.85rem",
+                                backgroundColor: "var(--error)",
+                                color: "white",
+                                border: "none",
+                              }}
+                              onClick={() => handleRevokeInvitation(invitation)}
+                            >
+                              Revoke
+                            </button>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

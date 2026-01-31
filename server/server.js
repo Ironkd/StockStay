@@ -32,6 +32,7 @@ import {
 import {
   createCheckoutSession,
   createCustomerPortalSession,
+  ensureTeamStripeCustomer,
   handleWebhook,
   isBillingConfigured,
 } from "./billing.js";
@@ -730,14 +731,12 @@ app.post("/api/billing/customer-portal", authenticateToken, async (req, res) => 
     if (currentUser.teamRole !== "owner") {
       return res.status(403).json({ message: "Only team owners can manage billing." });
     }
-    const team = await teamOps.findById(currentUser.teamId);
-    if (!team?.stripeCustomerId) {
-      return res.status(400).json({ message: "No billing account found. Subscribe to Pro first." });
-    }
+    const teamId = currentUser.teamId;
+    const customerId = await ensureTeamStripeCustomer(teamId, currentUser.email);
     const base = (APP_URL || "").replace(/\/$/, "");
     const returnUrl = req.body.returnUrl || `${base}/settings`;
     const { url } = await createCustomerPortalSession({
-      customerId: team.stripeCustomerId,
+      customerId,
       returnUrl,
     });
     res.json({ url });
@@ -1741,6 +1740,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         effectivePlan, // The actual plan considering trial status
         maxWarehouses: team.maxWarehouses,
         warehouseCount,
+        billingInterval: team.billingInterval || null, // "month" | "year" from Stripe
         // Trial information
         isOnTrial: team.isOnTrial || false,
         trialEndsAt: team.trialEndsAt,
@@ -1897,6 +1897,140 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
   } catch (error) {
     console.error("Error accepting invitation:", error);
     res.status(500).json({ message: "Error accepting invitation" });
+  }
+});
+
+// Update a team member's role and access (owner only; cannot edit self if owner)
+app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser || !currentUser.teamId) {
+      return res.status(400).json({ message: "You are not associated with a team" });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can edit members" });
+    }
+    const targetUserId = req.params.userId;
+    if (targetUserId === currentUser.id) {
+      return res.status(400).json({ message: "You cannot edit your own role from here" });
+    }
+    const targetUser = await userOps.findById(targetUserId);
+    if (!targetUser || targetUser.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Member not found in your team" });
+    }
+    const { teamRole, maxInventoryItems, allowedPages, allowedWarehouseIds } = req.body || {};
+    const updates = {};
+    if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
+    if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
+    if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
+    if (Array.isArray(allowedWarehouseIds)) updates.allowedWarehouseIds = allowedWarehouseIds;
+    await userOps.update(targetUserId, updates);
+    const updated = await userOps.findById(targetUserId);
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      teamRole: updated.teamRole,
+      maxInventoryItems: updated.maxInventoryItems ?? null,
+      allowedPages: updated.allowedPages ?? null,
+      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+    });
+  } catch (error) {
+    console.error("Error updating member:", error);
+    res.status(500).json({ message: "Error updating member" });
+  }
+});
+
+// Remove a member from the team (owner only; cannot remove self)
+app.delete("/api/team/members/:userId", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser || !currentUser.teamId) {
+      return res.status(400).json({ message: "You are not associated with a team" });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can remove members" });
+    }
+    const targetUserId = req.params.userId;
+    if (targetUserId === currentUser.id) {
+      return res.status(400).json({ message: "You cannot remove yourself from the team" });
+    }
+    const targetUser = await userOps.findById(targetUserId);
+    if (!targetUser || targetUser.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Member not found in your team" });
+    }
+    await userOps.update(targetUserId, { teamId: null, teamRole: null, maxInventoryItems: null, allowedPages: null, allowedWarehouseIds: null });
+    res.json({ message: "Member removed from team" });
+  } catch (error) {
+    console.error("Error removing member:", error);
+    res.status(500).json({ message: "Error removing member" });
+  }
+});
+
+// Update a pending invitation (owner only)
+app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser || !currentUser.teamId) {
+      return res.status(400).json({ message: "You are not associated with a team" });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can edit invitations" });
+    }
+    const invitationId = req.params.invitationId;
+    const invitation = await invitationOps.findById(invitationId);
+    if (!invitation || invitation.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Invitation not found" });
+    }
+    if (invitation.status !== "pending") {
+      return res.status(400).json({ message: "Only pending invitations can be edited" });
+    }
+    const { teamRole, maxInventoryItems, allowedPages, allowedWarehouseIds } = req.body || {};
+    const updates = {};
+    if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
+    if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
+    if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
+    if (Array.isArray(allowedWarehouseIds)) updates.allowedWarehouseIds = allowedWarehouseIds;
+    await invitationOps.update(invitationId, updates);
+    const updated = await invitationOps.findById(invitationId);
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      teamRole: updated.teamRole,
+      maxInventoryItems: updated.maxInventoryItems ?? null,
+      status: updated.status,
+      token: updated.token,
+      createdAt: updated.createdAt,
+      expiresAt: updated.expiresAt,
+      allowedPages: updated.allowedPages ?? null,
+      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+    });
+  } catch (error) {
+    console.error("Error updating invitation:", error);
+    res.status(500).json({ message: "Error updating invitation" });
+  }
+});
+
+// Revoke (delete) a pending invitation (owner only)
+app.delete("/api/team/invitations/:invitationId", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser || !currentUser.teamId) {
+      return res.status(400).json({ message: "You are not associated with a team" });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can revoke invitations" });
+    }
+    const invitationId = req.params.invitationId;
+    const invitation = await invitationOps.findById(invitationId);
+    if (!invitation || invitation.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Invitation not found" });
+    }
+    await invitationOps.delete(invitationId);
+    res.json({ message: "Invitation revoked" });
+  } catch (error) {
+    console.error("Error revoking invitation:", error);
+    res.status(500).json({ message: "Error revoking invitation" });
   }
 });
 

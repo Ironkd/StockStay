@@ -97,6 +97,26 @@ export async function createCheckoutSession(opts) {
 }
 
 /**
+ * Ensure team has a Stripe customer (create if missing). Returns customer ID.
+ * @param {string} teamId
+ * @param {string} customerEmail
+ * @returns {Promise<string>} Stripe customer ID
+ */
+export async function ensureTeamStripeCustomer(teamId, customerEmail) {
+  if (!stripe) {
+    throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY.");
+  }
+  const team = await teamOps.findById(teamId);
+  if (team?.stripeCustomerId) return team.stripeCustomerId;
+  const customer = await stripe.customers.create({
+    email: customerEmail,
+    metadata: { teamId },
+  });
+  await teamOps.update(teamId, { stripeCustomerId: customer.id });
+  return customer.id;
+}
+
+/**
  * Create a Stripe Customer Portal session for managing subscription (cancel, update payment).
  * @param {Object} opts - { customerId, returnUrl }
  * @returns {Promise<{ url: string }>} Portal URL
@@ -140,11 +160,14 @@ export async function handleWebhook(rawBody, signature) {
       const isActive = ["active", "trialing"].includes(status);
       const plan = subscription.metadata?.plan === "starter" ? "starter" : "pro";
       const limits = getPlanLimits(plan);
+      const interval = subscription.items?.data?.[0]?.price?.recurring?.interval ?? null;
+      const billingInterval = interval === "year" || interval === "month" ? interval : null;
       await teamOps.update(teamId, {
         plan: isActive ? plan : "free",
         maxWarehouses: isActive ? limits.maxWarehouses : 1,
         stripeSubscriptionId: subscription.id,
         stripeSubscriptionStatus: status,
+        billingInterval: isActive ? billingInterval : null,
         isOnTrial: false,
         trialEndsAt: null,
         trialPlan: null,
@@ -161,6 +184,7 @@ export async function handleWebhook(rawBody, signature) {
         maxWarehouses: 1,
         stripeSubscriptionId: null,
         stripeSubscriptionStatus: "canceled",
+        billingInterval: null,
       });
       console.log(`[BILLING] Subscription canceled for team ${teamId}`);
       break;

@@ -35,6 +35,7 @@ export interface TeamResponse {
     isOnTrial?: boolean;
     trialEndsAt?: string | null;
     trialStatus?: { daysRemaining: number; expired: boolean } | null;
+    billingInterval?: string | null; // "month" | "year" from Stripe
     billingPortalAvailable?: boolean;
   };
   members: TeamMember[];
@@ -81,6 +82,48 @@ export const teamApi = {
     }>("/team/invitations/accept", {
       method: "POST",
       body: JSON.stringify({ token })
+    });
+  },
+
+  updateMember: async (
+    userId: string,
+    params: {
+      teamRole?: "member" | "viewer";
+      maxInventoryItems?: number | null;
+      allowedPages?: string[] | null;
+      allowedWarehouseIds?: string[] | null;
+    }
+  ): Promise<TeamMember> => {
+    return apiRequest<TeamMember>(`/team/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(params)
+    });
+  },
+
+  removeMember: async (userId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/team/members/${userId}`, {
+      method: "DELETE"
+    });
+  },
+
+  updateInvitation: async (
+    invitationId: string,
+    params: {
+      teamRole?: "member" | "viewer";
+      maxInventoryItems?: number | null;
+      allowedPages?: string[] | null;
+      allowedWarehouseIds?: string[] | null;
+    }
+  ): Promise<TeamInvitation> => {
+    return apiRequest<TeamInvitation>(`/team/invitations/${invitationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(params)
+    });
+  },
+
+  revokeInvitation: async (invitationId: string): Promise<{ message: string }> => {
+    return apiRequest<{ message: string }>(`/team/invitations/${invitationId}`, {
+      method: "DELETE"
     });
   },
 

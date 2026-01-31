@@ -65,6 +65,7 @@ model Team {
   stripeCustomerId    String?  // Stripe Customer ID for billing
   stripeSubscriptionId String? // Active subscription ID (when set, plan is paid)
   stripeSubscriptionStatus String? // active, canceled, past_due, etc.
+  billingInterval    String?  // "month" | "year" from Stripe subscription
 
   members User[]
   warehouses   Warehouse[]
