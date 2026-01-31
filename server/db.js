@@ -331,8 +331,28 @@ export const inventoryOps = {
     return await prisma.inventory.deleteMany();
   },
 
+  /** Delete only items in the given warehouse IDs (for team-scoped clear). */
+  async deleteByWarehouseIds(warehouseIds) {
+    if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
+      return { count: 0 };
+    }
+    return await prisma.inventory.deleteMany({
+      where: { warehouseId: { in: warehouseIds } },
+    });
+  },
+
   async count() {
     return await prisma.inventory.count();
+  },
+
+  /** Count items in the given warehouse IDs (for team-scoped limits). */
+  async countByWarehouseIds(warehouseIds) {
+    if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
+      return 0;
+    }
+    return await prisma.inventory.count({
+      where: { warehouseId: { in: warehouseIds } },
+    });
   },
 };
 

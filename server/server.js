@@ -736,7 +736,12 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    let items = await inventoryOps.findAll();
+    // Only return items in this user's team's warehouses (not all items in the DB)
+    const teamWarehouseIds =
+      currentUser?.teamId ?
+        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+      : [];
+    let items = await inventoryOps.findAll(teamWarehouseIds);
 
     // If the user has warehouse restrictions, only return items from allowed warehouses
     if (
@@ -758,6 +763,13 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
   }
 });
 
+// Helper: item is in one of the current user's team's warehouses
+async function inventoryItemBelongsToTeam(item, currentUser) {
+  if (!currentUser?.teamId || !item?.warehouseId) return false;
+  const warehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
+  return warehouses.some((w) => w.id === item.warehouseId);
+}
+
 app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
@@ -772,7 +784,12 @@ app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Enforce warehouse-level restrictions
+    // Item must be in this user's team's warehouses
+    if (!(await inventoryItemBelongsToTeam(item, currentUser))) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
+    // Enforce warehouse-level restrictions (allowedWarehouseIds)
     if (
       currentUser &&
       Array.isArray(currentUser.allowedWarehouseIds) &&
@@ -798,8 +815,12 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    // Simple per-user limit: total inventory items across the app
-    const inventoryCount = await inventoryOps.count();
+    // Team-scoped limit: only count items in this team's warehouses
+    const teamWarehouseIds =
+      currentUser?.teamId ?
+        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+      : [];
+    const inventoryCount = await inventoryOps.countByWarehouseIds(teamWarehouseIds);
     if (
       currentUser &&
       typeof currentUser.maxInventoryItems === "number" &&
@@ -810,13 +831,20 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
       });
     }
 
+    // New item must be in one of this team's warehouses
+    const warehouseId = req.body.warehouseId;
+    if (warehouseId && teamWarehouseIds.length > 0 && !teamWarehouseIds.includes(warehouseId)) {
+      return res.status(403).json({
+        message: "You can only add items to warehouses in your team.",
+      });
+    }
+
     // Warehouse-level restrictions – user can only create items in allowed warehouses
     if (
       currentUser &&
       Array.isArray(currentUser.allowedWarehouseIds) &&
       currentUser.allowedWarehouseIds.length > 0
     ) {
-      const warehouseId = req.body.warehouseId;
       if (
         !warehouseId ||
         !currentUser.allowedWarehouseIds.includes(warehouseId)
@@ -846,8 +874,12 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
+    const teamWarehouseIds =
+      currentUser?.teamId ?
+        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+      : [];
     const incomingCount = Array.isArray(req.body.items) ? req.body.items.length : 0;
-    const inventoryCount = await inventoryOps.count();
+    const inventoryCount = await inventoryOps.countByWarehouseIds(teamWarehouseIds);
 
     if (
       currentUser &&
@@ -857,6 +889,19 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
       return res.status(403).json({
         message: `Bulk import would exceed your inventory item limit (${currentUser.maxInventoryItems}).`,
       });
+    }
+
+    // Bulk items must be in this team's warehouses
+    if (Array.isArray(req.body.items) && teamWarehouseIds.length > 0) {
+      const invalidItem = req.body.items.find(
+        (item) =>
+          !item.warehouseId || !teamWarehouseIds.includes(item.warehouseId)
+      );
+      if (invalidItem) {
+        return res.status(403).json({
+          message: "Bulk import includes warehouses that are not in your team.",
+        });
+      }
     }
 
     // Ensure all imported items stay within allowed warehouses (if restricted)
@@ -904,6 +949,10 @@ app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
+    if (!(await inventoryItemBelongsToTeam(existingItem, currentUser))) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+
     // Enforce warehouse-level restrictions for updates
     if (
       currentUser &&
@@ -935,8 +984,12 @@ app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
+    const currentUser = await userOps.findById(req.user.id);
     const item = await inventoryOps.findById(req.params.id);
     if (!item) {
+      return res.status(404).json({ message: "Item not found" });
+    }
+    if (!(await inventoryItemBelongsToTeam(item, currentUser))) {
       return res.status(404).json({ message: "Item not found" });
     }
 
@@ -950,8 +1003,15 @@ app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/inventory", authenticateToken, async (req, res) => {
   try {
-    await inventoryOps.deleteAll();
-    res.json({ message: "All items deleted successfully" });
+    const currentUser = await userOps.findById(req.user.id);
+    const teamWarehouseIds =
+      currentUser?.teamId ?
+        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+      : [];
+    const result = await inventoryOps.deleteByWarehouseIds(teamWarehouseIds);
+    res.json({
+      message: `Deleted ${result.count ?? 0} item(s) from your team's inventory.`,
+    });
   } catch (error) {
     console.error("Error clearing inventory:", error);
     res.status(500).json({ message: "Error clearing inventory" });
