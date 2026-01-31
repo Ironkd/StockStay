@@ -557,6 +557,39 @@ button.secondary:hover {
   background: #ffffff;
 }
 
+.login-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.login-form .phone-input-wrapper {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.login-form .phone-country-select {
+  flex: 0 0 auto;
+  width: 140px;
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.7);
+  padding: 10px 12px;
+  font-size: 14px;
+  background: rgba(248, 250, 252, 0.9);
+  outline: none;
+  cursor: pointer;
+}
+
+.login-form .phone-country-select:focus {
+  border-color: #2563eb;
+}
+
+.login-form .phone-number-input {
+  flex: 1;
+  min-width: 0;
+}
+
 .auth-switch {
   margin-top: 12px;
   display: flex;

@@ -31,8 +31,14 @@ function getPasswordError(value: string): string | null {
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [fullName, setFullName] = useState("");
-  const [address, setAddress] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [street, setStreet] = useState("");
+  const [city, setCity] = useState("");
+  const [province, setProvince] = useState("");
+  const [postalCode, setPostalCode] = useState("");
+  const [phoneCountry, setPhoneCountry] = useState<"CA" | "US">("CA");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [startProTrial, setStartProTrial] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -64,8 +70,13 @@ export const LoginPage: React.FC = () => {
     setLoading(true);
 
     if (isSignUpMode) {
-      if (!email || !password || !fullName.trim()) {
-        setError("Please enter email, password, and full name");
+      if (!email || !password || !firstName.trim() || !lastName.trim()) {
+        setError("Please enter email, first name, last name, and password");
+        setLoading(false);
+        return;
+      }
+      if (password !== confirmPassword) {
+        setError("Passwords do not match");
         setLoading(false);
         return;
       }
@@ -75,13 +86,18 @@ export const LoginPage: React.FC = () => {
         setLoading(false);
         return;
       }
+      const fullName = `${firstName.trim()} ${lastName.trim()}`;
+      const addressParts = [street.trim(), city.trim(), province.trim(), postalCode.trim()].filter(Boolean);
+      const addressStr = addressParts.length > 0 ? addressParts.join(", ") : undefined;
+      const prefix = phoneCountry === "CA" ? "+1" : "+1";
+      const phoneStr = phoneNumber.trim() ? `${prefix} ${phoneNumber.trim().replace(/\D/g, "")}` : undefined;
       try {
         await authApi.signup({
           email: email.trim(),
           password,
-          fullName: fullName.trim(),
-          address: address.trim() || undefined,
-          phoneNumber: phoneNumber.trim() || undefined,
+          fullName,
+          address: addressStr,
+          phoneNumber: phoneStr,
           startProTrial,
         });
         const trialMessage = startProTrial
@@ -89,6 +105,7 @@ export const LoginPage: React.FC = () => {
           : "";
         setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
         setPassword("");
+        setConfirmPassword("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Sign up failed");
       } finally {
@@ -177,17 +194,29 @@ export const LoginPage: React.FC = () => {
             )}
 
             {isSignUpMode && (
-              <label>
-                <span>Full name</span>
-                <input
-                  type="text"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  placeholder="Your full name"
-                  required
-                  autoFocus={isSignUpMode}
-                />
-              </label>
+              <>
+                <label>
+                  <span>First name</span>
+                  <input
+                    type="text"
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                    placeholder="First name"
+                    required
+                    autoFocus={isSignUpMode}
+                  />
+                </label>
+                <label>
+                  <span>Last name</span>
+                  <input
+                    type="text"
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                    placeholder="Last name"
+                    required
+                  />
+                </label>
+              </>
             )}
 
             <label>
@@ -205,22 +234,63 @@ export const LoginPage: React.FC = () => {
             {isSignUpMode && (
               <>
                 <label>
-                  <span>Address</span>
+                  <span>Street address</span>
                   <input
                     type="text"
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Street, city, postal code"
+                    value={street}
+                    onChange={(e) => setStreet(e.target.value)}
+                    placeholder="123 Main St"
+                  />
+                </label>
+                <div className="form-row">
+                  <label>
+                    <span>Town / City</span>
+                    <input
+                      type="text"
+                      value={city}
+                      onChange={(e) => setCity(e.target.value)}
+                      placeholder="City"
+                    />
+                  </label>
+                  <label>
+                    <span>Province / State</span>
+                    <input
+                      type="text"
+                      value={province}
+                      onChange={(e) => setProvince(e.target.value)}
+                      placeholder="ON, BC, etc."
+                    />
+                  </label>
+                </div>
+                <label>
+                  <span>Postal code</span>
+                  <input
+                    type="text"
+                    value={postalCode}
+                    onChange={(e) => setPostalCode(e.target.value)}
+                    placeholder="A1A 1A1 or 12345"
                   />
                 </label>
                 <label>
                   <span>Phone number</span>
-                  <input
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="+1 234 567 8900"
-                  />
+                  <div className="phone-input-wrapper">
+                    <select
+                      value={phoneCountry}
+                      onChange={(e) => setPhoneCountry(e.target.value as "CA" | "US")}
+                      className="phone-country-select"
+                      aria-label="Country"
+                    >
+                      <option value="CA">🇨🇦 Canada (+1)</option>
+                      <option value="US">🇺🇸 US (+1)</option>
+                    </select>
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder={phoneCountry === "CA" ? "234 567 8900" : "234 567 8900"}
+                      className="phone-number-input"
+                    />
+                  </div>
                 </label>
               </>
             )}
@@ -274,6 +344,39 @@ export const LoginPage: React.FC = () => {
                 </button>
               </div>
             </label>
+            {isSignUpMode && (
+              <label>
+                <span>Confirm password</span>
+                <div className="password-input-wrapper">
+                  <input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Re-enter your password"
+                    required
+                    minLength={8}
+                  />
+                  <button
+                    type="button"
+                    className="password-toggle"
+                    onClick={() => setShowPassword(!showPassword)}
+                    aria-label={showPassword ? "Hide password" : "Show password"}
+                  >
+                    {showPassword ? (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                        <line x1="1" y1="1" x2="23" y2="23"></line>
+                      </svg>
+                    ) : (
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <circle cx="12" cy="12" r="3"></circle>
+                      </svg>
+                    )}
+                  </button>
+                </div>
+              </label>
+            )}
             {isSignUpMode && (
               <p className="password-requirements">
                 At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
