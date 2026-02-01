@@ -6,6 +6,7 @@ interface AuthContextType {
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
   updateUser: (updates: Partial<AuthUser>) => void;
+  refreshUser: () => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -64,6 +65,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     setUser((prev) => (prev ? { ...prev, ...updates } : null));
   };
 
+  const refreshUser = async () => {
+    const token = sessionStorage.getItem("auth_token");
+    if (!token) return;
+    try {
+      const currentUser = await authApi.getCurrentUser();
+      setUser(currentUser);
+    } catch {
+      setUser(null);
+    }
+  };
+
   // Refetch user when tab becomes visible so everyone sees latest team name (e.g. after owner edits it)
   useEffect(() => {
     const handleVisibilityChange = () => {
@@ -83,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         login,
         logout,
         updateUser,
+        refreshUser,
         isAuthenticated: !!user,
         loading
       }}
