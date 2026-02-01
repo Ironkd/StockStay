@@ -1,5 +1,5 @@
 import { apiRequest } from "../config/api";
-import type { TeamData, TeamInvitationInfo } from "../types";
+import type { TeamData, TeamInvitationInfo, TeamMemberInfo } from "../types";
 
 export const teamApi = {
   getTeam: async (): Promise<TeamData> => {
@@ -23,16 +23,55 @@ export const teamApi = {
   createInvitation: async (params: {
     email: string;
     teamRole?: string;
+    allowedPages?: string[] | null;
+    allowedWarehouseIds?: string[] | null;
+    maxInventoryItems?: number | null;
   }): Promise<TeamInvitationInfo> => {
     return apiRequest<TeamInvitationInfo>("/team/invitations", {
       method: "POST",
-      body: JSON.stringify({ email: params.email, teamRole: params.teamRole || "member" }),
+      body: JSON.stringify({
+        email: params.email,
+        teamRole: params.teamRole || "member",
+        allowedPages: params.allowedPages ?? null,
+        allowedWarehouseIds: params.allowedWarehouseIds ?? null,
+        maxInventoryItems: params.maxInventoryItems ?? null,
+      }),
+    });
+  },
+
+  updateInvitation: async (
+    invitationId: string,
+    params: {
+      teamRole?: string;
+      allowedPages?: string[] | null;
+      allowedWarehouseIds?: string[] | null;
+      maxInventoryItems?: number | null;
+    }
+  ): Promise<TeamInvitationInfo> => {
+    return apiRequest<TeamInvitationInfo>(`/team/invitations/${invitationId}`, {
+      method: "PATCH",
+      body: JSON.stringify(params),
     });
   },
 
   revokeInvitation: async (invitationId: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/team/invitations/${invitationId}`, {
       method: "DELETE",
+    });
+  },
+
+  updateMember: async (
+    userId: string,
+    params: {
+      teamRole?: string;
+      allowedPages?: string[] | null;
+      allowedWarehouseIds?: string[] | null;
+      maxInventoryItems?: number | null;
+    }
+  ): Promise<TeamMemberInfo> => {
+    return apiRequest<TeamMemberInfo>(`/team/members/${userId}`, {
+      method: "PATCH",
+      body: JSON.stringify(params),
     });
   },
 
