@@ -297,7 +297,19 @@ export const warehouseOps = {
 // Inventory operations
 export const inventoryOps = {
   async findAll(warehouseFilter = null) {
-    const where = warehouseFilter ? { warehouseId: { in: warehouseFilter } } : {};
+    let where;
+    if (!warehouseFilter) {
+      where = {};
+    } else if (warehouseFilter.length === 0) {
+      where = { warehouseId: { in: [] } };
+    } else {
+      where = {
+        OR: [
+          { warehouseId: { in: warehouseFilter } },
+          { warehouseId: null },
+        ],
+      };
+    }
     const items = await prisma.inventory.findMany({ where, orderBy: { createdAt: 'desc' } });
     return items.map((item) => ({
       ...item,
