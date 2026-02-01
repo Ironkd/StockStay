@@ -36,11 +36,12 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
     return <Navigate to="/login" replace />;
   }
 
-  // Home is always allowed, and owners / unrestricted users can see everything
+  // Home is always allowed; owners see everything; invited members only see pages the owner picked
   const hasPageAccess = () => {
     if (!pageKey || pageKey === "home") return true;
     if (!user) return false;
-    if (!user.allowedPages || user.teamRole === "owner") return true;
+    if (user.teamRole === "owner") return true;
+    if (!user.allowedPages || user.allowedPages.length === 0) return false;
     return user.allowedPages.includes(pageKey);
   };
 

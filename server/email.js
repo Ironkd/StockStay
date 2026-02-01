@@ -259,6 +259,68 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
   return true;
 }
 
+const SUPPORT_EMAIL = "support@stockstay.com";
+
+/**
+ * Send support/contact form submission to support@stockstay.com.
+ * @param {string} fromEmail - Sender email
+ * @param {string} fromName - Sender name
+ * @param {string} message - Message body
+ * @returns {Promise<boolean>} - true if sent (or logged), false on error
+ */
+export async function sendSupportEmail(fromEmail, fromName, message) {
+  const subject = `Support: ${(fromName || "Someone").toString().slice(0, 50)}`;
+  const text = `From: ${fromName || "—"}\nEmail: ${fromEmail || "—"}\n\n${message || ""}`;
+  const html = `<p><strong>From:</strong> ${escapeHtml(fromName || "—")}<br/><strong>Email:</strong> ${escapeHtml(fromEmail || "—")}</p><p>${escapeHtml((message || "").replace(/\n/g, "<br/>"))}</p>`;
+
+  if (RESEND_API_KEY) {
+    try {
+      const { Resend } = await import("resend");
+      const resend = new Resend(RESEND_API_KEY);
+      const { error } = await resend.emails.send({
+        from: RESEND_FROM_EMAIL,
+        to: [SUPPORT_EMAIL],
+        replyTo: fromEmail && String(fromEmail).trim() ? fromEmail.trim() : undefined,
+        subject,
+        html,
+        text,
+      });
+      if (error) {
+        console.error("[EMAIL] Resend support email error:", error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Resend support email error:", err?.message || err);
+      return false;
+    }
+  }
+
+  const transporter = getTransporter();
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: SUPPORT_EMAIL,
+        replyTo: fromEmail && String(fromEmail).trim() ? fromEmail.trim() : undefined,
+        subject,
+        text,
+        html,
+      });
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Failed to send support email:", err);
+      return false;
+    }
+  }
+
+  console.log("[EMAIL] Support email (no Resend/SMTP configured):");
+  console.log("  To:", SUPPORT_EMAIL);
+  console.log("  From:", fromName, fromEmail);
+  console.log("  Message:", message?.slice(0, 200));
+  return true;
+}
+
 /**
  * Send team invitation email with link to join.
  * @param {string} to - Invitee email

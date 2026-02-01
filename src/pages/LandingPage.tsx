@@ -1,11 +1,16 @@
 import React from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { apiRequest } from "../config/api";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [billingPeriod, setBillingPeriod] = React.useState<'monthly' | 'annual'>('monthly');
+  const [supportOpen, setSupportOpen] = React.useState(false);
+  const [supportForm, setSupportForm] = React.useState({ name: "", email: "", message: "" });
+  const [supportSending, setSupportSending] = React.useState(false);
+  const [supportResult, setSupportResult] = React.useState<{ ok: boolean; message: string } | null>(null);
 
   // If user is already logged in, redirect to dashboard
   React.useEffect(() => {
@@ -16,6 +21,35 @@ export const LandingPage: React.FC = () => {
 
   const handleGetStarted = () => {
     navigate("/login?mode=signup");
+  };
+
+  const handleSupportSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSupportResult(null);
+    setSupportSending(true);
+    try {
+      await apiRequest<{ message: string }>("/contact", {
+        method: "POST",
+        body: JSON.stringify({
+          name: supportForm.name.trim(),
+          email: supportForm.email.trim(),
+          message: supportForm.message.trim(),
+        }),
+      });
+      setSupportResult({ ok: true, message: "Message sent. We'll get back to you soon." });
+      setSupportForm({ name: "", email: "", message: "" });
+      setTimeout(() => {
+        setSupportOpen(false);
+        setSupportResult(null);
+      }, 2000);
+    } catch (err) {
+      setSupportResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Failed to send. Please try again.",
+      });
+    } finally {
+      setSupportSending(false);
+    }
   };
 
   return (
@@ -312,6 +346,9 @@ export const LandingPage: React.FC = () => {
             <div className="footer-links">
               <a href="#features">Features</a>
               <Link to="/pricing">Pricing</Link>
+              <button type="button" className="footer-link-button" onClick={() => setSupportOpen(true)}>
+                Support
+              </button>
               <Link to="/terms">Terms</Link>
               <Link to="/privacy">Privacy</Link>
               <Link to="/login">Sign In</Link>
@@ -322,6 +359,141 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
       </footer>
+
+      {/* Support modal */}
+      {supportOpen && (
+        <div
+          className="support-modal-overlay"
+          onClick={() => !supportSending && setSupportOpen(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "24px",
+          }}
+        >
+          <div
+            className="support-modal"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              maxWidth: "440px",
+              width: "100%",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)",
+              padding: "24px",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3 style={{ margin: 0, fontSize: "1.25rem" }}>Contact Support</h3>
+              <button
+                type="button"
+                onClick={() => !supportSending && setSupportOpen(false)}
+                style={{
+                  background: "none",
+                  border: "none",
+                  fontSize: "1.25rem",
+                  cursor: supportSending ? "not-allowed" : "pointer",
+                  color: "#64748b",
+                  padding: "4px",
+                }}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ margin: "0 0 20px", fontSize: "0.9rem", color: "#64748b" }}>
+              Send us a message and we'll get back to you at support@stockstay.com.
+            </p>
+            {supportResult && (
+              <p
+                style={{
+                  margin: "0 0 16px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  fontSize: "0.9rem",
+                  backgroundColor: supportResult.ok ? "#dcfce7" : "#fee2e2",
+                  color: supportResult.ok ? "#166534" : "#b91c1c",
+                }}
+              >
+                {supportResult.message}
+              </p>
+            )}
+            <form onSubmit={handleSupportSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+              <label style={{ display: "block" }}>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
+                <input
+                  type="text"
+                  value={supportForm.name}
+                  onChange={(e) => setSupportForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Your name"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email *</span>
+                <input
+                  type="email"
+                  required
+                  value={supportForm.email}
+                  onChange={(e) => setSupportForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="you@example.com"
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    fontSize: "14px",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <label style={{ display: "block" }}>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>What are you looking for? *</span>
+                <textarea
+                  required
+                  value={supportForm.message}
+                  onChange={(e) => setSupportForm((f) => ({ ...f, message: e.target.value }))}
+                  placeholder="Describe your question or issue..."
+                  rows={4}
+                  style={{
+                    width: "100%",
+                    padding: "10px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #e2e8f0",
+                    fontSize: "14px",
+                    resize: "vertical",
+                    boxSizing: "border-box",
+                  }}
+                />
+              </label>
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "8px" }}>
+                <button
+                  type="button"
+                  onClick={() => !supportSending && setSupportOpen(false)}
+                  className="nav-button secondary"
+                >
+                  Cancel
+                </button>
+                <button type="submit" className="nav-button primary" disabled={supportSending}>
+                  {supportSending ? "Sending…" : "Send"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

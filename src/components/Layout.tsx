@@ -59,7 +59,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     if (item.pageKey === "home") return true;
     if (!user) return false;
     if (item.proOnly && effectivePlan !== "pro") return false;
-    if (!user.allowedPages || user.teamRole === "owner") return true;
+    if (user.teamRole === "owner") return true;
+    // Invited members: only show pages the owner picked for them
+    if (!user.allowedPages || user.allowedPages.length === 0) return false;
     return user.allowedPages.includes(item.pageKey);
   };
 

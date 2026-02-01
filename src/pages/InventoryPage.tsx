@@ -120,10 +120,12 @@ export const InventoryPage: React.FC = () => {
     [items]
   );
 
-  // Apply warehouse visibility restrictions based on the current user
+  // Apply warehouse visibility restrictions: invited members see only warehouses the owner picked
   const visibleWarehouses = useMemo(() => {
-    if (!user || !user.allowedWarehouseIds || user.allowedWarehouseIds.length === 0) {
-      return warehouses;
+    if (!user) return warehouses;
+    if (user.teamRole === "owner") return warehouses;
+    if (!user.allowedWarehouseIds || user.allowedWarehouseIds.length === 0) {
+      return [];
     }
     return warehouses.filter((w) => user.allowedWarehouseIds!.includes(w.id));
   }, [user, warehouses]);
@@ -145,18 +147,17 @@ export const InventoryPage: React.FC = () => {
 
   const filteredItems = useMemo(() => {
     const allowedWarehouseIds =
-      user && user.allowedWarehouseIds && user.allowedWarehouseIds.length > 0
-        ? new Set(user.allowedWarehouseIds)
+      user && user.teamRole !== "owner"
+        ? user.allowedWarehouseIds && user.allowedWarehouseIds.length > 0
+          ? new Set(user.allowedWarehouseIds)
+          : new Set()
         : null;
 
     const normalizedSearch = search.trim().toLowerCase();
     return items.filter((item) => {
-      // Enforce warehouse-level visibility on the client as well
-      if (
-        allowedWarehouseIds &&
-        (!item.warehouseId || !allowedWarehouseIds.has(item.warehouseId))
-      ) {
-        return false;
+      // Enforce warehouse-level visibility: members only see items in allowed warehouses
+      if (allowedWarehouseIds !== null) {
+        if (!item.warehouseId || !allowedWarehouseIds.has(item.warehouseId)) return false;
       }
 
       const matchesSearch =

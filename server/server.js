@@ -19,7 +19,7 @@ import {
   passwordResetTokenOps,
   prisma,
 } from "./db.js";
-import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail } from "./email.js";
+import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
   startProTrial,
   isTrialExpired,
@@ -2660,6 +2660,29 @@ app.get("/api/cors-check", (req, res) => {
     origin: req.headers.origin || "(no Origin header)",
     note: "Add this exact origin to Railway CORS_ORIGIN if signup fails with 'Load failed'.",
   });
+});
+
+// Contact/support form (no auth; landing page)
+app.post("/api/contact", async (req, res) => {
+  try {
+    const email = req.body.email != null ? String(req.body.email).trim() : "";
+    const name = req.body.name != null ? String(req.body.name).trim() : "";
+    const message = req.body.message != null ? String(req.body.message).trim() : "";
+    if (!email) {
+      return res.status(400).json({ message: "Email is required" });
+    }
+    if (!message) {
+      return res.status(400).json({ message: "Message is required" });
+    }
+    const sent = await sendSupportEmail(email, name, message);
+    if (!sent) {
+      return res.status(500).json({ message: "Failed to send message. Please try again later." });
+    }
+    return res.json({ message: "Message sent. We'll get back to you soon." });
+  } catch (err) {
+    console.error("[CONTACT]", err);
+    return res.status(500).json({ message: "Something went wrong. Please try again." });
+  }
 });
 
 // ==================== TRIAL MANAGEMENT ====================

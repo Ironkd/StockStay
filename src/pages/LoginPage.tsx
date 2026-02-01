@@ -282,7 +282,7 @@ export const LoginPage: React.FC = () => {
               <div className="success-message" role="alert">
                 {signupSuccess}
               </div>
-              {checkoutUrlForTrial ? (
+              {!inviteToken && checkoutUrlForTrial ? (
                 <>
                   <div className="signup-payment-copy">
                     <p>We use this to prevent spam and ensure access for active hosts.</p>
@@ -325,12 +325,12 @@ export const LoginPage: React.FC = () => {
             {resetSuccessMessage && (
               <div className="forgot-password-message success">{resetSuccessMessage}</div>
             )}
-            {trialStartedFromUrl && (
+            {!inviteToken && trialStartedFromUrl && (
               <div className="forgot-password-message success" role="alert">
                 Payment method added. Your 14-day trial is active. Verify your email to sign in.
               </div>
             )}
-            {checkoutCancelledFromUrl && (
+            {!inviteToken && checkoutCancelledFromUrl && (
               <div className="forgot-password-message success" role="alert">
                 You can add a payment method later from Settings to continue Pro after your trial.
               </div>
