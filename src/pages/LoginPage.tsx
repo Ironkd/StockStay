@@ -170,6 +170,7 @@ export const LoginPage: React.FC = () => {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Login failed");
+      console.error("Login error:", err);
     } finally {
       setLoading(false);
     }

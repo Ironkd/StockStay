@@ -41,14 +41,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
-    try {
-      const response = await authApi.login(email, password);
-      setUser(response.user);
-      return true;
-    } catch (error) {
-      console.error("Login error:", error);
-      return false;
-    }
+    const response = await authApi.login(email, password);
+    setUser(response.user);
+    return true;
   };
 
   const logout = async () => {

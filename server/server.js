@@ -536,7 +536,10 @@ app.post("/api/auth/reset-password", resetPasswordValidation, async (req, res) =
       return res.status(400).json({ message: "Invalid or expired reset link. Please request a new one." });
     }
     const hashedPassword = await bcrypt.hash(password, 10);
-    await userOps.update(record.userId, { password: hashedPassword });
+    await userOps.update(record.userId, {
+      password: hashedPassword,
+      emailVerified: true,
+    });
     await passwordResetTokenOps.deleteByUserId(record.userId);
     res.json({ message: "Password reset successfully. You can sign in now." });
   } catch (error) {
