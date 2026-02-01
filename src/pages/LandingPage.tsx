@@ -77,7 +77,7 @@ export const LandingPage: React.FC = () => {
               Why Stock Stay?
             </h1>
             <p className="hero-subtitle hero-lead">
-              One place for inventory, invoices, and turnover — so you spend less time switching apps and more time running your short-term rentals. Start free, add properties and team members as you grow, and only pay for what you need. No credit card required.
+              Inventory management built for short-term rental hosts and property managers. Track supplies across your Airbnb, VRBO, and vacation rental properties in one place. Spend less time on spreadsheets and more time growing your STR business. Start free, add properties as you grow.
             </p>
             <div className="hero-cta">
               <button onClick={handleGetStarted} className="cta-button primary">
@@ -97,61 +97,55 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Built for Short-Term Rentals</h2>
           <p className="section-subtitle">
-            One app for inventory, properties, guests, invoices, and your team
+            Everything Airbnb and VRBO hosts need to manage supplies, turnovers, and billing
           </p>
 
           <div className="features-grid">
             <div className="feature-card">
               <div className="feature-icon">📦</div>
-              <h3>Inventory & Properties</h3>
+              <h3>Supplies Per Property</h3>
               <p>
-                Track linens, supplies, and quantities per property. Organize with categories,
-                search and filter, and get low-stock alerts so you're never short before a turnover. Free plan includes one property; Starter and Pro add more.
+                Track toiletries, linens, cleaning supplies, and coffee pods for each Airbnb or vacation rental. Get low-stock alerts before turnovers so you're never caught short.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">🔄</div>
-              <h3>Transfers & Shopping List</h3>
+              <h3>Transfers & Restocking</h3>
               <p>
-                Move stock between properties in one place. A shopping list is built from low-stock items
-                so you know what to reorder for your next clean.
+                Move supplies between properties with one click. Auto-generated shopping lists from low-stock items so you know exactly what to buy before your next guest arrives.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">👤</div>
-              <h3>Clients & Guests</h3>
+              <h3>Owner & Guest Contacts</h3>
               <p>
-                Store client and guest details — name, email, phone, address. Keep contacts in one place
-                and link them to invoices and bookings. Data stays private to your team.
+                Keep property owner and guest contact details organized. Link them to invoices for easy owner reimbursement and pass-through billing.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">📄</div>
-              <h3>Invoices</h3>
+              <h3>Owner Invoicing</h3>
               <p>
-                Create and manage invoices, link them to clients and stays. Export to PDF and CSV.
-                Available on Starter and Pro plans.
+                Bill property owners for supplies used at their rentals. Create invoices, export to PDF, and keep billing organized across all your managed properties.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">🏠</div>
-              <h3>Turnover & Stock</h3>
+              <h3>Turnover Tracking</h3>
               <p>
-                Adjust quantities as you restock after each stay. Track what's used per property
-                so inventory, billing, and history stay in sync across your listings.
+                Log what's used after each guest checkout. Track consumption per property so you know which listings use more supplies and can bill owners accurately.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">👥</div>
-              <h3>Team & Permissions</h3>
+              <h3>Team for Cleaners & Co-hosts</h3>
               <p>
-                Invite cleaners or co-hosts and set roles: owner, member, or viewer. Control who can see which pages
-                and properties. Manage invitations and billing from Settings (Pro).
+                Invite your cleaning crew or co-hosts with role-based access. Control who sees which properties and pages. Perfect for STR management teams.
               </p>
             </div>
           </div>
@@ -188,7 +182,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Simple, Transparent Pricing</h2>
           <p className="section-subtitle">
-            Start free, upgrade when you need more
+            Start free with one property, upgrade as your rental portfolio grows
           </p>
 
           {/* Billing Toggle */}
@@ -219,9 +213,9 @@ export const LandingPage: React.FC = () => {
                 </div>
               </div>
               <ul className="pricing-features">
-                <li>✓ 1 property</li>
-                <li>✓ Unlimited products</li>
-                <li>✓ Basic inventory tracking</li>
+                <li>✓ 1 rental property</li>
+                <li>✓ Unlimited supplies</li>
+                <li>✓ Basic turnover tracking</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Get Started Free
@@ -251,10 +245,10 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 3 properties</li>
+                <li>✓ Up to 3 rental properties</li>
+                <li>✓ Owner invoicing</li>
                 <li>✓ PDF & CSV exports</li>
-                <li>✓ Invoices</li>
-                <li>✓ Inventory history</li>
+                <li>✓ Supply history & reports</li>
                 <li>✓ Everything in Free</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button primary">
@@ -288,12 +282,12 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 10 properties</li>
-                <li>✓ Team members</li>
-                <li>✓ Property permissions</li>
-                <li>✓ Shopping list from low stock</li>
-                <li>✓ Advanced reports</li>
-                <li>✓ Inventory value tracking</li>
+                <li>✓ Up to 10 rental properties</li>
+                <li>✓ Cleaners & co-host access</li>
+                <li>✓ Per-property permissions</li>
+                <li>✓ Auto shopping lists</li>
+                <li>✓ Advanced STR reports</li>
+                <li>✓ Supply cost tracking</li>
                 <li>✓ Everything in Starter</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
@@ -307,9 +301,9 @@ export const LandingPage: React.FC = () => {
       {/* CTA Section */}
       <section className="landing-cta">
         <div className="landing-container">
-          <h2 className="cta-title">Ready to Get Started?</h2>
+          <h2 className="cta-title">Ready to Simplify Your STR Operations?</h2>
           <p className="cta-subtitle">
-            Manage inventory, properties, clients, invoices, and turnover in one place. Start free at stockstay.com
+            Join short-term rental hosts who've stopped using spreadsheets for supplies. Track inventory, bill owners, and manage turnovers in one place.
           </p>
           <button onClick={handleGetStarted} className="cta-button large">
             Start Your Free Trial
