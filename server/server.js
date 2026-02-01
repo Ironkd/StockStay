@@ -234,6 +234,8 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         id: user.id,
         email: user.email,
         name: user.name,
+        address: user.address ?? "",
+        phone: user.phone ?? "",
         teamId: user.teamId,
         teamName: teamName ?? null,
         teamRole: user.teamRole,
@@ -581,6 +583,8 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
       id: user.id,
       email: user.email,
       name: user.name,
+      address: user.address ?? "",
+      phone: user.phone ?? "",
       teamId: user.teamId,
       teamName: teamName ?? null,
       teamRole: user.teamRole,
@@ -591,6 +595,57 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error fetching user:", error);
     res.status(500).json({ message: "Internal server error" });
+  }
+});
+
+app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
+  try {
+    const user = await userOps.findById(req.user.id);
+    if (!user) {
+      return res.status(404).json({ message: "User not found" });
+    }
+    const { email, address, phone, name } = req.body || {};
+    const updates = {};
+    if (typeof email === "string") {
+      const trimmed = email.trim();
+      if (!trimmed) {
+        return res.status(400).json({ message: "Email cannot be empty." });
+      }
+      const existing = await userOps.findByEmail(trimmed);
+      if (existing && existing.id !== user.id) {
+        return res.status(400).json({ message: "An account with this email already exists." });
+      }
+      updates.email = trimmed;
+      updates.emailVerified = false;
+    }
+    if (typeof address === "string") updates.address = address.trim();
+    if (typeof phone === "string") updates.phone = phone.trim() || null;
+    if (typeof name === "string") updates.name = name.trim();
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No profile fields to update." });
+    }
+    const updated = await userOps.update(user.id, updates);
+    let teamName = null;
+    if (updated.teamId) {
+      const team = await teamOps.findById(updated.teamId);
+      teamName = team?.name?.trim() || null;
+    }
+    res.json({
+      id: updated.id,
+      email: updated.email,
+      name: updated.name,
+      address: updated.address ?? "",
+      phone: updated.phone ?? "",
+      teamId: updated.teamId,
+      teamName: teamName ?? null,
+      teamRole: updated.teamRole,
+      maxInventoryItems: updated.maxInventoryItems ?? null,
+      allowedPages: updated.allowedPages ?? null,
+      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+    });
+  } catch (error) {
+    console.error("Error updating profile:", error);
+    res.status(500).json({ message: "Error updating profile" });
   }
 });
 

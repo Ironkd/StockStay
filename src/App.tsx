@@ -10,6 +10,7 @@ import { TermsPage } from "./pages/TermsPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { HomePage } from "./pages/HomePage";
 import { InventoryPage } from "./pages/InventoryPage";
+import { ShoppingListPage } from "./pages/ShoppingListPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { InvoicesPage } from "./pages/InvoicesPage";
 import { SalesPage } from "./pages/SalesPage";
@@ -47,6 +48,16 @@ export const App: React.FC = () => {
               <ProtectedRoute pageKey="inventory">
                 <Layout>
                   <InventoryPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/shopping-list"
+            element={
+              <ProtectedRoute pageKey="inventory">
+                <Layout>
+                  <ShoppingListPage />
                 </Layout>
               </ProtectedRoute>
             }

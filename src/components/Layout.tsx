@@ -45,6 +45,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const navItems: Array<{ path: string; label: string; icon: string; pageKey: string }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
     { path: "/inventory", label: "Inventory", icon: "📦", pageKey: "inventory" },
+    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "inventory" },
     { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },
     { path: "/sales", label: "Sales", icon: "💰", pageKey: "sales" },

@@ -28,6 +28,11 @@ export const HomePage: React.FC = () => {
   const stats = useMemo(() => {
     const totalItems = items.length;
     const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalStockValue = items.reduce(
+      (sum, item) =>
+        sum + item.quantity * (item.finalPrice ?? item.priceBoughtFor ?? 0),
+      0
+    );
     const lowStock = items.filter(
       (item) => item.quantity > 0 && item.quantity <= item.reorderPoint
     ).length;
@@ -96,6 +101,7 @@ export const HomePage: React.FC = () => {
     return {
       totalItems,
       totalQuantity,
+      totalStockValue,
       lowStock,
       outOfStock,
       inStock,
@@ -127,6 +133,15 @@ export const HomePage: React.FC = () => {
           <div className="stat-content">
             <div className="stat-value">{stats.totalQuantity}</div>
             <div className="stat-label">Total Quantity</div>
+          </div>
+        </div>
+        <div className="stat-card">
+          <div className="stat-icon">💰</div>
+          <div className="stat-content">
+            <div className="stat-value">
+              ${stats.totalStockValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
+            <div className="stat-label">Total Stock Value</div>
           </div>
         </div>
         <div 

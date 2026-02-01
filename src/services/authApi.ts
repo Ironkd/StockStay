@@ -4,12 +4,21 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  address?: string;
+  phone?: string;
   teamId?: string | null;
   teamName?: string | null;
   teamRole?: "owner" | "member" | "viewer";
   maxInventoryItems?: number | null;
   allowedPages?: string[] | null;
   allowedWarehouseIds?: string[] | null;
+}
+
+export interface ProfileUpdatePayload {
+  email?: string;
+  address?: string;
+  phone?: string;
+  name?: string;
 }
 
 export interface LoginResponse {
@@ -71,6 +80,13 @@ export const authApi = {
 
   getCurrentUser: async (): Promise<AuthUser> => {
     return apiRequest<AuthUser>("/auth/me");
+  },
+
+  updateProfile: async (payload: ProfileUpdatePayload): Promise<AuthUser> => {
+    return apiRequest<AuthUser>("/auth/profile", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
   },
 
   refreshToken: async (): Promise<{ token: string }> => {
