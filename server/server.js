@@ -1757,6 +1757,29 @@ app.get("/api/team", authenticateToken, async (req, res) => {
   }
 });
 
+// Update team name (owner only); all members see the new name via GET /api/team
+app.patch("/api/team", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser || !currentUser.teamId) {
+      return res.status(400).json({ message: "You are not associated with a team" });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can change the team name" });
+    }
+    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ message: "Team name is required" });
+    }
+    await teamOps.update(currentUser.teamId, { name });
+    const team = await teamOps.findById(currentUser.teamId);
+    res.json({ team: { id: team.id, name: team.name } });
+  } catch (error) {
+    console.error("Error updating team:", error);
+    res.status(500).json({ message: "Error updating team name" });
+  }
+});
+
 // Create an invitation for the current user's team
 app.post("/api/team/invitations", authenticateToken, async (req, res) => {
   try {
