@@ -42,7 +42,6 @@ export const LandingPage: React.FC = () => {
             <h1 className="hero-title">
               Why Stock Stay?
             </h1>
-            <p className="hero-domain">stockstay.com</p>
             <p className="hero-subtitle hero-lead">
               One place for inventory, invoices, and sales — so you spend less time switching apps and more time running your business. Start free, add warehouses and team members as you grow, and only pay for what you need. No credit card required.
             </p>
@@ -139,6 +138,15 @@ export const LandingPage: React.FC = () => {
                 team members, granular permissions, trials. Your data is isolated per team.
               </p>
             </div>
+          </div>
+
+          {/* Coming Soon */}
+          <div className="coming-soon-block">
+            <span className="coming-soon-badge">Coming Soon</span>
+            <h3 className="coming-soon-title">Integration with Airbnb & VRBO for cleaning scheduling</h3>
+            <p className="coming-soon-text">
+              Sync your stays with Stock Stay and schedule cleanings automatically. One place for inventory, turnovers, and your short-term rental workflow.
+            </p>
           </div>
         </div>
       </section>

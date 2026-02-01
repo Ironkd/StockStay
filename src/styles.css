@@ -2063,6 +2063,48 @@ button.secondary:hover {
   margin: 0;
 }
 
+/* Coming Soon block (landing) */
+.coming-soon-block {
+  margin-top: 56px;
+  padding: 32px 40px;
+  background: linear-gradient(135deg, #eff6ff 0%, #f0fdf4 100%);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: 16px;
+  text-align: center;
+  position: relative;
+}
+
+.coming-soon-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  background: #2563eb;
+  color: white;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  margin-bottom: 12px;
+}
+
+.coming-soon-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: #0f172a;
+  margin: 0 0 8px;
+  line-height: 1.3;
+}
+
+.coming-soon-text {
+  font-size: 15px;
+  line-height: 1.55;
+  color: #475569;
+  margin: 0;
+  max-width: 560px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
 /* Pricing Section */
 .landing-pricing {
   padding: 100px 0;
