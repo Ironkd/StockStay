@@ -11,6 +11,11 @@ export const teamApi = {
     return apiRequest<{ effectiveMaxWarehouses: number; effectivePlan: string }>("/team/limits");
   },
 
+  /** Current team name only (no settings access – use from header so name updates everywhere) */
+  getTeamName: async (): Promise<{ name: string }> => {
+    return apiRequest<{ name: string }>("/team/name");
+  },
+
   updateTeamName: async (name: string): Promise<{ team: { id: string; name: string } }> => {
     return apiRequest<{ team: { id: string; name: string } }>("/team", {
       method: "PATCH",

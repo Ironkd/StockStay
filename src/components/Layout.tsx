@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { teamApi } from "../services/teamApi";
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({
   children
@@ -8,11 +9,38 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
+  const [headerTeamName, setHeaderTeamName] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!user) {
+      setHeaderTeamName(null);
+      return;
+    }
+    teamApi.getTeamName().then((r) => setHeaderTeamName(r.name)).catch(() => {});
+  }, [user?.id]);
+
+  useEffect(() => {
+    const refetch = () =>
+      teamApi.getTeamName().then((r) => setHeaderTeamName(r.name)).catch(() => {});
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refetch();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("team-name-updated", refetch);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("team-name-updated", refetch);
+    };
+  }, []);
 
   const handleLogout = async () => {
     await logout();
     navigate("/");
   };
+
+  const displayTeamName =
+    (headerTeamName ?? user?.teamName ?? "").trim() ||
+    (user?.name?.trim() ? `${user.name.trim().split(/\s+/)[0]}'s Team` : "My Team");
 
   const navItems: Array<{ path: string; label: string; icon: string; pageKey: string }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
@@ -41,7 +69,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               <span className="brand-stay">Stay</span>
             </h1>
           <p className="welcome-line">Welcome back, {user?.name?.trim() ? user.name.trim().split(/\s+/)[0] : "User"}</p>
-          <p className="team-line">{user?.teamName?.trim() || (user?.name?.trim() ? `${user.name.trim().split(/\s+/)[0]}'s Team` : "My Team")}</p>
+          <p className="team-line">{displayTeamName}</p>
           </div>
         </div>
         <button className="clear-button" onClick={handleLogout}>

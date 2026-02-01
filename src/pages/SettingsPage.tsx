@@ -127,6 +127,7 @@ export const SettingsPage: React.FC = () => {
         updateUser({ teamName: team.name });
       }
       await refreshUser();
+      window.dispatchEvent(new CustomEvent("team-name-updated"));
     } catch (err) {
       console.error(err);
     } finally {

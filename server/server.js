@@ -1836,6 +1836,22 @@ app.get("/api/team/limits", authenticateToken, async (req, res) => {
   }
 });
 
+// Get current team name only (no settings access – used by header so name updates everywhere)
+app.get("/api/team/name", authenticateToken, async (req, res) => {
+  try {
+    const user = await userOps.findById(req.user.id);
+    if (!user || !user.teamId) {
+      return res.status(404).json({ message: "Team not found for user" });
+    }
+    const team = await teamOps.findById(user.teamId);
+    const name = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+    res.json({ name });
+  } catch (error) {
+    console.error("Error fetching team name:", error);
+    res.status(500).json({ message: "Error fetching team name" });
+  }
+});
+
 // Get team details, members and invitations for the current user
 app.get("/api/team", authenticateToken, async (req, res) => {
   try {
