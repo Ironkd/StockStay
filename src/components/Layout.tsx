@@ -41,7 +41,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               <span className="brand-stay">Stay</span>
             </h1>
           <p className="welcome-line">Welcome back, {user?.name?.trim() ? user.name.trim().split(/\s+/)[0] : "User"}</p>
-          {user?.teamName && <p className="team-line">{user.teamName}</p>}
+          <p className="team-line">{user?.teamName?.trim() || (user?.name?.trim() ? `${user.name.trim().split(/\s+/)[0]}'s Team` : "My Team")}</p>
           </div>
         </div>
         <button className="clear-button" onClick={handleLogout}>

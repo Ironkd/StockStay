@@ -227,7 +227,7 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     let teamName = null;
     if (user.teamId) {
       const team = await teamOps.findById(user.teamId);
-      if (team) teamName = team.name;
+      teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
     }
 
     res.json({
@@ -575,7 +575,7 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
     let teamName = null;
     if (user.teamId) {
       const team = await teamOps.findById(user.teamId);
-      if (team) teamName = team.name;
+      teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
     }
 
     res.json({
