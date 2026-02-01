@@ -27,12 +27,14 @@ export const reportsApi = {
     inventoryItemId?: string;
     fromDate?: string;
     toDate?: string;
+    movementType?: string;
     limit?: number;
   }): Promise<InventoryMovement[]> => {
     const search = new URLSearchParams();
     if (params?.inventoryItemId) search.set("inventoryItemId", params.inventoryItemId);
     if (params?.fromDate) search.set("fromDate", params.fromDate);
     if (params?.toDate) search.set("toDate", params.toDate);
+    if (params?.movementType) search.set("movementType", params.movementType);
     if (params?.limit != null) search.set("limit", String(params.limit));
     const qs = search.toString();
     return apiRequest<InventoryMovement[]>(`/reports/movements${qs ? `?${qs}` : ""}`);

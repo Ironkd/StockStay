@@ -623,9 +623,10 @@ export const movementOps = {
   },
 
   async findByTeam(teamId, opts = {}) {
-    const { inventoryItemId, fromDate, toDate, limit = 500 } = opts;
+    const { inventoryItemId, fromDate, toDate, movementType, limit = 500 } = opts;
     const where = { teamId: teamId || undefined };
     if (inventoryItemId) where.inventoryItemId = inventoryItemId;
+    if (movementType) where.movementType = movementType;
     if (fromDate || toDate) {
       where.createdAt = {};
       if (fromDate) where.createdAt.gte = new Date(fromDate);

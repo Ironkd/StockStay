@@ -1604,11 +1604,12 @@ app.get("/api/reports/movements", authenticateToken, async (req, res) => {
     if (!currentUser?.teamId) {
       return res.json([]);
     }
-    const { inventoryItemId, fromDate, toDate, limit } = req.query;
+    const { inventoryItemId, fromDate, toDate, movementType, limit } = req.query;
     const movements = await movementOps.findByTeam(currentUser.teamId, {
       inventoryItemId: inventoryItemId || undefined,
       fromDate: fromDate || undefined,
       toDate: toDate || undefined,
+      movementType: movementType || undefined,
       limit: limit ? Math.min(parseInt(limit, 10) || 500, 1000) : 500,
     });
     const itemIds = [...new Set(movements.map((m) => m.inventoryItemId))];
