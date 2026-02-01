@@ -29,4 +29,10 @@ export const invoicesApi = {
       method: "DELETE",
     });
   },
+
+  send: async (id: string): Promise<{ message: string; sentTo?: string }> => {
+    return apiRequest<{ message: string; sentTo?: string }>(`/invoices/${id}/send`, {
+      method: "POST",
+    });
+  },
 };

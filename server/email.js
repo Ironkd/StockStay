@@ -94,3 +94,113 @@ export async function sendVerificationEmail(to, token, name = "there") {
   console.log("  Link:", verificationLink);
   return true;
 }
+
+/**
+ * Build HTML body for an invoice email (same layout as preview).
+ * @param {object} invoice - { invoiceNumber, clientName, date, dueDate, items[], subtotal, tax, total, notes }
+ * @returns {string} HTML string
+ */
+function buildInvoiceEmailHtml(invoice) {
+  const items = invoice.items || [];
+  const itemsRows = items
+    .map(
+      (item) =>
+        `<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.quantity)}</td><td>$${Number(item.unitPrice).toFixed(2)}</td><td>$${Number(item.total).toFixed(2)}</td></tr>`
+    )
+    .join("");
+  const subtotal = Number(invoice.subtotal) ?? 0;
+  const tax = Number(invoice.tax) ?? 0;
+  const total = Number(invoice.total) ?? 0;
+  const dateStr = invoice.date ? new Date(invoice.date).toLocaleDateString() : "";
+  const dueStr = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "";
+  const notes = invoice.notes ? `<p style="margin-top:16px;color:#64748b;">${escapeHtml(invoice.notes)}</p>` : "";
+  return `
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title></head>
+<body style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1e293b;">
+  <h1 style="font-size:1.5rem;margin-bottom:8px;">Invoice ${escapeHtml(invoice.invoiceNumber)}</h1>
+  <p style="margin:0 0 16px;color:#64748b;">${escapeHtml(invoice.clientName)}</p>
+  <p style="margin:0 0 4px;"><strong>Date:</strong> ${dateStr}</p>
+  <p style="margin:0 0 24px;"><strong>Due date:</strong> ${dueStr}</p>
+  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
+    <thead><tr style="border-bottom:2px solid #e2e8f0;"><th style="text-align:left;padding:8px;">Item</th><th style="text-align:right;padding:8px;">Qty</th><th style="text-align:right;padding:8px;">Price</th><th style="text-align:right;padding:8px;">Total</th></tr></thead>
+    <tbody>${itemsRows}</tbody>
+  </table>
+  <p style="margin:0 0 4px;text-align:right;"><strong>Subtotal:</strong> $${subtotal.toFixed(2)}</p>
+  <p style="margin:0 0 4px;text-align:right;"><strong>Tax:</strong> $${tax.toFixed(2)}</p>
+  <p style="margin:0 0 0;text-align:right;font-size:1.125rem;"><strong>Total:</strong> $${total.toFixed(2)}</p>
+  ${notes}
+  <p style="margin-top:24px;color:#64748b;font-size:0.875rem;">— Stock Stay</p>
+</body>
+</html>`;
+}
+
+function escapeHtml(str) {
+  if (str == null) return "";
+  const s = String(str);
+  return s
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Send invoice email to the client.
+ * @param {string} to - Client email
+ * @param {string} clientName - Client name
+ * @param {object} invoice - Invoice object (invoiceNumber, clientName, date, dueDate, items, subtotal, tax, total, notes)
+ * @returns {Promise<boolean>} - true if sent, false on error
+ */
+export async function sendInvoiceEmail(to, clientName, invoice) {
+  if (!to || !String(to).trim()) return false;
+  const subject = `Invoice ${invoice.invoiceNumber} from Stock Stay`;
+  const html = buildInvoiceEmailHtml(invoice);
+  const text = `Invoice ${invoice.invoiceNumber}\n\n${clientName}\nDate: ${invoice.date}\nDue: ${invoice.dueDate}\n\nItems: ${(invoice.items || []).map((i) => `${i.name} x${i.quantity} = $${i.total}`).join("\n")}\n\nSubtotal: $${(invoice.subtotal ?? 0).toFixed(2)}\nTax: $${(invoice.tax ?? 0).toFixed(2)}\nTotal: $${(invoice.total ?? 0).toFixed(2)}\n\n— Stock Stay`;
+
+  if (RESEND_API_KEY) {
+    try {
+      const { Resend } = await import("resend");
+      const resend = new Resend(RESEND_API_KEY);
+      const { error } = await resend.emails.send({
+        from: RESEND_FROM_EMAIL,
+        to: [to.trim()],
+        subject,
+        html,
+        text,
+      });
+      if (error) {
+        console.error("[EMAIL] Resend invoice error:", error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Resend invoice error:", err?.message || err);
+      return false;
+    }
+  }
+
+  const transporter = getTransporter();
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: to.trim(),
+        subject,
+        text,
+        html,
+      });
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Failed to send invoice email:", err);
+      return false;
+    }
+  }
+
+  console.log("[EMAIL] Invoice email (no Resend/SMTP configured):");
+  console.log("  To:", to);
+  console.log("  Subject:", subject);
+  return true;
+}

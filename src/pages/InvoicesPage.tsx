@@ -4,6 +4,7 @@ import { useClients } from "../hooks/useClients";
 import { useSales } from "../hooks/useSales";
 import { useInventory } from "../hooks/useInventory";
 import { useWarehouses } from "../hooks/useWarehouses";
+import { invoicesApi } from "../services/invoicesApi";
 import { Invoice, InvoiceItem } from "../types";
 
 export const InvoicesPage: React.FC = () => {
@@ -15,6 +16,8 @@ export const InvoicesPage: React.FC = () => {
   const { getWarehouseById } = useWarehouses();
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
+  const [sendingInvoice, setSendingInvoice] = useState(false);
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -269,15 +272,28 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
-  const handleSend = async (invoice: Invoice) => {
+  const handleSendClick = (invoice: Invoice) => {
+    setSendPreviewInvoice(invoice);
+  };
+
+  const handleSendConfirm = async () => {
+    if (!sendPreviewInvoice) return;
+    const clientEmail = clients.find((c) => c.id === sendPreviewInvoice.clientId)?.email?.trim();
+    if (!clientEmail) {
+      alert("No email address for this client. Add an email in Clients before sending.");
+      return;
+    }
+    setSendingInvoice(true);
     try {
-      // Mark the invoice as sent. In a real setup this is
-      // where you would also trigger an email to the client.
-      await updateInvoice(invoice.id, { status: "sent" });
-      alert(`Invoice #${invoice.invoiceNumber} marked as sent to ${invoice.clientName}.`);
-    } catch (error) {
-      console.error("Error sending invoice", error);
-      alert("There was a problem sending this invoice. Please try again.");
+      await invoicesApi.send(sendPreviewInvoice.id);
+      await refreshInvoices();
+      setSendPreviewInvoice(null);
+      alert(`Invoice #${sendPreviewInvoice.invoiceNumber} sent to ${clientEmail}.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to send invoice. Please try again.";
+      alert(message);
+    } finally {
+      setSendingInvoice(false);
     }
   };
 
@@ -349,7 +365,7 @@ export const InvoicesPage: React.FC = () => {
             <div className="invoice-actions">
               {invoice.status !== "sent" && (
                 <button
-                  onClick={() => handleSend(invoice)}
+                  onClick={() => handleSendClick(invoice)}
                   title="Send to client"
                   disabled={invoice.status === "paid"}
                   style={{
@@ -400,8 +416,143 @@ export const InvoicesPage: React.FC = () => {
     );
   };
 
+  const previewClientEmail = sendPreviewInvoice
+    ? clients.find((c) => c.id === sendPreviewInvoice.clientId)?.email?.trim()
+    : "";
+
   return (
     <div className="invoices-page">
+      {sendPreviewInvoice && (
+        <div
+          className="invoice-send-preview-overlay"
+          style={{
+            position: "fixed",
+            inset: 0,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            zIndex: 1000,
+            padding: "24px",
+          }}
+          onClick={() => !sendingInvoice && setSendPreviewInvoice(null)}
+        >
+          <div
+            className="invoice-send-preview-modal"
+            style={{
+              backgroundColor: "white",
+              borderRadius: "12px",
+              maxWidth: "560px",
+              width: "100%",
+              maxHeight: "90vh",
+              overflow: "auto",
+              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)",
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ padding: "24px" }}>
+              <h3 style={{ margin: "0 0 8px", fontSize: "1.25rem" }}>
+                Preview – Invoice #{sendPreviewInvoice.invoiceNumber}
+              </h3>
+              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: "0.9rem" }}>
+                This is how the invoice will look when sent by email.
+              </p>
+              <div
+                style={{
+                  fontFamily: "system-ui, sans-serif",
+                  color: "#1e293b",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "8px",
+                  padding: "20px",
+                  marginBottom: "20px",
+                  backgroundColor: "#f8fafc",
+                }}
+              >
+                <p style={{ margin: "0 0 4px", fontWeight: 600 }}>
+                  Invoice {sendPreviewInvoice.invoiceNumber}
+                </p>
+                <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: "0.9rem" }}>
+                  {sendPreviewInvoice.clientName}
+                </p>
+                <p style={{ margin: "0 0 4px", fontSize: "0.9rem" }}>
+                  <strong>Date:</strong> {new Date(sendPreviewInvoice.date).toLocaleDateString()}
+                </p>
+                <p style={{ margin: "0 0 16px", fontSize: "0.9rem" }}>
+                  <strong>Due date:</strong>{" "}
+                  {sendPreviewInvoice.dueDate
+                    ? new Date(sendPreviewInvoice.dueDate).toLocaleDateString()
+                    : "—"}
+                </p>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px", fontSize: "0.9rem" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
+                      <th style={{ textAlign: "left", padding: "8px 8px 8px 0" }}>Item</th>
+                      <th style={{ textAlign: "right", padding: "8px" }}>Qty</th>
+                      <th style={{ textAlign: "right", padding: "8px" }}>Price</th>
+                      <th style={{ textAlign: "right", padding: "8px" }}>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sendPreviewInvoice.items || []).map((item) => (
+                      <tr key={item.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
+                        <td style={{ padding: "8px 8px 8px 0" }}>{item.name}</td>
+                        <td style={{ textAlign: "right", padding: "8px" }}>{item.quantity}</td>
+                        <td style={{ textAlign: "right", padding: "8px" }}>
+                          ${item.unitPrice.toFixed(2)}
+                        </td>
+                        <td style={{ textAlign: "right", padding: "8px" }}>
+                          ${item.total.toFixed(2)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <p style={{ margin: "0 0 4px", textAlign: "right", fontSize: "0.9rem" }}>
+                  <strong>Subtotal:</strong> ${sendPreviewInvoice.subtotal.toFixed(2)}
+                </p>
+                <p style={{ margin: "0 0 4px", textAlign: "right", fontSize: "0.9rem" }}>
+                  <strong>Tax:</strong> ${sendPreviewInvoice.tax.toFixed(2)}
+                </p>
+                <p style={{ margin: "0 0 0", textAlign: "right", fontSize: "1rem", fontWeight: 600 }}>
+                  <strong>Total:</strong> ${sendPreviewInvoice.total.toFixed(2)}
+                </p>
+                {sendPreviewInvoice.notes && (
+                  <p style={{ marginTop: "12px", color: "#64748b", fontSize: "0.875rem" }}>
+                    {sendPreviewInvoice.notes}
+                  </p>
+                )}
+              </div>
+              <p style={{ margin: "0 0 16px", fontSize: "0.9rem", color: "#64748b" }}>
+                This will be sent to: <strong style={{ color: "#1e293b" }}>{previewClientEmail || "—"}</strong>
+              </p>
+              {!previewClientEmail && (
+                <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "#dc2626" }}>
+                  No email for this client. Add an email in Clients before sending.
+                </p>
+              )}
+              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+                <button
+                  type="button"
+                  className="nav-button secondary"
+                  onClick={() => setSendPreviewInvoice(null)}
+                  disabled={sendingInvoice}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="nav-button primary"
+                  onClick={handleSendConfirm}
+                  disabled={sendingInvoice || !previewClientEmail}
+                >
+                  {sendingInvoice ? "Sending…" : `Send to ${previewClientEmail || "client"}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
           <h2>Invoices</h2>

@@ -19,7 +19,7 @@ import {
   passwordResetTokenOps,
   prisma,
 } from "./db.js";
-import { sendVerificationEmail } from "./email.js";
+import { sendVerificationEmail, sendInvoiceEmail } from "./email.js";
 import {
   startProTrial,
   isTrialExpired,
@@ -1601,6 +1601,46 @@ app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error deleting invoice:", error);
     res.status(500).json({ message: "Error deleting invoice" });
+  }
+});
+
+app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!userHasPageAccess(currentUser, "invoices")) {
+      return res.status(403).json({ message: "You do not have access to Invoices." });
+    }
+    const invoice = await invoiceOps.findById(req.params.id);
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    if (invoice.teamId !== currentUser?.teamId) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    if (!invoice.clientId) {
+      return res.status(400).json({ message: "This invoice has no client. Add a client before sending." });
+    }
+    const client = await clientOps.findById(invoice.clientId);
+    if (!client) {
+      return res.status(400).json({ message: "Client not found." });
+    }
+    const clientEmail = (client.email && String(client.email).trim()) || null;
+    if (!clientEmail) {
+      return res.status(400).json({
+        message: `No email address for ${invoice.clientName}. Add an email to the client before sending.`,
+      });
+    }
+    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice);
+    if (!sent) {
+      return res.status(500).json({
+        message: "Failed to send email. Check server email configuration (Resend or SMTP).",
+      });
+    }
+    await invoiceOps.update(invoice.id, { status: "sent" });
+    res.json({ message: `Invoice sent to ${clientEmail}.`, sentTo: clientEmail });
+  } catch (error) {
+    console.error("Error sending invoice:", error);
+    res.status(500).json({ message: "Error sending invoice." });
   }
 });
 
