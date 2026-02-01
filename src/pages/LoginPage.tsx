@@ -86,6 +86,21 @@ export const LoginPage: React.FC = () => {
   const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : new URLSearchParams();
   const trialStartedFromUrl = params.get("trial_started") === "1";
   const checkoutCancelledFromUrl = params.get("checkout") === "cancelled";
+  const inviteTokenFromParam = params.get("invite");
+  const inviteTokenFromRedirect = (() => {
+    const r = params.get("redirect");
+    if (!r) return null;
+    try {
+      const decoded = decodeURIComponent(r);
+      if (!decoded.startsWith("/accept-invite?")) return null;
+      const q = decoded.split("?")[1] ?? "";
+      return new URLSearchParams(q).get("token");
+    } catch {
+      return null;
+    }
+  })();
+  const inviteToken = inviteTokenFromParam || inviteTokenFromRedirect || null;
+  const isInviteSignup = isSignUpMode && !!inviteToken;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,20 +143,27 @@ export const LoginPage: React.FC = () => {
           fullName,
           address: addressStr,
           phoneNumber: phoneStr,
-          startProTrial,
+          startProTrial: isInviteSignup ? false : startProTrial,
+          ...(inviteToken ? { inviteToken } : {}),
         });
-        const trialMessage = startProTrial
-          ? " Your 14-day Pro trial has been activated!"
-          : "";
-        setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
+        if (response.joinedTeam) {
+          setSignupSuccess(response.message);
+        } else {
+          const trialMessage = startProTrial
+            ? " Your 14-day Pro trial has been activated!"
+            : "";
+          setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
+        }
         if (response.checkoutUrl) {
           setCheckoutUrlForTrial(response.checkoutUrl);
         }
         setPassword("");
         setConfirmPassword("");
-        const redirect = new URLSearchParams(location.search).get("redirect");
-        if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
-          navigate(redirect);
+        if (!response.joinedTeam) {
+          const redirect = new URLSearchParams(location.search).get("redirect");
+          if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
+            navigate(redirect);
+          }
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Sign up failed";
@@ -511,7 +533,12 @@ export const LoginPage: React.FC = () => {
               </p>
             )}
 
-            {isSignUpMode && (
+            {isInviteSignup && (
+              <p className="invite-signup-hint" style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                You&apos;re signing up to join a team. No payment required.
+              </p>
+            )}
+            {isSignUpMode && !isInviteSignup && (
               <label className="trial-checkbox">
                 <input
                   type="checkbox"

@@ -351,6 +351,7 @@ const signupValidation = [
   body("address").optional().trim(),
   body("phoneNumber").optional().trim(),
   body("startProTrial").optional().toBoolean(),
+  body("inviteToken").optional().trim(),
 ];
 
 app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, res) => {
@@ -361,7 +362,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       return res.status(400).json({ message: firstError.msg || "Validation failed" });
     }
 
-    const { email, password, fullName, address, phoneNumber, startProTrial: wantsProTrial } = req.body;
+    const { email, password, fullName, address, phoneNumber, startProTrial: wantsProTrial, inviteToken } = req.body;
 
     const existing = await userOps.findByEmail(email);
     if (existing) {
@@ -369,12 +370,74 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const teamId = crypto.randomUUID();
     const newUserId = crypto.randomUUID();
     const verificationToken = crypto.randomUUID();
     const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-    // Create team (with or without trial)
+    // Invited signup: validate token and email, then create user on existing team (no new team, no payment)
+    if (inviteToken && typeof inviteToken === "string" && inviteToken.trim()) {
+      const invitation = await invitationOps.findByToken(inviteToken.trim());
+      const now = new Date();
+      const validInvite =
+        invitation &&
+        invitation.status === "pending" &&
+        (!invitation.expiresAt || new Date(invitation.expiresAt) >= now) &&
+        invitation.email.toLowerCase() === email.toLowerCase();
+
+      if (validInvite) {
+        const user = await userOps.create({
+          id: newUserId,
+          email,
+          name: fullName.trim(),
+          password: hashedPassword,
+          address: (address || "").trim() || null,
+          phone: (phoneNumber || "").trim() || null,
+          emailVerified: false,
+          emailVerificationToken: verificationToken,
+          emailVerificationExpiresAt: verificationExpiresAt,
+          teamId: null,
+          teamRole: null,
+          maxInventoryItems: null,
+          allowedPages: null,
+          allowedWarehouseIds: null,
+        });
+
+        await userOps.update(user.id, {
+          teamId: invitation.teamId,
+          teamRole: invitation.teamRole || "member",
+          maxInventoryItems:
+            typeof invitation.maxInventoryItems === "number" ? invitation.maxInventoryItems : null,
+          allowedPages:
+            Array.isArray(invitation.allowedPages) && invitation.allowedPages.length > 0
+              ? invitation.allowedPages
+              : null,
+          allowedWarehouseIds:
+            Array.isArray(invitation.allowedWarehouseIds) && invitation.allowedWarehouseIds.length > 0
+              ? invitation.allowedWarehouseIds
+              : null,
+        });
+
+        await invitationOps.update(invitation.id, {
+          status: "accepted",
+          acceptedAt: now,
+          acceptedByUserId: user.id,
+        });
+
+        await sendVerificationEmail(email, verificationToken, fullName.trim());
+
+        const team = await teamOps.findById(invitation.teamId);
+        const teamName = team ? team.name : "the team";
+
+        return res.status(201).json({
+          message: `Account created. You've joined ${teamName}. Check your email to verify your address, then sign in.`,
+          joinedTeam: true,
+          teamName,
+        });
+      }
+    }
+
+    // Normal signup: create new team and user as owner
+    const teamId = crypto.randomUUID();
     const teamData = {
       id: teamId,
       name: `${fullName}'s Team`,
@@ -383,7 +446,6 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
 
     await teamOps.create(teamData);
 
-    // Start Pro trial if requested
     if (wantsProTrial === true) {
       await startProTrial(teamId);
       console.log(`[TRIAL] Started 14-day Pro trial for new team ${teamId}`);
@@ -428,7 +490,6 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
         checkoutUrl = url;
       } catch (billingErr) {
         console.error("Signup: could not create trial checkout session:", billingErr);
-        // Still return success; they have the app trial, they can add card later from Settings
       }
     }
 
@@ -2406,6 +2467,12 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
     const user = await userOps.findById(req.user.id);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+      return res.status(403).json({
+        message: "This invitation was sent to a different email address. Sign in with the email that received the invite.",
+      });
     }
 
     // Associate user with the team and apply limits/role/access from invitation

@@ -269,7 +269,7 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
  */
 export async function sendInvitationEmail(to, token, teamName = "the team", inviterName = "A team owner") {
   const acceptPath = `/accept-invite?token=${encodeURIComponent(token)}`;
-  const inviteLink = `${APP_URL}/login?mode=signup&redirect=${encodeURIComponent(acceptPath)}`;
+  const inviteLink = `${APP_URL}/login?mode=signup&redirect=${encodeURIComponent(acceptPath)}&invite=${encodeURIComponent(token)}`;
   const subject = `You're invited to join ${teamName} on Stock Stay`;
   const text = `Hi,\n\n${inviterName} invited you to join ${teamName} on Stock Stay.\n\nSign up to join by clicking this link:\n\n${inviteLink}\n\nThis link expires in 14 days.\n\n— Stock Stay`;
   const html = `

@@ -43,11 +43,19 @@ export interface SignupPayload {
   address?: string;
   phoneNumber?: string;
   startProTrial?: boolean;
+  inviteToken?: string;
+}
+
+export interface SignupResponse {
+  message: string;
+  checkoutUrl?: string;
+  joinedTeam?: boolean;
+  teamName?: string;
 }
 
 export const authApi = {
-  signup: async (payload: SignupPayload): Promise<{ message: string; checkoutUrl?: string }> => {
-    const response = await apiRequest<{ message: string; checkoutUrl?: string }>("/auth/signup", {
+  signup: async (payload: SignupPayload): Promise<SignupResponse> => {
+    const response = await apiRequest<SignupResponse>("/auth/signup", {
       method: "POST",
       body: JSON.stringify(payload),
     });
