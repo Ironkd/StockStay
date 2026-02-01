@@ -143,10 +143,20 @@ export const LandingPage: React.FC = () => {
           {/* Coming Soon */}
           <div className="coming-soon-block">
             <span className="coming-soon-badge">Coming Soon</span>
-            <h3 className="coming-soon-title">Integration with Airbnb & VRBO for cleaning scheduling</h3>
-            <p className="coming-soon-text">
-              Sync your stays with Stock Stay and schedule cleanings automatically. One place for inventory, turnovers, and your short-term rental workflow.
-            </p>
+            <div className="coming-soon-items">
+              <div className="coming-soon-item">
+                <h3 className="coming-soon-title">Integration with Airbnb & VRBO for cleaning scheduling</h3>
+                <p className="coming-soon-text">
+                  Sync your stays with Stock Stay and schedule cleanings automatically. One place for inventory, turnovers, and your short-term rental workflow.
+                </p>
+              </div>
+              <div className="coming-soon-item">
+                <h3 className="coming-soon-title">Snap a receipt or scan a barcode — straight into your inventory</h3>
+                <p className="coming-soon-text">
+                  Take a photo of a receipt or scan product barcodes and we’ll add items to your inventory for you. Less typing, faster restocking.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>

@@ -2084,11 +2084,28 @@ button.secondary:hover {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   border-radius: 999px;
-  margin-bottom: 12px;
+  margin-bottom: 24px;
+}
+
+.coming-soon-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 32px;
+  justify-content: center;
+  text-align: center;
+}
+
+.coming-soon-item {
+  flex: 1 1 280px;
+  max-width: 420px;
+  padding: 24px 20px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 12px;
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .coming-soon-title {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 700;
   color: #0f172a;
   margin: 0 0 8px;
@@ -2100,9 +2117,6 @@ button.secondary:hover {
   line-height: 1.55;
   color: #475569;
   margin: 0;
-  max-width: 560px;
-  margin-left: auto;
-  margin-right: auto;
 }
 
 /* Pricing Section */
