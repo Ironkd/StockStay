@@ -55,6 +55,13 @@ export const teamApi = {
     return apiRequest<TeamResponse>("/team");
   },
 
+  updateTeamName: async (name: string): Promise<{ team: { id: string; name: string } }> => {
+    return apiRequest<{ team: { id: string; name: string } }>("/team", {
+      method: "PATCH",
+      body: JSON.stringify({ name: name.trim() }),
+    });
+  },
+
   createInvitation: async (params: {
     email: string;
     teamRole: "member" | "viewer";

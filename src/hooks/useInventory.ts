@@ -105,6 +105,22 @@ export const useInventory = () => {
     }
   };
 
+  const transfer = async (params: {
+    fromWarehouseId: string;
+    toWarehouseId: string;
+    inventoryItemId: string;
+    quantity: number;
+  }) => {
+    try {
+      setError(null);
+      await inventoryApi.transfer(params);
+      await loadItems();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Transfer failed");
+      throw err;
+    }
+  };
+
   const exportToJson = () => {
     const blob = new Blob([JSON.stringify(items, null, 2)], {
       type: "application/json"
@@ -125,6 +141,7 @@ export const useInventory = () => {
     updateItem,
     removeItem,
     clearAll,
+    transfer,
     importFromJson,
     exportToJson,
     refresh: loadItems

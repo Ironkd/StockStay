@@ -576,8 +576,19 @@ button.secondary:hover {
   border: 1px solid rgba(148, 163, 184, 0.7);
   padding: 10px 12px;
   font-size: 14px;
-  background: #ffffff;
+  font-family: inherit;
+  background: rgba(248, 250, 252, 0.9);
+  outline: none;
   cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease,
+    background 0.15s ease;
+}
+
+.login-form .province-select:focus,
+.login-form select.province-select:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.15);
+  background: #ffffff;
 }
 
 .login-form .phone-country-select {
@@ -1359,6 +1370,27 @@ button.secondary:hover {
 .settings-item input[disabled] {
   background: rgba(248, 250, 252, 0.5);
   cursor: not-allowed;
+}
+
+/* Checkbox + label row: keeps checkbox and text aligned */
+.settings-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.settings-checkbox-row input[type="checkbox"] {
+  margin: 0;
+  flex-shrink: 0;
+  width: 1rem;
+  height: 1rem;
+  cursor: pointer;
+  vertical-align: middle;
+}
+.settings-checkbox-row span {
+  line-height: 1.4;
+  user-select: none;
 }
 
 .settings-actions {

@@ -1038,6 +1038,78 @@ app.delete("/api/inventory", authenticateToken, async (req, res) => {
   }
 });
 
+app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+
+    const { fromWarehouseId, toWarehouseId, inventoryItemId, quantity } = req.body || {};
+    if (!fromWarehouseId || !toWarehouseId || !inventoryItemId || typeof quantity !== "number" || quantity <= 0) {
+      return res.status(400).json({ message: "Invalid transfer request. Provide fromWarehouseId, toWarehouseId, inventoryItemId, and quantity." });
+    }
+
+    if (fromWarehouseId === toWarehouseId) {
+      return res.status(400).json({ message: "From and To warehouses must be different." });
+    }
+
+    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
+    const teamWarehouseIds = new Set(teamWarehouses.map((w) => w.id));
+    if (!teamWarehouseIds.has(fromWarehouseId) || !teamWarehouseIds.has(toWarehouseId)) {
+      return res.status(403).json({ message: "Warehouses not found or access denied." });
+    }
+
+    const sourceItem = await inventoryOps.findById(inventoryItemId);
+    if (!sourceItem) {
+      return res.status(404).json({ message: "Item not found." });
+    }
+    if (sourceItem.warehouseId !== fromWarehouseId) {
+      return res.status(400).json({ message: "Item is not in the selected source warehouse." });
+    }
+    if (sourceItem.quantity < quantity) {
+      return res.status(400).json({ message: `Insufficient stock. Available: ${sourceItem.quantity}` });
+    }
+
+    const itemsInToWarehouse = await prisma.inventory.findMany({
+      where: { warehouseId: toWarehouseId },
+    });
+    const existingInDest = itemsInToWarehouse.find(
+      (i) => i.name === sourceItem.name && (i.sku || "") === (sourceItem.sku || "")
+    );
+
+    if (existingInDest) {
+      await inventoryOps.update(existingInDest.id, {
+        quantity: existingInDest.quantity + quantity,
+      });
+    } else {
+      await inventoryOps.create({
+        name: sourceItem.name,
+        sku: sourceItem.sku || "",
+        category: sourceItem.category || "",
+        location: sourceItem.location || "",
+        warehouseId: toWarehouseId,
+        quantity,
+        unit: sourceItem.unit || "",
+        reorderPoint: sourceItem.reorderPoint ?? 0,
+        priceBoughtFor: sourceItem.priceBoughtFor ?? null,
+        markupPercentage: sourceItem.markupPercentage ?? null,
+        finalPrice: sourceItem.finalPrice ?? null,
+        tags: sourceItem.tags || [],
+        notes: sourceItem.notes || "",
+      });
+    }
+
+    const newSourceQty = sourceItem.quantity - quantity;
+    await inventoryOps.update(inventoryItemId, { quantity: newSourceQty });
+
+    res.json({ message: `Transferred ${quantity} ${sourceItem.unit || "units"} of ${sourceItem.name} successfully.` });
+  } catch (error) {
+    console.error("Transfer error:", error);
+    res.status(500).json({ message: "Transfer failed" });
+  }
+});
+
 // ==================== CLIENTS ROUTES ====================
 
 app.get("/api/clients", authenticateToken, async (req, res) => {

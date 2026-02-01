@@ -52,6 +52,8 @@ export const SettingsPage: React.FC = () => {
   const [editWarehouseIds, setEditWarehouseIds] = useState<string[]>([]);
   const [manageTeamError, setManageTeamError] = useState<string>("");
   const [manageTeamSaving, setManageTeamSaving] = useState<boolean>(false);
+  const [teamNameSaving, setTeamNameSaving] = useState<boolean>(false);
+  const [teamNameError, setTeamNameError] = useState<string>("");
 
   const isOwner = user?.teamRole === "owner";
 
@@ -383,7 +385,53 @@ export const SettingsPage: React.FC = () => {
           <>
             <div className="settings-item">
               <label>Team Name</label>
-              <input type="text" value={teamName} disabled />
+              {isOwner ? (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "8px", alignItems: "center" }}>
+                  <input
+                    type="text"
+                    value={teamName}
+                    onChange={(e) => setTeamName(e.target.value)}
+                    placeholder="Team name"
+                    style={{ flex: "1 1 200px" }}
+                  />
+                  <button
+                    type="button"
+                    className="button primary"
+                    disabled={teamNameSaving}
+                    onClick={async () => {
+                      const trimmed = teamName.trim();
+                      if (!trimmed) {
+                        setTeamNameError("Team name is required");
+                        return;
+                      }
+                      setTeamNameError("");
+                      setTeamNameSaving(true);
+                      try {
+                        await teamApi.updateTeamName(trimmed);
+                        setTeamName(trimmed);
+                      } catch (err) {
+                        setTeamNameError(err instanceof Error ? err.message : "Failed to save team name");
+                      } finally {
+                        setTeamNameSaving(false);
+                      }
+                    }}
+                  >
+                    {teamNameSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              ) : (
+                <input type="text" value={teamName} disabled />
+              )}
+              {teamNameError && (
+                <p style={{ color: "var(--error)", fontSize: "0.9rem", marginTop: "8px" }}>
+                  {teamNameError}
+                </p>
+              )}
+              {isOwner && (
+                <p style={{ fontSize: "0.85rem", color: "var(--text-secondary)", marginTop: "4px" }}>
+                  This name is visible to everyone on the team.
+                </p>
+              )}
             </div>
 
             {isOwner && (
@@ -491,7 +539,7 @@ export const SettingsPage: React.FC = () => {
                       {availablePages.map((page) => (
                         <label
                           key={page.key}
-                          style={{ display: "flex", alignItems: "center", gap: 4 }}
+                          className="settings-checkbox-row"
                         >
                           <input
                             type="checkbox"
@@ -524,11 +572,7 @@ export const SettingsPage: React.FC = () => {
                         {warehouses.map((warehouse) => (
                           <label
                             key={warehouse.id}
-                            style={{
-                              display: "flex",
-                              alignItems: "center",
-                              gap: 4
-                            }}
+                            className="settings-checkbox-row"
                           >
                             <input
                               type="checkbox"
@@ -685,7 +729,7 @@ export const SettingsPage: React.FC = () => {
                     </label>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                       {availablePages.map((page) => (
-                        <label key={page.key} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <label key={page.key} className="settings-checkbox-row">
                           <input
                             type="checkbox"
                             checked={editPages.includes(page.key)}
@@ -707,10 +751,7 @@ export const SettingsPage: React.FC = () => {
                       </label>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
                         {warehouses.map((warehouse) => (
-                          <label
-                            key={warehouse.id}
-                            style={{ display: "flex", alignItems: "center", gap: 4 }}
-                          >
+                          <label key={warehouse.id} className="settings-checkbox-row">
                             <input
                               type="checkbox"
                               checked={editWarehouseIds.includes(warehouse.id)}

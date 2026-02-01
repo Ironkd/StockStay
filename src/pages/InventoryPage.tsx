@@ -17,6 +17,7 @@ import { CategoryForm } from "../components/CategoryForm";
 import { InventoryTable } from "../components/InventoryTable";
 import { SummaryBar } from "../components/SummaryBar";
 import { FilterModal } from "../components/FilterModal";
+import { TransferModal } from "../components/TransferModal";
 import { useAuth } from "../contexts/AuthContext";
 
 export const InventoryPage: React.FC = () => {
@@ -28,6 +29,7 @@ export const InventoryPage: React.FC = () => {
     updateItem,
     removeItem,
     clearAll,
+    transfer,
     importFromJson,
     exportToJson
   } = useInventory();
@@ -54,6 +56,7 @@ export const InventoryPage: React.FC = () => {
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -396,6 +399,15 @@ export const InventoryPage: React.FC = () => {
         >
           Add Item
         </button>
+        {visibleWarehouses.length >= 2 && (
+          <button
+            type="button"
+            className="add-warehouse-button"
+            onClick={() => setShowTransferModal(true)}
+          >
+            Transfer
+          </button>
+        )}
         <button
           type="button"
           className="add-warehouse-button"
@@ -562,6 +574,15 @@ export const InventoryPage: React.FC = () => {
             />
           </div>
         </div>
+      )}
+
+      {showTransferModal && (
+        <TransferModal
+          items={items}
+          warehouses={visibleWarehouses}
+          onSubmit={transfer}
+          onClose={() => setShowTransferModal(false)}
+        />
       )}
 
       {showFilterModal && (
