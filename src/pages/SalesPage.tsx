@@ -240,7 +240,8 @@ export const SalesPage: React.FC = () => {
         await refreshInventory();
       } catch (err) {
         console.error("Error deleting sale:", err);
-        alert("Failed to delete sale. Please try again.");
+        const msg = err instanceof Error ? err.message : "Failed to delete sale. Please try again.";
+        alert(msg);
       }
     }
   };

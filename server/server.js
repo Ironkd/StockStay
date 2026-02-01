@@ -1860,34 +1860,46 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Sale not found" });
     }
 
-    // Restore inventory quantities when sale is deleted
-    for (const saleItem of sale.items || []) {
-      if (!saleItem.inventoryItemId) continue;
-      const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-      if (inventoryItem) {
-        await inventoryOps.update(saleItem.inventoryItemId, {
-          quantity: inventoryItem.quantity + (saleItem.quantity ?? 0),
-        });
+    // Unlink any invoice that references this sale first (avoids FK / constraint issues)
+    const linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
+    if (linkedInvoice) {
+      try {
+        await invoiceOps.update(linkedInvoice.id, { saleId: null });
+      } catch (unlinkErr) {
+        console.warn("Could not unlink invoice from sale:", unlinkErr.message);
       }
     }
 
-    // Delete the sale first so we don't fail on invoice delete (e.g. RLS or FK)
+    // Restore inventory quantities (best-effort per item so one failure doesn't block delete)
+    for (const saleItem of sale.items || []) {
+      if (!saleItem?.inventoryItemId) continue;
+      try {
+        const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
+        if (inventoryItem) {
+          await inventoryOps.update(saleItem.inventoryItemId, {
+            quantity: inventoryItem.quantity + (saleItem.quantity ?? 0),
+          });
+        }
+      } catch (restoreErr) {
+        console.warn("Could not restore inventory for item:", saleItem.inventoryItemId, restoreErr.message);
+      }
+    }
+
     await saleOps.delete(req.params.id);
 
-    // Then remove the linked invoice if any (best-effort; sale is already deleted)
-    try {
-      const linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
-      if (linkedInvoice) {
+    if (linkedInvoice) {
+      try {
         await invoiceOps.delete(linkedInvoice.id);
+      } catch (invoiceErr) {
+        console.warn("Could not delete linked invoice:", invoiceErr.message);
       }
-    } catch (invoiceErr) {
-      console.warn("Could not delete linked invoice for sale (sale was deleted):", invoiceErr.message);
     }
 
     res.json({ message: "Sale deleted successfully" });
   } catch (error) {
     console.error("Error deleting sale:", error);
-    res.status(500).json({ message: "Error deleting sale" });
+    const message = error?.message || error?.meta?.cause || "Error deleting sale";
+    res.status(500).json({ message });
   }
 });
 
