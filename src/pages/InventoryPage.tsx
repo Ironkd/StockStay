@@ -17,7 +17,6 @@ import { WarehouseForm } from "../components/WarehouseForm";
 import { CategoryForm } from "../components/CategoryForm";
 import { InventoryTable } from "../components/InventoryTable";
 import { SummaryBar } from "../components/SummaryBar";
-import { FilterModal } from "../components/FilterModal";
 import { TransferModal } from "../components/TransferModal";
 import { SubtractItemModal } from "../components/SubtractItemModal";
 import { AddQuantityModal } from "../components/AddQuantityModal";
@@ -66,7 +65,6 @@ export const InventoryPage: React.FC = () => {
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
   const [showWarehouseModal, setShowWarehouseModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
-  const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [subtractItem, setSubtractItem] = useState<InventoryItem | null>(null);
@@ -621,13 +619,6 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 className="secondary"
-                onClick={() => setShowFilterModal(true)}
-              >
-                🔍 Filter
-              </button>
-              <button
-                type="button"
-                className="secondary"
                 onClick={() => exportToJson()}
               >
                 Export all inventory
@@ -713,14 +704,7 @@ export const InventoryPage: React.FC = () => {
               </button>
             </div>
 
-            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setShowFilterModal(true)}
-              >
-                🔍 Filter
-              </button>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
               <button
                 type="button"
                 className="secondary"
@@ -728,6 +712,47 @@ export const InventoryPage: React.FC = () => {
               >
                 Export all inventory
               </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <label htmlFor="export-warehouse-select-single" style={{ fontSize: "13px", color: "#64748b" }}>
+                  Export by warehouse:
+                </label>
+                <select
+                  id="export-warehouse-select-single"
+                  className="export-warehouse-select"
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    e.target.value = "";
+                    if (!v) return;
+                    if (v === "all") {
+                      exportToJson();
+                      return;
+                    }
+                    const subset =
+                      v === "unassigned"
+                        ? items.filter((i) => !i.warehouseId)
+                        : items.filter((i) => i.warehouseId === v);
+                    const name =
+                      v === "unassigned"
+                        ? "Unassigned"
+                        : visibleWarehouses.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
+                    exportToJsonItems(subset, `inventory-${name}`);
+                  }}
+                >
+                  <option value="">Choose warehouse…</option>
+                  <option value="all">All inventory</option>
+                  {visibleWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} ({items.filter((i) => i.warehouseId === w.id).length})
+                    </option>
+                  ))}
+                  {items.some((i) => !i.warehouseId) && (
+                    <option value="unassigned">
+                      Unassigned ({items.filter((i) => !i.warehouseId).length})
+                    </option>
+                  )}
+                </select>
+              </div>
             </div>
 
             <SummaryBar items={items} filteredItems={filteredItems} />
@@ -809,24 +834,6 @@ export const InventoryPage: React.FC = () => {
           onSubmit={async (quantity, clientId) => {
             await handleBillToClientSubmit(billToClientItem, quantity, clientId);
           }}
-        />
-      )}
-
-      {showFilterModal && (
-        <FilterModal
-          search={search}
-          onSearchChange={setSearch}
-          categories={allCategories}
-          categoryFilter={categoryFilter}
-          onCategoryFilterChange={setCategoryFilter}
-          locations={locations}
-          locationFilter={locationFilter}
-          onLocationFilterChange={setLocationFilter}
-          statusFilter={statusFilter}
-          onStatusFilterChange={handleStatusFilterChange}
-          onImport={importFromJson}
-          onExport={exportToJson}
-          onClose={() => setShowFilterModal(false)}
         />
       )}
 
