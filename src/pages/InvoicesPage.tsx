@@ -217,6 +217,7 @@ export const InvoicesPage: React.FC = () => {
 
     const invoiceData = {
       ...formData,
+      tax: Math.round(formData.tax * 100) / 100,
       clientName: selectedClient.name,
       subtotal: calculations.subtotal,
       total: calculations.total
@@ -252,13 +253,17 @@ export const InvoicesPage: React.FC = () => {
 
   const handleEdit = (invoice: Invoice) => {
     setEditingInvoice(invoice);
+    const taxRate =
+      invoice.subtotal && invoice.subtotal !== 0
+        ? (invoice.tax / invoice.subtotal) * 100
+        : Number(invoice.tax);
     setFormData({
       invoiceNumber: invoice.invoiceNumber,
       clientId: invoice.clientId,
       date: invoice.date,
       dueDate: invoice.dueDate,
       items: invoice.items,
-      tax: (invoice.tax / invoice.subtotal) * 100 || 0,
+      tax: Math.round((taxRate || 0) * 100) / 100,
       status: invoice.status,
       notes: invoice.notes || ""
     });

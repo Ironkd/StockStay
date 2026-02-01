@@ -201,6 +201,7 @@ export const SalesPage: React.FC = () => {
 
     const saleData = {
       ...formData,
+      tax: Math.round(formData.tax * 100) / 100,
       clientName: selectedClient.name,
       subtotal: calculations.subtotal,
       total: calculations.total
@@ -232,12 +233,16 @@ export const SalesPage: React.FC = () => {
 
   const handleEdit = (sale: Sale) => {
     setEditingSale(sale);
+    const taxRate =
+      sale.subtotal && sale.subtotal !== 0
+        ? (sale.tax / sale.subtotal) * 100
+        : Number(sale.tax);
     setFormData({
       saleNumber: sale.saleNumber,
       clientId: sale.clientId,
       date: sale.date,
       items: sale.items,
-      tax: (sale.tax / sale.subtotal) * 100 || 0,
+      tax: Math.round(taxRate * 100) / 100 || 0,
       notes: sale.notes || ""
     });
     setShowForm(true);
