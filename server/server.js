@@ -55,10 +55,14 @@ if (isProduction && !process.env.JWT_SECRET) {
 }
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
 // CORS: single origin or comma-separated list (e.g. https://stockstay.com,https://stockstay.ca)
+// Capacitor mobile apps use capacitor://localhost (iOS) and http://localhost (Android) – always allow these when CORS is configured
 const CORS_ORIGIN = process.env.CORS_ORIGIN;
-const corsOrigins = CORS_ORIGIN
+const corsOriginsRaw = CORS_ORIGIN
   ? CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
   : [];
+const capacitorOrigins = ["capacitor://localhost", "http://localhost", "https://localhost"];
+const corsOrigins =
+  corsOriginsRaw.length > 0 ? [...new Set([...corsOriginsRaw, ...capacitorOrigins])] : [];
 
 // Handle OPTIONS first (before any other middleware) so preflight never gets 502
 app.options("*", (req, res) => {
