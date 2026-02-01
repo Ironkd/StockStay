@@ -5,6 +5,7 @@ interface AuthContextType {
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  updateUser: (updates: Partial<AuthUser>) => void;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -59,12 +60,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
+  const updateUser = (updates: Partial<AuthUser>) => {
+    setUser((prev) => (prev ? { ...prev, ...updates } : null));
+  };
+
+  // Refetch user when tab becomes visible so everyone sees latest team name (e.g. after owner edits it)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      const token = sessionStorage.getItem("auth_token");
+      if (!token) return;
+      authApi.getCurrentUser().then(setUser).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
+  }, []);
+
   return (
     <AuthContext.Provider
       value={{
         user,
         login,
         logout,
+        updateUser,
         isAuthenticated: !!user,
         loading
       }}

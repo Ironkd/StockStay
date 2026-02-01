@@ -45,7 +45,7 @@ function toMaxInventoryItems(s: string): number | null {
 }
 
 export const SettingsPage: React.FC = () => {
-  const { user } = useAuth();
+  const { user, updateUser } = useAuth();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -112,6 +112,7 @@ export const SettingsPage: React.FC = () => {
         prev ? { ...prev, team: { ...prev.team, name: team.name } } : null
       );
       setTeamNameEdit(team.name);
+      updateUser({ teamName: team.name });
     } catch (err) {
       console.error(err);
     } finally {
