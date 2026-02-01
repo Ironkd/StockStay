@@ -156,6 +156,12 @@ export const LandingPage: React.FC = () => {
                   Take a photo of a receipt or scan product barcodes and we’ll add items to your inventory for you. Less typing, faster restocking.
                 </p>
               </div>
+              <div className="coming-soon-item">
+                <h3 className="coming-soon-title">Invoices linked to QuickBooks</h3>
+                <p className="coming-soon-text">
+                  Send your Stock Stay invoices straight to QuickBooks. Keep your books in sync without re-entering data or switching apps.
+                </p>
+              </div>
             </div>
           </div>
         </div>
