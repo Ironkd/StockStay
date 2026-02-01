@@ -128,6 +128,14 @@ export type SaleItem = {
   total: number;
 };
 
+// Invoice email branding (stored per team)
+export type InvoiceStyle = {
+  companyName?: string;
+  primaryColor?: string;
+  accentColor?: string;
+  footerText?: string;
+};
+
 // Team (GET /api/team response)
 export type TeamInfo = {
   id: string;
@@ -144,6 +152,9 @@ export type TeamInfo = {
   trialEndsAt: string | null;
   trialStatus?: string;
   billingPortalAvailable: boolean;
+  /** Invoice email branding */
+  invoiceLogoUrl?: string | null;
+  invoiceStyle?: InvoiceStyle | null;
 };
 
 export type TeamMemberInfo = {

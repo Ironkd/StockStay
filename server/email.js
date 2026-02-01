@@ -96,16 +96,40 @@ export async function sendVerificationEmail(to, token, name = "there") {
 }
 
 /**
- * Build HTML body for an invoice email (same layout as preview).
+ * Parse team invoice style (JSON string or object).
+ * @param {object|null} team - Team with optional invoiceStyle (string) and invoiceLogoUrl
+ * @returns {{ companyName?: string, primaryColor?: string, accentColor?: string, footerText?: string, logoUrl?: string }}
+ */
+function getInvoiceBranding(team) {
+  if (!team) return {};
+  let style = {};
+  if (team.invoiceStyle) {
+    try {
+      style = typeof team.invoiceStyle === "string" ? JSON.parse(team.invoiceStyle) : team.invoiceStyle;
+    } catch (_) {}
+  }
+  return {
+    companyName: style.companyName || team.name || "Stock Stay",
+    primaryColor: style.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(style.primaryColor) ? style.primaryColor : "#2563eb",
+    accentColor: style.accentColor && /^#[0-9A-Fa-f]{6}$/.test(style.accentColor) ? style.accentColor : "#1e40af",
+    footerText: style.footerText != null ? String(style.footerText) : "— Stock Stay",
+    logoUrl: team.invoiceLogoUrl && String(team.invoiceLogoUrl).trim() ? String(team.invoiceLogoUrl).trim() : null,
+  };
+}
+
+/**
+ * Build HTML body for an invoice email (professional layout with optional logo and branding).
  * @param {object} invoice - { invoiceNumber, clientName, date, dueDate, items[], subtotal, tax, total, notes }
+ * @param {object|null} team - Team with optional invoiceLogoUrl and invoiceStyle (JSON)
  * @returns {string} HTML string
  */
-function buildInvoiceEmailHtml(invoice) {
+function buildInvoiceEmailHtml(invoice, team = null) {
+  const branding = getInvoiceBranding(team);
   const items = invoice.items || [];
   const itemsRows = items
     .map(
       (item) =>
-        `<tr><td>${escapeHtml(item.name)}</td><td>${Number(item.quantity)}</td><td>$${Number(item.unitPrice).toFixed(2)}</td><td>$${Number(item.total).toFixed(2)}</td></tr>`
+        `<tr><td style="padding:12px 10px;border-bottom:1px solid #e2e8f0;">${escapeHtml(item.name)}</td><td style="padding:12px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">${Number(item.quantity)}</td><td style="padding:12px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">$${Number(item.unitPrice).toFixed(2)}</td><td style="padding:12px 10px;border-bottom:1px solid #e2e8f0;text-align:right;">$${Number(item.total).toFixed(2)}</td></tr>`
     )
     .join("");
   const subtotal = Number(invoice.subtotal) ?? 0;
@@ -113,25 +137,39 @@ function buildInvoiceEmailHtml(invoice) {
   const total = Number(invoice.total) ?? 0;
   const dateStr = invoice.date ? new Date(invoice.date).toLocaleDateString() : "";
   const dueStr = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "";
-  const notes = invoice.notes ? `<p style="margin-top:16px;color:#64748b;">${escapeHtml(invoice.notes)}</p>` : "";
+  const notes = invoice.notes ? `<p style="margin-top:20px;color:#64748b;font-size:14px;">${escapeHtml(invoice.notes)}</p>` : "";
+  const logoBlock = branding.logoUrl
+    ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.companyName)}" style="max-height:48px;max-width:200px;display:block;margin-bottom:20px;" />`
+    : "";
   return `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title></head>
-<body style="font-family:system-ui,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#1e293b;">
-  <h1 style="font-size:1.5rem;margin-bottom:8px;">Invoice ${escapeHtml(invoice.invoiceNumber)}</h1>
-  <p style="margin:0 0 16px;color:#64748b;">${escapeHtml(invoice.clientName)}</p>
-  <p style="margin:0 0 4px;"><strong>Date:</strong> ${dateStr}</p>
-  <p style="margin:0 0 24px;"><strong>Due date:</strong> ${dueStr}</p>
-  <table style="width:100%;border-collapse:collapse;margin-bottom:16px;">
-    <thead><tr style="border-bottom:2px solid #e2e8f0;"><th style="text-align:left;padding:8px;">Item</th><th style="text-align:right;padding:8px;">Qty</th><th style="text-align:right;padding:8px;">Price</th><th style="text-align:right;padding:8px;">Total</th></tr></thead>
-    <tbody>${itemsRows}</tbody>
-  </table>
-  <p style="margin:0 0 4px;text-align:right;"><strong>Subtotal:</strong> $${subtotal.toFixed(2)}</p>
-  <p style="margin:0 0 4px;text-align:right;"><strong>Tax:</strong> $${tax.toFixed(2)}</p>
-  <p style="margin:0 0 0;text-align:right;font-size:1.125rem;"><strong>Total:</strong> $${total.toFixed(2)}</p>
-  ${notes}
-  <p style="margin-top:24px;color:#64748b;font-size:0.875rem;">— Stock Stay</p>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title></head>
+<body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;background:#f1f5f9;padding:32px 16px;">
+  <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.07);overflow:hidden;">
+    <div style="padding:32px 28px;border-bottom:1px solid #e2e8f0;">
+      ${logoBlock}
+      <h1 style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#64748b;">${escapeHtml(branding.companyName)}</h1>
+      <h2 style="margin:16px 0 8px;font-size:1.75rem;font-weight:700;color:${branding.primaryColor};">Invoice ${escapeHtml(invoice.invoiceNumber)}</h2>
+      <p style="margin:0 0 8px;font-size:15px;color:#334155;">${escapeHtml(invoice.clientName)}</p>
+      <p style="margin:0;font-size:13px;color:#64748b;">Date: ${dateStr} &nbsp;·&nbsp; Due: ${dueStr}</p>
+    </div>
+    <div style="padding:28px;">
+      <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
+        <thead><tr style="background:${branding.primaryColor};color:#fff;"><th style="text-align:left;padding:12px 10px;font-size:12px;font-weight:600;letter-spacing:0.02em;">Item</th><th style="text-align:right;padding:12px 10px;font-size:12px;font-weight:600;">Qty</th><th style="text-align:right;padding:12px 10px;font-size:12px;font-weight:600;">Price</th><th style="text-align:right;padding:12px 10px;font-size:12px;font-weight:600;">Total</th></tr></thead>
+        <tbody>${itemsRows}</tbody>
+      </table>
+      <div style="text-align:right;padding-top:16px;border-top:2px solid #e2e8f0;">
+        <p style="margin:0 0 6px;font-size:14px;color:#475569;"><strong>Subtotal:</strong> $${subtotal.toFixed(2)}</p>
+        <p style="margin:0 0 6px;font-size:14px;color:#475569;"><strong>Tax:</strong> $${tax.toFixed(2)}</p>
+        <p style="margin:16px 0 0;font-size:1.25rem;font-weight:700;color:${branding.accentColor};">Total: $${total.toFixed(2)}</p>
+      </div>
+      ${notes}
+    </div>
+    <div style="padding:20px 28px;background:#f8fafc;border-top:1px solid #e2e8f0;">
+      <p style="margin:0;font-size:13px;color:#64748b;">${escapeHtml(branding.footerText)}</p>
+    </div>
+  </div>
 </body>
 </html>`;
 }
@@ -152,12 +190,14 @@ function escapeHtml(str) {
  * @param {string} to - Client email
  * @param {string} clientName - Client name
  * @param {object} invoice - Invoice object (invoiceNumber, clientName, date, dueDate, items, subtotal, tax, total, notes)
+ * @param {object|null} team - Team with optional invoiceLogoUrl and invoiceStyle (for branding)
  * @returns {Promise<boolean>} - true if sent, false on error
  */
-export async function sendInvoiceEmail(to, clientName, invoice) {
+export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
   if (!to || !String(to).trim()) return false;
-  const subject = `Invoice ${invoice.invoiceNumber} from Stock Stay`;
-  const html = buildInvoiceEmailHtml(invoice);
+  const branding = getInvoiceBranding(team);
+  const subject = `Invoice ${invoice.invoiceNumber} from ${branding.companyName}`;
+  const html = buildInvoiceEmailHtml(invoice, team);
   const text = `Invoice ${invoice.invoiceNumber}\n\n${clientName}\nDate: ${invoice.date}\nDue: ${invoice.dueDate}\n\nItems: ${(invoice.items || []).map((i) => `${i.name} x${i.quantity} = $${i.total}`).join("\n")}\n\nSubtotal: $${(invoice.subtotal ?? 0).toFixed(2)}\nTax: $${(invoice.tax ?? 0).toFixed(2)}\nTotal: $${(invoice.total ?? 0).toFixed(2)}\n\n— Stock Stay`;
 
   if (RESEND_API_KEY) {

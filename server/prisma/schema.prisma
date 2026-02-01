@@ -73,6 +73,10 @@ model Team {
   stripeSubscriptionStatus String? // active, canceled, past_due, etc.
   billingInterval    String?  // "month" | "year" from Stripe subscription
 
+  // Invoice email branding (emailed invoices use this style + logo)
+  invoiceLogoUrl     String?  // URL to team logo image
+  invoiceStyle       String?  // JSON: { companyName?, primaryColor?, accentColor?, footerText? }
+
   members User[]
   warehouses   Warehouse[]
   clients     Client[]

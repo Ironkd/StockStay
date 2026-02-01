@@ -71,6 +71,22 @@ export const SettingsPage: React.FC = () => {
   const [billingLoading, setBillingLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
+  const [showInvoiceStyleModal, setShowInvoiceStyleModal] = useState(false);
+  const [invoiceStyleSaving, setInvoiceStyleSaving] = useState(false);
+  const [invoiceStyleForm, setInvoiceStyleForm] = useState<{
+    companyName: string;
+    primaryColor: string;
+    accentColor: string;
+    footerText: string;
+    logoUrl: string;
+  }>({
+    companyName: "",
+    primaryColor: "#2563eb",
+    accentColor: "#1e40af",
+    footerText: "— Stock Stay",
+    logoUrl: "",
+  });
+
   const [profileFirstName, setProfileFirstName] = useState("");
   const [profileLastName, setProfileLastName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
@@ -136,6 +152,20 @@ export const SettingsPage: React.FC = () => {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [isOwner]);
+
+  // Sync invoice style form when team data or modal opens
+  useEffect(() => {
+    if (!teamData?.team || !showInvoiceStyleModal) return;
+    const t = teamData.team;
+    const style = t.invoiceStyle ?? {};
+    setInvoiceStyleForm({
+      companyName: (style.companyName ?? t.name ?? "").trim(),
+      primaryColor: (style.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(style.primaryColor)) ? style.primaryColor : "#2563eb",
+      accentColor: (style.accentColor && /^#[0-9A-Fa-f]{6}$/.test(style.accentColor)) ? style.accentColor : "#1e40af",
+      footerText: (style.footerText ?? "— Stock Stay").trim(),
+      logoUrl: (t.invoiceLogoUrl ?? "").trim(),
+    });
+  }, [teamData?.team?.id, teamData?.team?.name, teamData?.team?.invoiceLogoUrl, teamData?.team?.invoiceStyle, showInvoiceStyleModal]);
 
   const handleSaveTeamName = async () => {
     if (!teamData || !isOwner) return;
@@ -234,6 +264,39 @@ export const SettingsPage: React.FC = () => {
       setEditingMember(null);
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleSaveInvoiceStyle = async () => {
+    if (!teamData?.team || !isOwner) return;
+    setInvoiceStyleSaving(true);
+    try {
+      const { team } = await teamApi.updateInvoiceStyle({
+        invoiceLogoUrl: invoiceStyleForm.logoUrl.trim() || null,
+        invoiceStyle: {
+          companyName: invoiceStyleForm.companyName.trim() || undefined,
+          primaryColor: invoiceStyleForm.primaryColor.trim() || undefined,
+          accentColor: invoiceStyleForm.accentColor.trim() || undefined,
+          footerText: invoiceStyleForm.footerText.trim() || undefined,
+        },
+      });
+      setTeamData((prev) =>
+        prev
+          ? {
+              ...prev,
+              team: {
+                ...prev.team,
+                invoiceLogoUrl: team.invoiceLogoUrl ?? undefined,
+                invoiceStyle: team.invoiceStyle ?? undefined,
+              },
+            }
+          : null
+      );
+      setShowInvoiceStyleModal(false);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setInvoiceStyleSaving(false);
     }
   };
 
@@ -668,6 +731,20 @@ export const SettingsPage: React.FC = () => {
             ) : (
               <p style={{ color: "#64748b", margin: 0 }}>{team.name}</p>
             )}
+            {isOwner && (
+              <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
+                <button
+                  type="button"
+                  className="nav-button secondary"
+                  onClick={() => setShowInvoiceStyleModal(true)}
+                >
+                  Edit invoice style
+                </button>
+                <p style={{ fontSize: "13px", color: "#64748b", margin: "8px 0 0 0" }}>
+                  Customize how emailed invoices look: company name, colors, logo, footer.
+                </p>
+              </div>
+            )}
           </section>
 
           <section className="panel" style={{ marginBottom: "24px" }}>
@@ -920,6 +997,105 @@ export const SettingsPage: React.FC = () => {
                 )}
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {showInvoiceStyleModal && (
+        <div className="modal-overlay" onClick={() => setShowInvoiceStyleModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3>Edit invoice style</h3>
+              <button
+                type="button"
+                className="icon-button close-button"
+                onClick={() => setShowInvoiceStyleModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
+              These settings apply to invoices sent by email. Add a logo URL (must be a public image link) and customize colors and text.
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Company / brand name</span>
+                <input
+                  type="text"
+                  value={invoiceStyleForm.companyName}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyName: e.target.value }))}
+                  placeholder={team?.name ?? "Stock Stay"}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Logo URL</span>
+                <input
+                  type="url"
+                  value={invoiceStyleForm.logoUrl}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, logoUrl: e.target.value }))}
+                  placeholder="https://example.com/logo.png"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
+                <label style={{ flex: "1 1 120px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Primary color</span>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="color"
+                      value={invoiceStyleForm.primaryColor}
+                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, primaryColor: e.target.value }))}
+                      style={{ width: "40px", height: "36px", padding: 0, border: "1px solid rgba(148, 163, 184, 0.7)", borderRadius: "8px", cursor: "pointer" }}
+                    />
+                    <input
+                      type="text"
+                      value={invoiceStyleForm.primaryColor}
+                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, primaryColor: e.target.value }))}
+                      placeholder="#2563eb"
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontFamily: "monospace", fontSize: "13px" }}
+                    />
+                  </div>
+                </label>
+                <label style={{ flex: "1 1 120px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Accent color</span>
+                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <input
+                      type="color"
+                      value={invoiceStyleForm.accentColor}
+                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, accentColor: e.target.value }))}
+                      style={{ width: "40px", height: "36px", padding: 0, border: "1px solid rgba(148, 163, 184, 0.7)", borderRadius: "8px", cursor: "pointer" }}
+                    />
+                    <input
+                      type="text"
+                      value={invoiceStyleForm.accentColor}
+                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, accentColor: e.target.value }))}
+                      placeholder="#1e40af"
+                      style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontFamily: "monospace", fontSize: "13px" }}
+                    />
+                  </div>
+                </label>
+              </div>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Footer text</span>
+                <input
+                  type="text"
+                  value={invoiceStyleForm.footerText}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, footerText: e.target.value }))}
+                  placeholder="— Stock Stay"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+            </div>
+            <div className="form-actions" style={{ marginTop: "20px" }}>
+              <button type="button" className="secondary" onClick={() => setShowInvoiceStyleModal(false)}>
+                Cancel
+              </button>
+              <button type="button" className="primary" onClick={handleSaveInvoiceStyle} disabled={invoiceStyleSaving}>
+                {invoiceStyleSaving ? "Saving..." : "Update"}
+              </button>
+            </div>
           </div>
         </div>
       )}

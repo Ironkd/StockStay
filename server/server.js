@@ -1630,7 +1630,8 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
         message: `No email address for ${invoice.clientName}. Add an email to the client before sending.`,
       });
     }
-    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice);
+    const team = currentUser.teamId ? await teamOps.findById(currentUser.teamId) : null;
+    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice, team);
     if (!sent) {
       return res.status(500).json({
         message: "Failed to send email. Check server email configuration (Resend or SMTP).",
@@ -2172,6 +2173,13 @@ app.get("/api/team", authenticateToken, async (req, res) => {
     const planLimits = getPlanLimits(effectivePlan);
     const effectiveMaxWarehouses = planLimits.maxWarehouses;
 
+    // Parse invoice style JSON for frontend
+    let invoiceStyle = null;
+    if (team.invoiceStyle) {
+      try {
+        invoiceStyle = typeof team.invoiceStyle === "string" ? JSON.parse(team.invoiceStyle) : team.invoiceStyle;
+      } catch (_) {}
+    }
     res.json({
       team: {
         id: team.id,
@@ -2189,6 +2197,9 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         trialStatus,
         // Billing: true if team has Stripe customer (can open portal to manage subscription)
         billingPortalAvailable: Boolean(team.stripeCustomerId),
+        // Invoice email branding
+        invoiceLogoUrl: team.invoiceLogoUrl ?? null,
+        invoiceStyle,
       },
       members: membersFormatted,
       invitations: invitationsFormatted,
@@ -2199,7 +2210,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
   }
 });
 
-// Update team name (owner only); all members see the new name via GET /api/team
+// Update team (name and/or invoice style; owner only)
 app.patch("/api/team", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
@@ -2207,18 +2218,49 @@ app.patch("/api/team", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
     if (currentUser.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can change the team name" });
+      return res.status(403).json({ message: "Only team owners can update team settings" });
     }
-    const name = typeof req.body.name === "string" ? req.body.name.trim() : "";
-    if (!name) {
-      return res.status(400).json({ message: "Team name is required" });
-    }
-    await teamOps.update(currentUser.teamId, { name });
     const team = await teamOps.findById(currentUser.teamId);
-    res.json({ team: { id: team.id, name: team.name } });
+    const updates = {};
+    if (typeof req.body.name === "string" && req.body.name.trim()) {
+      updates.name = req.body.name.trim();
+    }
+    if (req.body.invoiceLogoUrl !== undefined) {
+      updates.invoiceLogoUrl =
+        req.body.invoiceLogoUrl == null || req.body.invoiceLogoUrl === ""
+          ? null
+          : String(req.body.invoiceLogoUrl).trim() || null;
+    }
+    if (req.body.invoiceStyle !== undefined) {
+      updates.invoiceStyle =
+        req.body.invoiceStyle == null
+          ? null
+          : typeof req.body.invoiceStyle === "string"
+            ? req.body.invoiceStyle
+            : JSON.stringify(req.body.invoiceStyle);
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No valid updates provided" });
+    }
+    await teamOps.update(currentUser.teamId, updates);
+    const updated = await teamOps.findById(currentUser.teamId);
+    let invoiceStyle = null;
+    if (updated.invoiceStyle) {
+      try {
+        invoiceStyle = typeof updated.invoiceStyle === "string" ? JSON.parse(updated.invoiceStyle) : updated.invoiceStyle;
+      } catch (_) {}
+    }
+    res.json({
+      team: {
+        id: updated.id,
+        name: updated.name,
+        invoiceLogoUrl: updated.invoiceLogoUrl ?? null,
+        invoiceStyle,
+      },
+    });
   } catch (error) {
     console.error("Error updating team:", error);
-    res.status(500).json({ message: "Error updating team name" });
+    res.status(500).json({ message: "Error updating team" });
   }
 });
 

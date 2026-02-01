@@ -1,5 +1,5 @@
 import { apiRequest } from "../config/api";
-import type { TeamData, TeamInvitationInfo, TeamMemberInfo } from "../types";
+import type { TeamData, TeamInvitationInfo, TeamMemberInfo, InvoiceStyle } from "../types";
 
 export const teamApi = {
   getTeam: async (): Promise<TeamData> => {
@@ -20,6 +20,20 @@ export const teamApi = {
     return apiRequest<{ team: { id: string; name: string } }>("/team", {
       method: "PATCH",
       body: JSON.stringify({ name }),
+    });
+  },
+
+  /** Update invoice email style and logo (owner only). */
+  updateInvoiceStyle: async (params: {
+    invoiceLogoUrl?: string | null;
+    invoiceStyle?: InvoiceStyle | null;
+  }): Promise<{ team: { id: string; name: string; invoiceLogoUrl: string | null; invoiceStyle: InvoiceStyle | null } }> => {
+    return apiRequest("/team", {
+      method: "PATCH",
+      body: JSON.stringify({
+        invoiceLogoUrl: params.invoiceLogoUrl ?? undefined,
+        invoiceStyle: params.invoiceStyle ?? undefined,
+      }),
     });
   },
 
