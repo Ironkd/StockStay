@@ -373,10 +373,11 @@ export const inventoryOps = {
   },
 };
 
-// Client operations
+// Client operations (team-scoped)
 export const clientOps = {
-  async findAll() {
-    return await prisma.client.findMany({ orderBy: { createdAt: 'desc' } });
+  async findAll(teamId) {
+    const where = teamId != null ? { teamId } : {};
+    return await prisma.client.findMany({ where, orderBy: { createdAt: 'desc' } });
   },
 
   async findById(id) {
@@ -396,10 +397,11 @@ export const clientOps = {
   },
 };
 
-// Invoice operations
+// Invoice operations (team-scoped)
 export const invoiceOps = {
-  async findAll() {
-    const invoices = await prisma.invoice.findMany({ orderBy: { createdAt: 'desc' } });
+  async findAll(teamId) {
+    const where = teamId != null ? { teamId } : {};
+    const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: 'desc' } });
     return invoices.map((inv) => ({
       ...inv,
       items: parseJson(inv.items, []),
@@ -457,10 +459,11 @@ export const invoiceOps = {
   },
 };
 
-// Sale operations
+// Sale operations (team-scoped)
 export const saleOps = {
-  async findAll() {
-    const sales = await prisma.sale.findMany({ orderBy: { createdAt: 'desc' } });
+  async findAll(teamId) {
+    const where = teamId != null ? { teamId } : {};
+    const sales = await prisma.sale.findMany({ where, orderBy: { createdAt: 'desc' } });
     return sales.map((sale) => ({
       ...sale,
       items: parseJson(sale.items, []),

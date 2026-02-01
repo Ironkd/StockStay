@@ -1205,8 +1205,11 @@ app.get("/api/clients", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
     }
+    if (!currentUser?.teamId) {
+      return res.json([]);
+    }
 
-    const clients = await clientOps.findAll();
+    const clients = await clientOps.findAll(currentUser.teamId);
     res.json(clients);
   } catch (error) {
     console.error("Error fetching clients:", error);
@@ -1226,6 +1229,9 @@ app.get("/api/clients/:id", authenticateToken, async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
+    if (client.teamId !== currentUser?.teamId) {
+      return res.status(404).json({ message: "Client not found" });
+    }
 
     res.json(client);
   } catch (error) {
@@ -1241,7 +1247,10 @@ app.post("/api/clients", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
     }
-    const newClient = await clientOps.create(req.body);
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to create clients." });
+    }
+    const newClient = await clientOps.create({ ...req.body, teamId: currentUser.teamId });
     res.status(201).json(newClient);
   } catch (error) {
     console.error("Error creating client:", error);
@@ -1259,6 +1268,9 @@ app.put("/api/clients/:id", authenticateToken, async (req, res) => {
     const client = await clientOps.findById(req.params.id);
 
     if (!client) {
+      return res.status(404).json({ message: "Client not found" });
+    }
+    if (client.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Client not found" });
     }
 
@@ -1282,6 +1294,9 @@ app.delete("/api/clients/:id", authenticateToken, async (req, res) => {
     if (!client) {
       return res.status(404).json({ message: "Client not found" });
     }
+    if (client.teamId !== currentUser?.teamId) {
+      return res.status(404).json({ message: "Client not found" });
+    }
 
     await clientOps.delete(req.params.id);
     res.json({ message: "Client deleted successfully" });
@@ -1300,8 +1315,11 @@ app.get("/api/invoices", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
     }
+    if (!currentUser?.teamId) {
+      return res.json([]);
+    }
 
-    const invoices = await invoiceOps.findAll();
+    const invoices = await invoiceOps.findAll(currentUser.teamId);
     res.json(invoices);
   } catch (error) {
     console.error("Error fetching invoices:", error);
@@ -1319,6 +1337,9 @@ app.get("/api/invoices/:id", authenticateToken, async (req, res) => {
     const invoice = await invoiceOps.findById(req.params.id);
 
     if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    if (invoice.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
@@ -1368,7 +1389,10 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
       }
     }
 
-    const newInvoice = await invoiceOps.create(invoiceData);
+    const newInvoice = await invoiceOps.create({
+      ...invoiceData,
+      teamId: currentUser?.teamId ?? undefined,
+    });
     res.status(201).json(newInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
@@ -1386,6 +1410,9 @@ app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
     const existingInvoice = await invoiceOps.findById(req.params.id);
 
     if (!existingInvoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    if (existingInvoice.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
@@ -1474,6 +1501,9 @@ app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
     const invoice = await invoiceOps.findById(req.params.id);
 
     if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    if (invoice.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
@@ -1648,7 +1678,7 @@ app.get("/api/sales/:id", authenticateToken, async (req, res) => {
     }
     const sale = await saleOps.findById(req.params.id);
 
-    if (!sale || !sale.teamId || sale.teamId !== currentUser.teamId) {
+    if (!sale || sale.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
@@ -1702,7 +1732,7 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
     // Create one active (draft) invoice for this sale (best-effort; sale still succeeds if this fails)
     try {
       const invoicePayload = buildInvoiceFromSale({ ...saleData, ...newSale }, newSale.id);
-      await invoiceOps.create(invoicePayload);
+      await invoiceOps.create({ ...invoicePayload, teamId: currentUser.teamId });
     } catch (invoiceError) {
       // If DB doesn't have saleId column yet, create invoice without it so the invoice still exists
       console.error("Error creating invoice from sale (sale was saved):", invoiceError);
@@ -1733,7 +1763,7 @@ app.put("/api/sales/:id", authenticateToken, async (req, res) => {
     }
     const oldSale = await saleOps.findById(req.params.id);
 
-    if (!oldSale || !oldSale.teamId || oldSale.teamId !== currentUser.teamId) {
+    if (!oldSale || oldSale.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
@@ -1823,7 +1853,7 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
     }
     const sale = await saleOps.findById(req.params.id);
 
-    if (!sale || !sale.teamId || sale.teamId !== currentUser.teamId) {
+    if (!sale || sale.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 

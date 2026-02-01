@@ -69,6 +69,9 @@ model Team {
 
   members User[]
   warehouses   Warehouse[]
+  clients     Client[]
+  invoices    Invoice[]
+  sales       Sale[]
 
   @@index([ownerId])
   @@index([isOnTrial])
@@ -116,6 +119,7 @@ model Inventory {
 
 model Client {
   id          String   @id @default(uuid())
+  teamId      String?
   name        String
   email       String   @default("")
   phone       String   @default("")
@@ -130,11 +134,14 @@ model Client {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   @@index([email])
+  @@index([teamId])
 }
 
 model Invoice {
   id            String   @id @default(uuid())
+  teamId        String?
   invoiceNumber String
   clientId      String?
   clientName    String   @default("")
@@ -150,13 +157,16 @@ model Invoice {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   @@index([clientId])
   @@index([invoiceNumber])
   @@index([saleId])
+  @@index([teamId])
 }
 
 model Sale {
   id        String   @id @default(uuid())
+  teamId    String?
   saleNumber String  @default("")
   clientId  String?
   clientName String @default("")
@@ -169,8 +179,10 @@ model Sale {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
   @@index([clientId])
   @@index([date])
+  @@index([teamId])
 }
 
 model Invitation {
