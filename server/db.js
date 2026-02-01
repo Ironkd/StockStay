@@ -296,6 +296,23 @@ export const inventoryOps = {
     };
   },
 
+  /** Find an existing product in a warehouse by name and sku (same warehouse = same product). */
+  async findInWarehouseByNameAndSku(warehouseId, name, sku) {
+    if (!warehouseId) return null;
+    const item = await prisma.inventory.findFirst({
+      where: {
+        warehouseId,
+        name: name || "",
+        sku: sku != null && sku !== undefined ? String(sku) : "",
+      },
+    });
+    if (!item) return null;
+    return {
+      ...item,
+      tags: parseJson(item.tags, []),
+    };
+  },
+
   async create(data) {
     const item = await prisma.inventory.create({
       data: {

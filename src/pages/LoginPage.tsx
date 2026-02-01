@@ -59,6 +59,7 @@ export const LoginPage: React.FC = () => {
   const [phoneCountry, setPhoneCountry] = useState<"CA" | "US">("CA");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [startProTrial, setStartProTrial] = useState(false);
+  const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -106,6 +107,11 @@ export const LoginPage: React.FC = () => {
       const passwordError = getPasswordError(password);
       if (passwordError) {
         setError(passwordError);
+        setLoading(false);
+        return;
+      }
+      if (!agreeToTerms) {
+        setError("You must agree to the Terms of Service and Privacy Policy to sign up.");
         setLoading(false);
         return;
       }
@@ -477,6 +483,27 @@ export const LoginPage: React.FC = () => {
                   <small style={{ color: '#64748b', fontSize: '12px' }}>
                     Get 10 warehouses, team members & advanced features. No credit card required.
                   </small>
+                </span>
+              </label>
+            )}
+
+            {isSignUpMode && (
+              <label className="trial-checkbox">
+                <input
+                  type="checkbox"
+                  checked={agreeToTerms}
+                  onChange={(e) => setAgreeToTerms(e.target.checked)}
+                  required
+                />
+                <span>
+                  I agree to the{" "}
+                  <Link to="/terms" target="_blank" rel="noopener noreferrer">
+                    Terms of Service
+                  </Link>{" "}
+                  and{" "}
+                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">
+                    Privacy Policy
+                  </Link>
                 </span>
               </label>
             )}

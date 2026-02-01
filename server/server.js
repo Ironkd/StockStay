@@ -875,11 +875,25 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
       }
     }
 
-    const newItem = await inventoryOps.create({
-      ...req.body,
-    });
+    const name = req.body.name;
+    const sku = req.body.sku != null ? req.body.sku : "";
+    const existing = warehouseId
+      ? await inventoryOps.findInWarehouseByNameAndSku(warehouseId, name, sku)
+      : null;
 
-    res.status(201).json(newItem);
+    let item;
+    if (existing) {
+      const addQty = Number(req.body.quantity) || 0;
+      item = await inventoryOps.update(existing.id, {
+        quantity: existing.quantity + addQty,
+      });
+    } else {
+      item = await inventoryOps.create({
+        ...req.body,
+      });
+    }
+
+    res.status(201).json(item);
   } catch (error) {
     console.error("Error creating item:", error);
     res.status(500).json({ message: "Error creating item" });
@@ -945,7 +959,21 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
     }
 
     const items = await Promise.all(
-      req.body.items.map((item) => inventoryOps.create(item))
+      req.body.items.map(async (item) => {
+        const whId = item.warehouseId;
+        const name = item.name;
+        const sku = item.sku != null ? item.sku : "";
+        const existing = whId
+          ? await inventoryOps.findInWarehouseByNameAndSku(whId, name, sku)
+          : null;
+        if (existing) {
+          const addQty = Number(item.quantity) || 0;
+          return inventoryOps.update(existing.id, {
+            quantity: existing.quantity + addQty,
+          });
+        }
+        return inventoryOps.create(item);
+      })
     );
 
     res.status(201).json(items);
