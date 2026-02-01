@@ -1937,11 +1937,20 @@ app.put("/api/sales/:id", authenticateToken, async (req, res) => {
 
     const updatedSale = await saleOps.update(req.params.id, saleData);
 
-    // Update the linked invoice for this sale
-    const linkedInvoice = await invoiceOps.findBySaleId(oldSale.id);
+    // Update the linked invoice for this sale (if saleId column exists and invoice exists)
+    let linkedInvoice = null;
+    try {
+      linkedInvoice = await invoiceOps.findBySaleId(oldSale.id);
+    } catch (findErr) {
+      console.warn("Could not find linked invoice (saleId column may be missing):", findErr.message);
+    }
     if (linkedInvoice) {
-      const invoicePayload = buildInvoiceFromSale(updatedSale, oldSale.id);
-      await invoiceOps.update(linkedInvoice.id, invoicePayload);
+      try {
+        const invoicePayload = buildInvoiceFromSale(updatedSale, oldSale.id);
+        await invoiceOps.update(linkedInvoice.id, invoicePayload);
+      } catch (updateErr) {
+        console.warn("Could not update linked invoice:", updateErr.message);
+      }
     }
 
     res.json(updatedSale);
@@ -1971,7 +1980,12 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
     }
 
     // Unlink any invoice that references this sale first (avoids FK / constraint issues)
-    const linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
+    let linkedInvoice = null;
+    try {
+      linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
+    } catch (findErr) {
+      console.warn("Could not find linked invoice (saleId column may be missing):", findErr.message);
+    }
     if (linkedInvoice) {
       try {
         await invoiceOps.update(linkedInvoice.id, { saleId: null });
