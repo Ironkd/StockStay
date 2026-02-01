@@ -170,7 +170,7 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     const { email, password } = req.body;
 
     console.log(`[LOGIN] Attempting login for: ${email}`);
-    const user = await userOps.findByEmail(email);
+    let user = await userOps.findByEmail(email);
     console.log(`[LOGIN] User found:`, user ? `Yes (${user.email})` : "No");
 
     if (!user) {
