@@ -442,6 +442,43 @@ button.secondary:hover {
   filter: brightness(1.05);
 }
 
+.add-subtract-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.icon-button.add-qty-button {
+  background: #10b981;
+  color: white;
+  font-weight: 700;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.icon-button.add-qty-button:hover {
+  background: #059669;
+  filter: brightness(1.05);
+}
+
+.icon-button.subtract-qty-button {
+  background: #f59e0b;
+  color: white;
+  font-weight: 700;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.icon-button.subtract-qty-button:hover:not(:disabled) {
+  background: #d97706;
+  filter: brightness(1.05);
+}
+
+.icon-button.subtract-qty-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .empty-state {
   padding: 24px 16px;
   text-align: center;

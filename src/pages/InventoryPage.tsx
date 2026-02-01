@@ -6,7 +6,8 @@ import {
   Warehouse,
   WarehouseFormValues,
   Category,
-  CategoryFormValues
+  CategoryFormValues,
+  Client
 } from "../types";
 import { useInventory } from "../hooks/useInventory";
 import { useWarehouses } from "../hooks/useWarehouses";
@@ -18,8 +19,12 @@ import { InventoryTable } from "../components/InventoryTable";
 import { SummaryBar } from "../components/SummaryBar";
 import { FilterModal } from "../components/FilterModal";
 import { TransferModal } from "../components/TransferModal";
+import { SubtractItemModal } from "../components/SubtractItemModal";
+import { AddQuantityModal } from "../components/AddQuantityModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
+import { clientsApi } from "../services/clientsApi";
+import { invoicesApi } from "../services/invoicesApi";
 
 export const InventoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -63,6 +68,9 @@ export const InventoryPage: React.FC = () => {
   const [showFilterModal, setShowFilterModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [subtractItem, setSubtractItem] = useState<InventoryItem | null>(null);
+  const [addQuantityItem, setAddQuantityItem] = useState<InventoryItem | null>(null);
+  const [clients, setClients] = useState<Client[]>([]);
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -80,6 +88,12 @@ export const InventoryPage: React.FC = () => {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Load clients when subtract modal opens (for "bill to client")
+  useEffect(() => {
+    if (!subtractItem) return;
+    clientsApi.getAll().then(setClients).catch(() => setClients([]));
+  }, [subtractItem]);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -293,6 +307,58 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
+  const handleSubtractSubmit = async (
+    item: InventoryItem,
+    quantity: number,
+    billToClient: boolean,
+    clientId: string | null
+  ) => {
+    if (billToClient && clientId) {
+      const client = clients.find((c) => c.id === clientId);
+      if (!client) throw new Error("Client not found");
+      const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Date.now().toString(36)}`;
+      const date = new Date().toISOString().split("T")[0];
+      const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+      const lineTotal = quantity * item.finalPrice;
+      const subtotal = lineTotal;
+      const tax = 0;
+      const total = subtotal + tax;
+      const invoiceItem = {
+        id: crypto.randomUUID(),
+        name: item.name,
+        quantity,
+        unitPrice: item.finalPrice,
+        total: lineTotal,
+        inventoryItemId: item.id,
+        sku: item.sku,
+      };
+      await invoicesApi.create({
+        invoiceNumber,
+        clientId,
+        clientName: client.name,
+        date,
+        dueDate,
+        items: [invoiceItem],
+        subtotal,
+        tax,
+        total,
+        status: "draft",
+      });
+      window.dispatchEvent(new CustomEvent("invoices-refresh"));
+    } else {
+      await updateItem(item.id, {
+        ...item,
+        quantity: Math.max(0, item.quantity - quantity),
+      });
+    }
+  };
+
+  const handleAddQuantitySubmit = async (item: InventoryItem, quantity: number) => {
+    await updateItem(item.id, {
+      ...item,
+      quantity: item.quantity + quantity,
+    });
+  };
 
   const handleEditCategory = (categoryName: string, categoryId?: string) => {
     // If it's a managed category, find it by ID
@@ -413,14 +479,14 @@ export const InventoryPage: React.FC = () => {
           className="add-warehouse-button"
           onClick={handleAddWarehouse}
         >
-          Add Warehouse
+          Add property
         </button>
         <button
           type="button"
           className="add-warehouse-button"
           onClick={handleAddItem}
         >
-          Add Item
+          Add new item
         </button>
         {visibleWarehouses.length >= 2 && (
           <button
@@ -483,7 +549,7 @@ export const InventoryPage: React.FC = () => {
         <div className="modal-overlay" onClick={handleCancelWarehouseEdit}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>{editingWarehouse ? "Edit Warehouse" : "Add Warehouse"}</h3>
+              <h3>{editingWarehouse ? "Edit Property" : "Add property"}</h3>
               <button
                 type="button"
                 className="icon-button close-button"
@@ -608,7 +674,7 @@ export const InventoryPage: React.FC = () => {
                     }
                   }}
                 >
-                  Delete Warehouse
+                  Delete property
                 </button>
               )}
             </div>
@@ -620,6 +686,8 @@ export const InventoryPage: React.FC = () => {
               warehouses={visibleWarehouses}
               onEdit={handleEdit}
               onDelete={removeItem}
+              onAddQuantity={(item) => setAddQuantityItem(item)}
+              onSubtract={(item) => setSubtractItem(item)}
             />
           </>
         ) : (
@@ -659,6 +727,8 @@ export const InventoryPage: React.FC = () => {
               warehouses={visibleWarehouses}
               onEdit={handleEdit}
               onDelete={removeItem}
+              onAddQuantity={(item) => setAddQuantityItem(item)}
+              onSubtract={(item) => setSubtractItem(item)}
             />
           </>
         )}
@@ -696,6 +766,27 @@ export const InventoryPage: React.FC = () => {
           warehouses={visibleWarehouses}
           onSubmit={transfer}
           onClose={() => setShowTransferModal(false)}
+        />
+      )}
+
+      {subtractItem && (
+        <SubtractItemModal
+          item={subtractItem}
+          clients={clients}
+          onClose={() => setSubtractItem(null)}
+          onSubmit={async (quantity, billToClient, clientId) => {
+            await handleSubtractSubmit(subtractItem, quantity, billToClient, clientId);
+          }}
+        />
+      )}
+
+      {addQuantityItem && (
+        <AddQuantityModal
+          item={addQuantityItem}
+          onClose={() => setAddQuantityItem(null)}
+          onSubmit={async (quantity) => {
+            await handleAddQuantitySubmit(addQuantityItem, quantity);
+          }}
         />
       )}
 

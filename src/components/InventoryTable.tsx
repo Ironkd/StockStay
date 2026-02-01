@@ -6,6 +6,8 @@ type Props = {
   warehouses?: Warehouse[];
   onEdit: (item: InventoryItem) => void;
   onDelete: (id: string) => void;
+  onAddQuantity?: (item: InventoryItem) => void;
+  onSubtract?: (item: InventoryItem) => void;
 };
 
 const formatDate = (iso: string) =>
@@ -26,7 +28,9 @@ export const InventoryTable: React.FC<Props> = ({
   items,
   warehouses = [],
   onEdit,
-  onDelete
+  onDelete,
+  onAddQuantity,
+  onSubtract,
 }) => {
   const getWarehouseName = (warehouseId: string | undefined) => {
     if (!warehouseId) return null;
@@ -59,6 +63,7 @@ export const InventoryTable: React.FC<Props> = ({
             <th>Reorder pt.</th>
             <th>Status</th>
             <th>Updated</th>
+            <th>Add / Subtract</th>
             <th />
           </tr>
         </thead>
@@ -113,6 +118,31 @@ export const InventoryTable: React.FC<Props> = ({
                   </span>
                 </td>
                 <td>{formatDate(item.updatedAt)}</td>
+                <td className="row-actions add-subtract-actions">
+                  {onAddQuantity && (
+                    <button
+                      type="button"
+                      className="icon-button add-qty-button"
+                      onClick={() => onAddQuantity(item)}
+                      aria-label="Add quantity"
+                      title="Add quantity"
+                    >
+                      +
+                    </button>
+                  )}
+                  {onSubtract && (
+                    <button
+                      type="button"
+                      className="icon-button subtract-qty-button"
+                      onClick={() => onSubtract(item)}
+                      aria-label="Subtract quantity"
+                      title="Subtract quantity"
+                      disabled={item.quantity <= 0}
+                    >
+                      −
+                    </button>
+                  )}
+                </td>
                 <td className="row-actions">
                   <button
                     type="button"

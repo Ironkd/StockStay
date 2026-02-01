@@ -85,7 +85,7 @@ export const WarehouseForm: React.FC<Props> = ({
           </button>
         )}
         <button type="submit">
-          {initialValues ? "Save changes" : "Add warehouse"}
+          {initialValues ? "Save changes" : "Add property"}
         </button>
       </div>
     </form>

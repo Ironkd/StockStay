@@ -446,7 +446,7 @@ export const InventoryForm: React.FC<Props> = ({
           </button>
         )}
         <button type="submit">
-          {initialValues ? "Save changes" : "Add item"}
+          {initialValues ? "Save changes" : "Add new item"}
         </button>
       </div>
     </form>
