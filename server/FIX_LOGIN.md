@@ -1,46 +1,38 @@
 # Fix Login Issue
 
-You're getting "invalid credentials" which means:
-✅ **Connection to Supabase is working!**
-❌ Password hash doesn't match
+"Invalid credentials" means the server found your account but the password didn't match.
 
-## Quick Fix Options
+## Quick Fix: Use Forgot Password
 
-### Option 1: Create a New User (Easiest)
+1. On the login page, click **Forgot password**.
+2. Enter your email and submit.
+3. Check your inbox for the reset link (check spam if needed).
+4. Set a new password and log in with that.
 
-Just use a different email/password combination. The app will create a new user automatically:
+This fixes wrong or corrupted password hashes (e.g. after migration).
 
-- Email: `test@example.com`
-- Password: `test123`
+## Other Options
 
-Or any email/password you want!
+### Case-insensitive email
 
-### Option 2: Reset Password via SQL
+Login now looks up your account by email **case-insensitively**. So `You@Example.com` and `you@example.com` both find the same user. If you still get "Invalid credentials", use Forgot password above.
 
-1. Go to Supabase Dashboard → SQL Editor
-2. Run this SQL:
+### Reset password via SQL (support/admin)
+
+If email isn't set up or you need to reset a user's password manually:
+
+1. Go to Supabase Dashboard → SQL Editor.
+2. Generate a bcrypt hash for the new password (e.g. use an online bcrypt tool or run `node -e "const bcrypt=require('bcryptjs'); console.log(bcrypt.hashSync('YourNewPassword', 10));"` in the server directory).
+3. Run:
 
 ```sql
--- Check current user
-SELECT id, email, name FROM "User" WHERE email = 'demo@example.com';
-
--- Delete the old user (if exists)
-DELETE FROM "User" WHERE email = 'demo@example.com';
-
--- Delete the team (if exists)  
-DELETE FROM "Team" WHERE name = 'Demo Team';
+UPDATE "User"
+SET password = 'PASTE_BCRYPT_HASH_HERE'
+WHERE email = 'user@example.com';
 ```
 
-3. Restart your server - it will create a new demo user with correct password hash
+Replace `user@example.com` and the hash with the real email and hash.
 
-### Option 3: Use Any Email/Password
+### Create a new account
 
-The app creates new users automatically! Just use:
-- Any email (e.g., `myemail@test.com`)
-- Any password (e.g., `mypassword`)
-
-The app will create a new user and team for you.
-
-## Why This Happened
-
-When we migrated data from SQLite to Supabase, the password hash might have been corrupted or encoded differently. The easiest solution is to create a new user or let the app create one automatically.
+You can also sign up with a different email; the app will create a new user and team.

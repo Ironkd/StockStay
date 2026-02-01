@@ -187,9 +187,12 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       });
     }
 
-    const isPasswordValid = await bcrypt.compare(password, user.password);
+    const rawPassword = typeof password === "string" ? password.trim() : "";
+    const isPasswordValid = rawPassword && (await bcrypt.compare(rawPassword, user.password));
     if (!isPasswordValid) {
-      return res.status(401).json({ message: "Invalid credentials" });
+      return res.status(401).json({
+        message: "Invalid credentials. If you've forgotten your password, use Forgot password below.",
+      });
     }
 
     // Ensure legacy users get sensible defaults

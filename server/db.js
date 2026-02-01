@@ -127,7 +127,12 @@ export const userOps = {
   },
 
   async findByEmail(email) {
-    const user = await prisma.user.findUnique({ where: { email } });
+    if (!email || typeof email !== "string") return null;
+    const normalized = email.trim().toLowerCase();
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: normalized, mode: "insensitive" } },
+      orderBy: { updatedAt: "desc" },
+    });
     if (!user) return null;
     return {
       ...user,
