@@ -314,9 +314,19 @@ export const SettingsPage: React.FC = () => {
         <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
           Pages they can view (leave all unchecked for full access)
         </span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px" }}>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center" }}>
           {PAGE_KEYS.map(({ key, label }) => (
-            <label key={key} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+            <label
+              key={key}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "8px",
+                cursor: "pointer",
+                flexShrink: 0,
+                whiteSpace: "nowrap",
+              }}
+            >
               <input
                 type="checkbox"
                 checked={access.allowedPages.includes(key)}
@@ -328,6 +338,7 @@ export const SettingsPage: React.FC = () => {
                       : [...a.allowedPages, key],
                   }))
                 }
+                style={{ flexShrink: 0, margin: 0, verticalAlign: "middle" }}
               />
               <span style={{ fontSize: "13px" }}>{label}</span>
             </label>
@@ -339,9 +350,19 @@ export const SettingsPage: React.FC = () => {
           <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
             Warehouses they can access (leave all unchecked for all)
           </span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px" }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center" }}>
             {warehouses.map((w) => (
-              <label key={w.id} style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+              <label
+                key={w.id}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  whiteSpace: "nowrap",
+                }}
+              >
                 <input
                   type="checkbox"
                   checked={access.allowedWarehouseIds.includes(w.id)}
@@ -352,8 +373,9 @@ export const SettingsPage: React.FC = () => {
                         ? a.allowedWarehouseIds.filter((id) => id !== w.id)
                         : [...a.allowedWarehouseIds, w.id],
                     }))
-                }
-              />
+                  }
+                  style={{ flexShrink: 0, margin: 0, verticalAlign: "middle" }}
+                />
                 <span style={{ fontSize: "13px" }}>{w.name}</span>
               </label>
             ))}

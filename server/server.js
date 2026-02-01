@@ -28,6 +28,8 @@ import {
   canCreateWarehouse,
   downgradeExpiredTrials,
   getTrialStatus,
+  startProTrial,
+  startStarterTrial,
 } from "./trialManager.js";
 import {
   createCheckoutSession,
@@ -661,6 +663,7 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
         limit: warehouseCheck.limit,
         current: warehouseCheck.current,
         plan: warehouseCheck.plan,
+        upgradeAvailable: true,
       });
     }
 
@@ -1851,6 +1854,8 @@ app.get("/api/team", authenticateToken, async (req, res) => {
     // Get trial status
     const trialStatus = getTrialStatus(team);
     const effectivePlan = getEffectivePlan(team);
+    const planLimits = getPlanLimits(effectivePlan);
+    const effectiveMaxWarehouses = planLimits.maxWarehouses;
 
     res.json({
       team: {
@@ -1860,6 +1865,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         plan: team.plan || "free",
         effectivePlan, // The actual plan considering trial status
         maxWarehouses: team.maxWarehouses,
+        effectiveMaxWarehouses, // Limit for current plan/trial (Pro trial = 10, Starter trial = 3, etc.)
         warehouseCount,
         billingInterval: team.billingInterval || null, // "month" | "year" from Stripe
         // Trial information
@@ -2217,7 +2223,7 @@ checkAndDowngradeTrials();
 setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
 console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
 
-// Manual endpoint to start a Pro trial (for testing or admin use)
+// Manual endpoint to start a Pro or Starter trial (in-app trial; for auto-charge at trial end use Stripe Checkout with trial)
 app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   try {
     const user = await userOps.findById(req.user.id);
@@ -2225,7 +2231,6 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Team not found for user" });
     }
 
-    // Only owners can start trials
     if (user.teamRole !== "owner") {
       return res.status(403).json({ message: "Only team owners can start trials" });
     }
@@ -2235,20 +2240,22 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Team not found" });
     }
 
-    // Check if already on trial or paid plan
     if (team.isOnTrial) {
       return res.status(400).json({ message: "Team is already on a trial" });
     }
 
-    if (team.plan !== 'free') {
+    if (team.plan !== "free") {
       return res.status(400).json({ message: "Trials are only available for free plan teams" });
     }
 
-    const updatedTeam = await startProTrial(team.id);
+    const plan = req.body?.plan === "starter" ? "starter" : "pro";
+    const updatedTeam = plan === "starter"
+      ? await startStarterTrial(team.id)
+      : await startProTrial(team.id);
     const trialStatus = getTrialStatus(updatedTeam);
 
     res.json({
-      message: "14-day Pro trial started successfully!",
+      message: `14-day ${plan === "starter" ? "Starter" : "Pro"} trial started successfully!`,
       trial: trialStatus,
       team: {
         plan: updatedTeam.plan,

@@ -1,5 +1,5 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   InventoryItem,
   InventoryItemFormValues,
@@ -19,10 +19,14 @@ import { SummaryBar } from "../components/SummaryBar";
 import { FilterModal } from "../components/FilterModal";
 import { TransferModal } from "../components/TransferModal";
 import { useAuth } from "../contexts/AuthContext";
+import { teamApi } from "../services/teamApi";
 
 export const InventoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { user } = useAuth();
+  const [maxWarehouses, setMaxWarehouses] = useState<number>(1);
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const {
     items,
     addItem,
@@ -62,6 +66,17 @@ export const InventoryPage: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  // Load team to get effective warehouse limit (Pro trial = 10, Starter = 3, free = 1)
+  useEffect(() => {
+    let cancelled = false;
+    teamApi.getTeam().then((data) => {
+      if (!cancelled && data.team.effectiveMaxWarehouses != null) {
+        setMaxWarehouses(data.team.effectiveMaxWarehouses);
+      }
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -237,15 +252,10 @@ export const InventoryPage: React.FC = () => {
   };
 
   const handleAddWarehouse = () => {
-    // Enforce simple free-plan rule in the UI:
-    // one warehouse for free, additional ones require an upgrade.
-    if (warehouses.length >= 1) {
-      alert(
-        "Your current plan allows 1 warehouse.\n\nTo add more warehouses, you'll need to upgrade your subscription."
-      );
+    if (warehouses.length >= maxWarehouses) {
+      setShowUpgradeModal(true);
       return;
     }
-
     setEditingWarehouse(null);
     setShowWarehouseModal(true);
   };
@@ -419,6 +429,42 @@ export const InventoryPage: React.FC = () => {
           Manage Categories
         </button>
       </div>
+
+      {showUpgradeModal && (
+        <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <h3>Warehouse limit reached</h3>
+              <button
+                type="button"
+                className="icon-button close-button"
+                onClick={() => setShowUpgradeModal(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ marginBottom: "20px" }}>
+              You can&apos;t add more warehouses on your current plan (limit: {maxWarehouses}). Click below to upgrade your plan and get more warehouses.
+            </p>
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
+              <button type="button" className="secondary" onClick={() => setShowUpgradeModal(false)}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => {
+                  setShowUpgradeModal(false);
+                  navigate("/settings");
+                }}
+              >
+                Upgrade your plan
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showWarehouseModal && (
         <div className="modal-overlay" onClick={handleCancelWarehouseEdit}>

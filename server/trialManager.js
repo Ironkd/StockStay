@@ -6,13 +6,14 @@
 import { prisma } from './db.js';
 
 /**
- * Start a 14-day Pro trial for a team
+ * Start a 14-day Pro trial for a team (10 warehouses during trial)
  * @param {string} teamId - The team ID to start trial for
  * @returns {Promise<Object>} Updated team object
  */
 export async function startProTrial(teamId) {
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14 days from now
+  const limits = getPlanLimits('pro');
 
   return await prisma.team.update({
     where: { id: teamId },
@@ -21,7 +22,29 @@ export async function startProTrial(teamId) {
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
       trialPlan: 'pro',
-      maxWarehouses: 10, // Pro plan limit
+      maxWarehouses: limits.maxWarehouses, // 10 for Pro
+    },
+  });
+}
+
+/**
+ * Start a 14-day Starter trial for a team (3 warehouses during trial)
+ * @param {string} teamId - The team ID to start trial for
+ * @returns {Promise<Object>} Updated team object
+ */
+export async function startStarterTrial(teamId) {
+  const trialEndsAt = new Date();
+  trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14 days from now
+  const limits = getPlanLimits('starter');
+
+  return await prisma.team.update({
+    where: { id: teamId },
+    data: {
+      plan: 'starter',
+      isOnTrial: true,
+      trialEndsAt: trialEndsAt,
+      trialPlan: 'starter',
+      maxWarehouses: limits.maxWarehouses, // 3 for Starter
     },
   });
 }

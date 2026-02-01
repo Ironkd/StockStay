@@ -136,6 +136,8 @@ export type TeamInfo = {
   plan: string;
   effectivePlan: string;
   maxWarehouses: number | null;
+  /** Effective warehouse limit for current plan/trial (Pro trial = 10, Starter = 3, free = 1) */
+  effectiveMaxWarehouses?: number;
   warehouseCount: number;
   billingInterval: string | null;
   isOnTrial: boolean;
