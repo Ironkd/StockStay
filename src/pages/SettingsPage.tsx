@@ -312,38 +312,35 @@ export const SettingsPage: React.FC = () => {
       </div>
       <div style={{ marginBottom: "12px" }}>
         <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-          Pages they can view (leave all unchecked for full access)
+          Pages they can view (select multiple; leave empty for full access)
         </span>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center" }}>
+        <select
+          multiple
+          size={PAGE_KEYS.length}
+          value={access.allowedPages}
+          onChange={(e) => {
+            const selected = Array.from((e.target as HTMLSelectElement).selectedOptions, (opt) => opt.value);
+            setAccess((a) => ({ ...a, allowedPages: selected }));
+          }}
+          style={{
+            width: "100%",
+            maxWidth: "320px",
+            padding: "8px",
+            borderRadius: "8px",
+            border: "1px solid rgba(148, 163, 184, 0.7)",
+            fontSize: "13px",
+            background: "rgba(248, 250, 252, 0.9)",
+          }}
+        >
           {PAGE_KEYS.map(({ key, label }) => (
-            <label
-              key={key}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                cursor: "pointer",
-                flexShrink: 0,
-                whiteSpace: "nowrap",
-              }}
-            >
-              <input
-                type="checkbox"
-                checked={access.allowedPages.includes(key)}
-                onChange={() =>
-                  setAccess((a) => ({
-                    ...a,
-                    allowedPages: a.allowedPages.includes(key)
-                      ? a.allowedPages.filter((k) => k !== key)
-                      : [...a.allowedPages, key],
-                  }))
-                }
-                style={{ flexShrink: 0, margin: 0, verticalAlign: "middle" }}
-              />
-              <span style={{ fontSize: "13px" }}>{label}</span>
-            </label>
+            <option key={key} value={key}>
+              {label}
+            </option>
           ))}
-        </div>
+        </select>
+        <p style={{ fontSize: "12px", color: "#64748b", margin: "4px 0 0 0" }}>
+          Hold Ctrl (Windows) or ⌘ (Mac) to select multiple pages.
+        </p>
       </div>
       {warehouses.length > 0 && (
         <div style={{ marginBottom: "12px" }}>
