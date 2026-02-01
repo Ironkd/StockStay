@@ -95,6 +95,15 @@ export const SettingsPage: React.FC = () => {
   }, []);
 
   useEffect(() => {
+    if (!teamData || !user) return;
+    const serverName = (teamData.team.name ?? "").trim();
+    const authName = (user.teamName ?? "").trim();
+    if (serverName && serverName !== authName) {
+      refreshUser();
+    }
+  }, [teamData, user]);
+
+  useEffect(() => {
     if (!isOwner) return;
     let cancelled = false;
     warehousesApi.getAll().then((list) => {
@@ -104,15 +113,19 @@ export const SettingsPage: React.FC = () => {
   }, [isOwner]);
 
   const handleSaveTeamName = async () => {
-    if (!teamData || !isOwner || teamNameEdit.trim() === teamData.team.name) return;
+    if (!teamData || !isOwner) return;
+    const newName = teamNameEdit.trim();
+    if (!newName) return;
     setSavingName(true);
     try {
-      const { team } = await teamApi.updateTeamName(teamNameEdit.trim());
-      setTeamData((prev) =>
-        prev ? { ...prev, team: { ...prev.team, name: team.name } } : null
-      );
-      setTeamNameEdit(team.name);
-      updateUser({ teamName: team.name });
+      if (newName !== teamData.team.name) {
+        const { team } = await teamApi.updateTeamName(newName);
+        setTeamData((prev) =>
+          prev ? { ...prev, team: { ...prev.team, name: team.name } } : null
+        );
+        setTeamNameEdit(team.name);
+        updateUser({ teamName: team.name });
+      }
       await refreshUser();
     } catch (err) {
       console.error(err);
