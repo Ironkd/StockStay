@@ -642,7 +642,7 @@ export const LoginPage: React.FC = () => {
               </button>
             </div>
           </form>
-        ) ) }
+        ) }
 
         {!showForgotPassword && !isSignUpMode && (
           <p className="login-hint">
