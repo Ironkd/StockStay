@@ -6,7 +6,7 @@ interface ProtectedRouteProps {
   children: React.ReactNode;
   /**
    * Logical key for the page, used for access control.
-   * Examples: "home", "inventory", "clients", "invoices", "sales", "settings".
+   * Examples: "home", "inventory", "clients", "invoices", "settings".
    */
   pageKey?: string;
 }

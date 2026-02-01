@@ -127,7 +127,7 @@ export const ReportsPage: React.FC = () => {
         {loadingMovements ? (
           <p>Loading movements…</p>
         ) : movements.length === 0 ? (
-          <p className="report-empty">No movements found. Add or subtract quantity, create invoices or sales, or transfer stock to see history.</p>
+          <p className="report-empty">No movements found. Add or subtract quantity on inventory items, create invoices, or transfer stock to see history.</p>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">

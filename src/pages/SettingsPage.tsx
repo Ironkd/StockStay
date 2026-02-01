@@ -12,7 +12,6 @@ const PAGE_KEYS = [
   { key: "inventory", label: "Inventory" },
   { key: "clients", label: "Clients" },
   { key: "invoices", label: "Invoices" },
-  { key: "sales", label: "Sales" },
   { key: "settings", label: "Settings" },
 ] as const;
 
