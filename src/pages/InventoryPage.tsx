@@ -42,7 +42,8 @@ export const InventoryPage: React.FC = () => {
     transfer,
     importFromJson,
     exportToJson,
-    exportToJsonItems
+    exportToJsonItems,
+    refresh: refreshInventory
   } = useInventory();
 
   const {
@@ -348,6 +349,7 @@ export const InventoryPage: React.FC = () => {
   ) => {
     if (billToClient && clientId) {
       await createInvoiceForItem(item, quantity, clientId);
+      await refreshInventory();
     } else {
       await updateItem(item.id, {
         ...item,

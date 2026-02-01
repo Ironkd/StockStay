@@ -1663,7 +1663,10 @@ app.get("/api/clients", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
 
-    if (!userHasPageAccess(currentUser, "clients")) {
+    // Allow list for Clients access OR Inventory access (so inventory members can pick client when billing from +/-)
+    const canListClients =
+      userHasPageAccess(currentUser, "clients") || userHasPageAccess(currentUser, "inventory");
+    if (!canListClients) {
       return res.status(403).json({ message: "You do not have access to Clients." });
     }
     if (!currentUser?.teamId) {
@@ -1815,8 +1818,11 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
 
-    if (!userHasPageAccess(currentUser, "invoices")) {
-      return res.status(403).json({ message: "You do not have access to Invoices." });
+    // Allow create for users with Invoices access OR Inventory access (bill-to-client from +/- on inventory)
+    const canCreateInvoice =
+      userHasPageAccess(currentUser, "invoices") || userHasPageAccess(currentUser, "inventory");
+    if (!canCreateInvoice) {
+      return res.status(403).json({ message: "You do not have access to create invoices." });
     }
     const invoiceData = req.body;
 
