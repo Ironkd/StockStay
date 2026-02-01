@@ -195,29 +195,29 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       });
     }
 
-    // Ensure legacy users get sensible defaults
+    // Ensure legacy users get sensible defaults (non-blocking: login still succeeds if this fails)
     const updates = {};
     if (!user.teamId) {
-      const teamId = crypto.randomUUID();
-      await teamOps.create({
-        id: teamId,
-        name: `${user.name || user.email.split("@")[0]}'s Team`,
-        ownerId: user.id,
-      });
-      updates.teamId = teamId;
-    }
-    if (!user.teamRole) {
+      updates.teamId = crypto.randomUUID();
       updates.teamRole = "owner";
     }
-    if (typeof user.allowedPages === "undefined") {
-      updates.allowedPages = null;
-    }
-    if (typeof user.allowedWarehouseIds === "undefined") {
-      updates.allowedWarehouseIds = null;
-    }
+    if (!user.teamRole) updates.teamRole = "owner";
+    if (typeof user.allowedPages === "undefined") updates.allowedPages = null;
+    if (typeof user.allowedWarehouseIds === "undefined") updates.allowedWarehouseIds = null;
 
     if (Object.keys(updates).length > 0) {
-      user = await userOps.update(user.id, updates);
+      try {
+        if (updates.teamId && !user.teamId) {
+          await teamOps.create({
+            id: updates.teamId,
+            name: `${user.name || user.email.split("@")[0]}'s Team`,
+            ownerId: user.id,
+          });
+        }
+        user = await userOps.update(user.id, updates);
+      } catch (legacyErr) {
+        console.warn("Login: legacy user update failed (continuing with existing user):", legacyErr.message);
+      }
     }
 
     const token = jwt.sign(
@@ -256,11 +256,10 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     });
   } catch (error) {
     console.error("Login error:", error);
-    console.error("Error code:", error.code);
-    console.error("Error message:", error.message);
-    if (error.code === 'ECONNREFUSED' || error.code === 'ENOTFOUND') {
-      return res.status(503).json({ 
-        message: "Database connection failed. Please check your Supabase connection." 
+    console.error("Login error stack:", error.stack);
+    if (error.code === "ECONNREFUSED" || error.code === "ENOTFOUND") {
+      return res.status(503).json({
+        message: "Database connection failed. Please check your Supabase connection.",
       });
     }
     res.status(500).json({ message: "Internal server error" });

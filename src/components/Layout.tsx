@@ -10,13 +10,16 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const location = useLocation();
   const navigate = useNavigate();
   const [headerTeamName, setHeaderTeamName] = useState<string | null>(null);
+  const [effectivePlan, setEffectivePlan] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
       setHeaderTeamName(null);
+      setEffectivePlan(null);
       return;
     }
     teamApi.getTeamName().then((r) => setHeaderTeamName(r.name)).catch(() => {});
+    teamApi.getTeamLimits().then((r) => setEffectivePlan(r.effectivePlan)).catch(() => setEffectivePlan("free"));
   }, [user?.id]);
 
   useEffect(() => {
@@ -42,21 +45,22 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     (headerTeamName ?? user?.teamName ?? "").trim() ||
     (user?.name?.trim() ? `${user.name.trim().split(/\s+/)[0]}'s Team` : "My Team");
 
-  const navItems: Array<{ path: string; label: string; icon: string; pageKey: string }> = [
+  const navItems: Array<{ path: string; label: string; icon: string; pageKey: string; proOnly?: boolean }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
     { path: "/inventory", label: "Inventory", icon: "📦", pageKey: "inventory" },
-    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "inventory" },
+    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "inventory", proOnly: true },
     { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },
     { path: "/sales", label: "Sales", icon: "💰", pageKey: "sales" },
     { path: "/settings", label: "Settings", icon: "⚙️", pageKey: "settings" }
   ];
 
-  const canSeePage = (pageKey: string) => {
-    if (pageKey === "home") return true;
+  const canSeePage = (item: { pageKey: string; proOnly?: boolean }) => {
+    if (item.pageKey === "home") return true;
     if (!user) return false;
+    if (item.proOnly && effectivePlan !== "pro") return false;
     if (!user.allowedPages || user.teamRole === "owner") return true;
-    return user.allowedPages.includes(pageKey);
+    return user.allowedPages.includes(item.pageKey);
   };
 
   return (
@@ -80,7 +84,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
 
       <nav className="main-nav">
         {navItems
-          .filter((item) => canSeePage(item.pageKey))
+          .filter((item) => canSeePage(item))
           .map((item) => (
             <Link
               key={item.path}

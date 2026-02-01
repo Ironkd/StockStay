@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./contexts/AuthContext";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
+import { ProOnlyRoute } from "./components/ProOnlyRoute";
 import { LoginPage } from "./pages/LoginPage";
 import { LandingPage } from "./pages/LandingPage";
 import { PricingPage } from "./pages/PricingPage";
@@ -56,9 +57,11 @@ export const App: React.FC = () => {
             path="/shopping-list"
             element={
               <ProtectedRoute pageKey="inventory">
-                <Layout>
-                  <ShoppingListPage />
-                </Layout>
+                <ProOnlyRoute>
+                  <Layout>
+                    <ShoppingListPage />
+                  </Layout>
+                </ProOnlyRoute>
               </ProtectedRoute>
             }
           />
