@@ -1613,6 +1613,26 @@ button.secondary:hover {
   font-size: 20px;
 }
 
+/* Email already registered popup (login/signup) */
+.email-already-registered-popup .email-registered-title {
+  margin: 0 0 8px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.email-already-registered-popup .email-registered-text {
+  margin: 0 0 20px;
+  font-size: 0.9375rem;
+  color: #64748b;
+}
+
+.email-registered-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .warehouse-tabs {
   display: flex;
   gap: 8px;

@@ -71,6 +71,7 @@ export const LoginPage: React.FC = () => {
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
+  const [showEmailAlreadyRegisteredPopup, setShowEmailAlreadyRegisteredPopup] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -139,7 +140,13 @@ export const LoginPage: React.FC = () => {
         setPassword("");
         setConfirmPassword("");
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Sign up failed");
+        const message = err instanceof Error ? err.message : "Sign up failed";
+        if (message.toLowerCase().includes("already exists")) {
+          setShowEmailAlreadyRegisteredPopup(true);
+          setError("");
+        } else {
+          setError(message);
+        }
       } finally {
         setLoading(false);
       }
@@ -213,7 +220,34 @@ export const LoginPage: React.FC = () => {
           {isSignUpMode ? "Create your account" : "Sign in to continue"}
         </p>
 
-        {!showForgotPassword ? (
+        {showEmailAlreadyRegisteredPopup ? (
+          <div className="modal-overlay" onClick={() => setShowEmailAlreadyRegisteredPopup(false)} role="dialog" aria-modal="true" aria-labelledby="email-registered-title">
+            <div className="modal-content email-already-registered-popup" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "400px" }}>
+              <h2 id="email-registered-title" className="email-registered-title">Your email is already registered</h2>
+              <p className="email-registered-text">Sign in with your password, or reset it if you don&apos;t remember it.</p>
+              <div className="email-registered-actions">
+                <button
+                  type="button"
+                  className="login-button"
+                  onClick={() => {
+                    setShowEmailAlreadyRegisteredPopup(false);
+                    setForgotPasswordEmail(email);
+                    setShowForgotPassword(true);
+                  }}
+                >
+                  Forgot password?
+                </button>
+                <button
+                  type="button"
+                  className="login-button secondary"
+                  onClick={() => setShowEmailAlreadyRegisteredPopup(false)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : !showForgotPassword ? (
           signupSuccess ? (
             <div className="login-form signup-success-view">
               <div className="success-message" role="alert">
@@ -608,7 +642,7 @@ export const LoginPage: React.FC = () => {
               </button>
             </div>
           </form>
-        )}
+        ) ) }
 
         {!showForgotPassword && !isSignUpMode && (
           <p className="login-hint">

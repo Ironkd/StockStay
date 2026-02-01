@@ -234,7 +234,13 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         id: user.id,
         email: user.email,
         name: user.name,
+        firstName: user.firstName ?? "",
+        lastName: user.lastName ?? "",
         address: user.address ?? "",
+        streetAddress: user.streetAddress ?? "",
+        city: user.city ?? "",
+        province: user.province ?? "",
+        postalCode: user.postalCode ?? "",
         phone: user.phone ?? "",
         teamId: user.teamId,
         teamName: teamName ?? null,
@@ -583,7 +589,13 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
       id: user.id,
       email: user.email,
       name: user.name,
+      firstName: user.firstName ?? "",
+      lastName: user.lastName ?? "",
       address: user.address ?? "",
+      streetAddress: user.streetAddress ?? "",
+      city: user.city ?? "",
+      province: user.province ?? "",
+      postalCode: user.postalCode ?? "",
       phone: user.phone ?? "",
       teamId: user.teamId,
       teamName: teamName ?? null,
@@ -604,7 +616,7 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
-    const { email, address, phone, name } = req.body || {};
+    const { email, phone, firstName, lastName, streetAddress, city, province, postalCode } = req.body || {};
     const updates = {};
     if (typeof email === "string") {
       const trimmed = email.trim();
@@ -618,11 +630,18 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
       updates.email = trimmed;
       updates.emailVerified = false;
     }
-    if (typeof address === "string") updates.address = address.trim();
     if (typeof phone === "string") updates.phone = phone.trim() || null;
-    if (typeof name === "string") {
-      const n = name.trim();
-      if (n) updates.name = n;
+    if (typeof firstName === "string") updates.firstName = firstName.trim() || null;
+    if (typeof lastName === "string") updates.lastName = lastName.trim() || null;
+    if (typeof streetAddress === "string") updates.streetAddress = streetAddress.trim() || null;
+    if (typeof city === "string") updates.city = city.trim() || null;
+    if (typeof province === "string") updates.province = province.trim() || null;
+    if (typeof postalCode === "string") updates.postalCode = postalCode.trim() || null;
+    if (Object.keys(updates).length > 0 && (updates.firstName !== undefined || updates.lastName !== undefined)) {
+      const first = updates.firstName !== undefined ? updates.firstName : user.firstName ?? "";
+      const last = updates.lastName !== undefined ? updates.lastName : user.lastName ?? "";
+      const full = [first, last].filter(Boolean).join(" ").trim();
+      if (full) updates.name = full;
     }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ message: "No profile fields to update." });
@@ -637,7 +656,13 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
       id: updated.id,
       email: updated.email,
       name: updated.name,
+      firstName: updated.firstName ?? "",
+      lastName: updated.lastName ?? "",
       address: updated.address ?? "",
+      streetAddress: updated.streetAddress ?? "",
+      city: updated.city ?? "",
+      province: updated.province ?? "",
+      postalCode: updated.postalCode ?? "",
       phone: updated.phone ?? "",
       teamId: updated.teamId,
       teamName: teamName ?? null,

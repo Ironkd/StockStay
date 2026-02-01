@@ -71,9 +71,13 @@ export const SettingsPage: React.FC = () => {
   const [billingLoading, setBillingLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
-  const [profileName, setProfileName] = useState("");
+  const [profileFirstName, setProfileFirstName] = useState("");
+  const [profileLastName, setProfileLastName] = useState("");
   const [profileEmail, setProfileEmail] = useState("");
-  const [profileAddress, setProfileAddress] = useState("");
+  const [profileStreet, setProfileStreet] = useState("");
+  const [profileCity, setProfileCity] = useState("");
+  const [profileProvince, setProfileProvince] = useState("");
+  const [profilePostalCode, setProfilePostalCode] = useState("");
   const [profilePhone, setProfilePhone] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -82,12 +86,16 @@ export const SettingsPage: React.FC = () => {
 
   useEffect(() => {
     if (user) {
-      setProfileName(user.name ?? "");
+      setProfileFirstName(user.firstName ?? "");
+      setProfileLastName(user.lastName ?? "");
       setProfileEmail(user.email ?? "");
-      setProfileAddress(user.address ?? "");
+      setProfileStreet(user.streetAddress ?? "");
+      setProfileCity(user.city ?? "");
+      setProfileProvince(user.province ?? "");
+      setProfilePostalCode(user.postalCode ?? "");
       setProfilePhone(user.phone ?? "");
     }
-  }, [user?.id, user?.name, user?.email, user?.address, user?.phone]);
+  }, [user?.id, user?.firstName, user?.lastName, user?.email, user?.streetAddress, user?.city, user?.province, user?.postalCode, user?.phone]);
 
   const loadTeam = async () => {
     setError(null);
@@ -524,12 +532,22 @@ export const SettingsPage: React.FC = () => {
         )}
         <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "400px" }}>
           <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>First name</span>
             <input
               type="text"
-              value={profileName}
-              onChange={(e) => setProfileName(e.target.value)}
-              placeholder="Your name"
+              value={profileFirstName}
+              onChange={(e) => setProfileFirstName(e.target.value)}
+              placeholder="First name"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Last name</span>
+            <input
+              type="text"
+              value={profileLastName}
+              onChange={(e) => setProfileLastName(e.target.value)}
+              placeholder="Last name"
               style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
             />
           </label>
@@ -544,12 +562,42 @@ export const SettingsPage: React.FC = () => {
             />
           </label>
           <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Address</span>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Street address</span>
             <input
               type="text"
-              value={profileAddress}
-              onChange={(e) => setProfileAddress(e.target.value)}
-              placeholder="Street, city, province, postal code"
+              value={profileStreet}
+              onChange={(e) => setProfileStreet(e.target.value)}
+              placeholder="Street address"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>City</span>
+            <input
+              type="text"
+              value={profileCity}
+              onChange={(e) => setProfileCity(e.target.value)}
+              placeholder="City"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Province</span>
+            <input
+              type="text"
+              value={profileProvince}
+              onChange={(e) => setProfileProvince(e.target.value)}
+              placeholder="Province"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Postal code</span>
+            <input
+              type="text"
+              value={profilePostalCode}
+              onChange={(e) => setProfilePostalCode(e.target.value)}
+              placeholder="Postal code"
               style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
             />
           </label>
@@ -571,9 +619,13 @@ export const SettingsPage: React.FC = () => {
               setProfileSaving(true);
               try {
                 const updated = await authApi.updateProfile({
-                  name: profileName.trim(),
+                  firstName: profileFirstName.trim(),
+                  lastName: profileLastName.trim(),
                   email: profileEmail.trim(),
-                  address: profileAddress.trim(),
+                  streetAddress: profileStreet.trim(),
+                  city: profileCity.trim(),
+                  province: profileProvince.trim(),
+                  postalCode: profilePostalCode.trim(),
                   phone: profilePhone.trim(),
                 });
                 updateUser(updated);

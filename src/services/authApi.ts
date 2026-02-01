@@ -4,7 +4,13 @@ export interface AuthUser {
   id: string;
   email: string;
   name: string;
+  firstName?: string;
+  lastName?: string;
   address?: string;
+  streetAddress?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
   phone?: string;
   teamId?: string | null;
   teamName?: string | null;
@@ -16,9 +22,13 @@ export interface AuthUser {
 
 export interface ProfileUpdatePayload {
   email?: string;
-  address?: string;
   phone?: string;
-  name?: string;
+  firstName?: string;
+  lastName?: string;
+  streetAddress?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
 }
 
 export interface LoginResponse {
