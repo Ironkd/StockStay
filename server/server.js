@@ -1566,8 +1566,11 @@ app.get("/api/sales", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to access sales. No data is shared between users without a team." });
+    }
 
-    const sales = await saleOps.findAll();
+    const sales = await saleOps.findAll(currentUser.teamId);
     res.json(sales);
   } catch (error) {
     console.error("Error fetching sales:", error);
@@ -1582,9 +1585,12 @@ app.get("/api/sales/:id", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to access this resource." });
+    }
     const sale = await saleOps.findById(req.params.id);
 
-    if (!sale) {
+    if (!sale || !sale.teamId || sale.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
@@ -1602,7 +1608,10 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
     }
-    const saleData = req.body;
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to create sales." });
+    }
+    const saleData = { ...req.body, teamId: currentUser.teamId };
 
     // Validate that all items have sufficient inventory
     for (const saleItem of saleData.items || []) {
@@ -1661,9 +1670,12 @@ app.put("/api/sales/:id", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to access this resource." });
+    }
     const oldSale = await saleOps.findById(req.params.id);
 
-    if (!oldSale) {
+    if (!oldSale || !oldSale.teamId || oldSale.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
@@ -1748,9 +1760,12 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(403).json({ message: "You must belong to a team to access this resource." });
+    }
     const sale = await saleOps.findById(req.params.id);
 
-    if (!sale) {
+    if (!sale || !sale.teamId || sale.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
@@ -1800,15 +1815,21 @@ app.get("/api/team", authenticateToken, async (req, res) => {
     }
 
     const members = await userOps.findAllByTeam(user.teamId);
-    const membersFormatted = members.map((u) => ({
-      id: u.id,
-      email: u.email,
-      name: u.name,
-      teamRole: u.teamRole || (u.id === team.ownerId ? "owner" : "member"),
-      maxInventoryItems: u.maxInventoryItems ?? null,
-      allowedPages: u.allowedPages ?? null,
-      allowedWarehouseIds: u.allowedWarehouseIds ?? null,
-    }));
+    const currentUserId = req.user.id;
+    // Personal data (name, email) only for the current user; teammates get role/access only
+    const membersFormatted = members.map((u) => {
+      const base = {
+        id: u.id,
+        teamRole: u.teamRole || (u.id === team.ownerId ? "owner" : "member"),
+        maxInventoryItems: u.maxInventoryItems ?? null,
+        allowedPages: u.allowedPages ?? null,
+        allowedWarehouseIds: u.allowedWarehouseIds ?? null,
+      };
+      if (u.id === currentUserId) {
+        return { ...base, email: u.email, name: u.name };
+      }
+      return { ...base, isTeammate: true };
+    });
 
     const invitations = await invitationOps.findAllByTeam(user.teamId);
     const invitationsFormatted = invitations.map((inv) => ({
