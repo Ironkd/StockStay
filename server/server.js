@@ -1813,6 +1813,29 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
 
 // ==================== TEAM & INVITE ROUTES ====================
 
+// Get team warehouse limit (no settings access required – used by Inventory page)
+app.get("/api/team/limits", authenticateToken, async (req, res) => {
+  try {
+    const user = await userOps.findById(req.user.id);
+    if (!user || !user.teamId) {
+      return res.status(404).json({ message: "Team not found for user" });
+    }
+    const team = await teamOps.findById(user.teamId);
+    if (!team) {
+      return res.status(404).json({ message: "Team not found" });
+    }
+    const effectivePlan = getEffectivePlan(team);
+    const planLimits = getPlanLimits(effectivePlan);
+    res.json({
+      effectiveMaxWarehouses: planLimits.maxWarehouses,
+      effectivePlan,
+    });
+  } catch (error) {
+    console.error("Error fetching team limits:", error);
+    res.status(500).json({ message: "Error fetching team limits" });
+  }
+});
+
 // Get team details, members and invitations for the current user
 app.get("/api/team", authenticateToken, async (req, res) => {
   try {

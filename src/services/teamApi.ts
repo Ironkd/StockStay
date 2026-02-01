@@ -6,6 +6,11 @@ export const teamApi = {
     return apiRequest<TeamData>("/team");
   },
 
+  /** Team warehouse limit (no settings access required – use from Inventory page) */
+  getTeamLimits: async (): Promise<{ effectiveMaxWarehouses: number; effectivePlan: string }> => {
+    return apiRequest<{ effectiveMaxWarehouses: number; effectivePlan: string }>("/team/limits");
+  },
+
   updateTeamName: async (name: string): Promise<{ team: { id: string; name: string } }> => {
     return apiRequest<{ team: { id: string; name: string } }>("/team", {
       method: "PATCH",

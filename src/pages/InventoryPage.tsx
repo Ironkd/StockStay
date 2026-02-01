@@ -26,6 +26,7 @@ export const InventoryPage: React.FC = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [maxWarehouses, setMaxWarehouses] = useState<number>(1);
+  const [teamLimitsLoaded, setTeamLimitsLoaded] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const {
     items,
@@ -67,12 +68,13 @@ export const InventoryPage: React.FC = () => {
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Load team to get effective warehouse limit (Pro trial = 10, Starter = 3, free = 1)
+  // Load team warehouse limit (Pro trial = 10, Starter = 3, free = 1). Use /team/limits so we don't need settings access.
   useEffect(() => {
     let cancelled = false;
-    teamApi.getTeam().then((data) => {
-      if (!cancelled && data.team.effectiveMaxWarehouses != null) {
-        setMaxWarehouses(data.team.effectiveMaxWarehouses);
+    teamApi.getTeamLimits().then((data) => {
+      if (!cancelled && data.effectiveMaxWarehouses != null) {
+        setMaxWarehouses(data.effectiveMaxWarehouses);
+        setTeamLimitsLoaded(true);
       }
     }).catch(() => {});
     return () => { cancelled = true; };
@@ -252,7 +254,8 @@ export const InventoryPage: React.FC = () => {
   };
 
   const handleAddWarehouse = () => {
-    if (warehouses.length >= maxWarehouses) {
+    // Only block when we've loaded limits from the server (Pro trial = 10, so we don't block at 1 incorrectly)
+    if (teamLimitsLoaded && warehouses.length >= maxWarehouses) {
       setShowUpgradeModal(true);
       return;
     }
