@@ -273,6 +273,15 @@ button.secondary:hover {
   min-width: 140px;
 }
 
+.export-warehouse-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(148, 163, 184, 0.5);
+  font-size: 13px;
+  background: #fff;
+  min-width: 160px;
+}
+
 .filters-actions {
   display: flex;
   align-items: center;

@@ -133,6 +133,18 @@ export const useInventory = () => {
     URL.revokeObjectURL(url);
   };
 
+  const exportToJsonItems = (subset: InventoryItem[], filename: string) => {
+    const blob = new Blob([JSON.stringify(subset, null, 2)], {
+      type: "application/json"
+    });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename.replace(/[^a-zA-Z0-9._-]/g, "_") + (filename.endsWith(".json") ? "" : ".json");
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return {
     items,
     loading,
@@ -144,6 +156,7 @@ export const useInventory = () => {
     transfer,
     importFromJson,
     exportToJson,
+    exportToJsonItems,
     refresh: loadItems
   };
 };

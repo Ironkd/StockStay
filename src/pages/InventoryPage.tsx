@@ -36,7 +36,8 @@ export const InventoryPage: React.FC = () => {
     clearAll,
     transfer,
     importFromJson,
-    exportToJson
+    exportToJson,
+    exportToJsonItems
   } = useInventory();
 
   const {
@@ -540,7 +541,7 @@ export const InventoryPage: React.FC = () => {
               )}
             </div>
 
-            <div style={{ marginBottom: "16px", display: "flex", gap: "8px" }}>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
               <button
                 type="button"
                 className="secondary"
@@ -548,6 +549,54 @@ export const InventoryPage: React.FC = () => {
               >
                 🔍 Filter
               </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => exportToJson()}
+              >
+                Export all inventory
+              </button>
+              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+                <label htmlFor="export-warehouse-select" style={{ fontSize: "13px", color: "#64748b" }}>
+                  Export by warehouse:
+                </label>
+                <select
+                  id="export-warehouse-select"
+                  className="export-warehouse-select"
+                  value=""
+                  onChange={(e) => {
+                    const v = e.target.value;
+                    e.target.value = "";
+                    if (!v) return;
+                    if (v === "all") {
+                      exportToJson();
+                      return;
+                    }
+                    const subset =
+                      v === "unassigned"
+                        ? items.filter((i) => !i.warehouseId)
+                        : items.filter((i) => i.warehouseId === v);
+                    const name =
+                      v === "unassigned"
+                        ? "Unassigned"
+                        : visibleWarehouses.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
+                    exportToJsonItems(subset, `inventory-${name}`);
+                  }}
+                >
+                  <option value="">Choose warehouse…</option>
+                  <option value="all">All inventory</option>
+                  {visibleWarehouses.map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {w.name} ({items.filter((i) => i.warehouseId === w.id).length})
+                    </option>
+                  ))}
+                  {items.some((i) => !i.warehouseId) && (
+                    <option value="unassigned">
+                      Unassigned ({items.filter((i) => !i.warehouseId).length})
+                    </option>
+                  )}
+                </select>
+              </div>
               {activeWarehouseTab && activeWarehouseTab !== "all" && activeWarehouseTab !== "unassigned" && (
                 <button
                   type="button"
@@ -585,13 +634,20 @@ export const InventoryPage: React.FC = () => {
               </button>
             </div>
 
-            <div style={{ marginBottom: "16px" }}>
+            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
               <button
                 type="button"
                 className="secondary"
                 onClick={() => setShowFilterModal(true)}
               >
                 🔍 Filter
+              </button>
+              <button
+                type="button"
+                className="secondary"
+                onClick={() => exportToJson()}
+              >
+                Export all inventory
               </button>
             </div>
 
