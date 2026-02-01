@@ -28,7 +28,6 @@ import {
   canCreateWarehouse,
   downgradeExpiredTrials,
   getTrialStatus,
-  startProTrial,
   startStarterTrial,
 } from "./trialManager.js";
 import {
