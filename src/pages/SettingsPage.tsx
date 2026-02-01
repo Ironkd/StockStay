@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../contexts/AuthContext";
+import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { warehousesApi } from "../services/warehousesApi";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
@@ -70,7 +71,23 @@ export const SettingsPage: React.FC = () => {
   const [billingLoading, setBillingLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
 
+  const [profileName, setProfileName] = useState("");
+  const [profileEmail, setProfileEmail] = useState("");
+  const [profileAddress, setProfileAddress] = useState("");
+  const [profilePhone, setProfilePhone] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
   const isOwner = user?.teamRole === "owner";
+
+  useEffect(() => {
+    if (user) {
+      setProfileName(user.name ?? "");
+      setProfileEmail(user.email ?? "");
+      setProfileAddress(user.address ?? "");
+      setProfilePhone(user.phone ?? "");
+    }
+  }, [user?.id, user?.name, user?.email, user?.address, user?.phone]);
 
   const loadTeam = async () => {
     setError(null);
@@ -501,12 +518,77 @@ export const SettingsPage: React.FC = () => {
       {error && <p style={{ color: "#dc2626", marginBottom: "12px" }}>{error}</p>}
 
       <section className="panel" style={{ marginBottom: "24px" }}>
-        <h3 style={{ fontSize: "16px", marginBottom: "8px" }}>Profile</h3>
-        <p style={{ color: "#64748b", margin: 0 }}>
-          {user?.name && <strong>{user.name}</strong>}
-          {user?.email && ` · ${user.email}`}
-          {user?.teamRole && ` · ${user.teamRole}`}
-        </p>
+        <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Profile</h3>
+        {profileError && (
+          <p style={{ color: "#dc2626", marginBottom: "12px", fontSize: "14px" }}>{profileError}</p>
+        )}
+        <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "400px" }}>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
+            <input
+              type="text"
+              value={profileName}
+              onChange={(e) => setProfileName(e.target.value)}
+              placeholder="Your name"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email</span>
+            <input
+              type="email"
+              value={profileEmail}
+              onChange={(e) => setProfileEmail(e.target.value)}
+              placeholder="your@email.com"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Address</span>
+            <input
+              type="text"
+              value={profileAddress}
+              onChange={(e) => setProfileAddress(e.target.value)}
+              placeholder="Street, city, province, postal code"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <label>
+            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Phone number</span>
+            <input
+              type="tel"
+              value={profilePhone}
+              onChange={(e) => setProfilePhone(e.target.value)}
+              placeholder="e.g. +1 234 567 8900"
+              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+            />
+          </label>
+          <button
+            type="button"
+            className="nav-button primary"
+            onClick={async () => {
+              setProfileError(null);
+              setProfileSaving(true);
+              try {
+                const updated = await authApi.updateProfile({
+                  name: profileName.trim(),
+                  email: profileEmail.trim(),
+                  address: profileAddress.trim(),
+                  phone: profilePhone.trim(),
+                });
+                updateUser(updated);
+                await refreshUser();
+              } catch (err) {
+                setProfileError(err instanceof Error ? err.message : "Failed to update profile");
+              } finally {
+                setProfileSaving(false);
+              }
+            }}
+            disabled={profileSaving}
+          >
+            {profileSaving ? "Saving..." : "Save profile"}
+          </button>
+        </div>
       </section>
 
       {team && (

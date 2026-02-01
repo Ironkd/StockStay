@@ -620,7 +620,10 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
     }
     if (typeof address === "string") updates.address = address.trim();
     if (typeof phone === "string") updates.phone = phone.trim() || null;
-    if (typeof name === "string") updates.name = name.trim();
+    if (typeof name === "string") {
+      const n = name.trim();
+      if (n) updates.name = n;
+    }
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ message: "No profile fields to update." });
     }

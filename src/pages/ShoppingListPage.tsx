@@ -1,11 +1,22 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInventory } from "../hooks/useInventory";
+import { useWarehouses } from "../hooks/useWarehouses";
 import type { InventoryItem } from "../types";
 
 export const ShoppingListPage: React.FC = () => {
-  const { items, loading, error } = useInventory();
+  const { items, loading, error, refresh } = useInventory();
+  const { getWarehouseById } = useWarehouses();
   const navigate = useNavigate();
+
+  // Refetch when user returns to this tab so items drop off after adding stock elsewhere
+  useEffect(() => {
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") refresh();
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, [refresh]);
 
   const byCategory = useMemo(() => {
     const lowStock = items.filter(
@@ -54,7 +65,7 @@ export const ShoppingListPage: React.FC = () => {
       <div className="shopping-list-header">
         <h2>Shopping List</h2>
         <p className="shopping-list-subtitle">
-          Items at or below reorder point, grouped by category
+          Items at or below reorder point, grouped by category. When you add stock in Inventory, items drop off the list automatically.
         </p>
         <button
           type="button"
@@ -90,6 +101,10 @@ export const ShoppingListPage: React.FC = () => {
                           {item.sku ? ` (${item.sku})` : ""}
                         </span>
                         <span className="shopping-list-item-meta">
+                          <span className="shopping-list-warehouse">
+                            {getWarehouseById(item.warehouseId)?.name ?? "No warehouse"}
+                          </span>
+                          {" · "}
                           Current: {item.quantity} {item.unit}
                           {item.reorderPoint > 0 && (
                             <> · Reorder at {item.reorderPoint}</>
