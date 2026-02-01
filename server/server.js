@@ -1608,7 +1608,7 @@ function buildInvoiceFromSale(sale, saleId = null) {
     name: item.inventoryItemName || item.name || "Item",
     quantity: Number(item.quantity) || 0,
     unitPrice: Number(item.unitPrice) || 0,
-    total: Number(item.total) ?? Number(item.quantity) * Number(item.unitPrice) || 0,
+    total: (Number(item.total) ?? Number(item.quantity) * Number(item.unitPrice)) || 0,
     inventoryItemId: item.inventoryItemId,
     sku: item.sku,
   }));
