@@ -48,7 +48,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const navItems: Array<{ path: string; label: string; icon: string; pageKey: string; proOnly?: boolean }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
     { path: "/inventory", label: "Inventory", icon: "📦", pageKey: "inventory" },
-    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "inventory", proOnly: true },
+    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
     { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },
     { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
@@ -68,7 +68,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   return (
     <div className="app-shell">
       <header className="app-header">
-        <div className="app-header-brand">
+        <Link to="/dashboard" className="app-header-brand" style={{ textDecoration: "none", color: "inherit" }}>
           <img src="/logo.png" alt="StockStay" className="app-logo" />
           <div>
             <h1 className="brand-name">
@@ -78,7 +78,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
           <p className="welcome-line">Welcome back, {user?.name?.trim() ? user.name.trim().split(/\s+/)[0] : "User"}</p>
           <p className="team-line">{displayTeamName}</p>
           </div>
-        </div>
+        </Link>
         <button className="clear-button" onClick={handleLogout}>
           Logout
         </button>

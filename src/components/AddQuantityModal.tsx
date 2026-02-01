@@ -59,16 +59,18 @@ export const AddQuantityModal: React.FC<Props> = ({ item, clients = [], onClose,
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-content add-quantity-modal" onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <div className="add-qty-header">
           <h3>Add to &quot;{item.name}&quot;</h3>
-          <button type="button" className="icon-button close-button" onClick={onClose} aria-label="Close">✕</button>
+          <button type="button" className="icon-button close-button" onClick={onClose} aria-label="Close">
+            ✕
+          </button>
         </div>
-        <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: "14px" }}>
+        <p className="add-qty-current">
           Current quantity: <strong>{item.quantity} {item.unit}</strong>
         </p>
         <form onSubmit={handleSubmit}>
-          <label style={{ display: "block", marginBottom: "12px" }}>
-            <span style={{ display: "block", marginBottom: "4px", fontWeight: 600 }}>How many to add?</span>
+          <label className="add-qty-field">
+            <span className="add-qty-field-label">How many to add?</span>
             <input
               type="number"
               min={1}
@@ -78,28 +80,26 @@ export const AddQuantityModal: React.FC<Props> = ({ item, clients = [], onClose,
                 setQuantity(v);
                 if (quantityToBill > v) setQuantityToBill(v);
               }}
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}
             />
           </label>
 
           {clients.length > 0 && (
-            <div style={{ marginBottom: "16px", padding: "12px", background: "#f8fafc", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", marginBottom: alsoBillToClient ? "12px" : 0 }}>
+            <div className="add-qty-bill-section">
+              <label className="add-qty-bill-checkbox">
                 <input
                   type="checkbox"
                   checked={alsoBillToClient}
                   onChange={(e) => setAlsoBillToClient(e.target.checked)}
                 />
-                <span style={{ fontWeight: 600 }}>Also bill to client</span>
+                <span>Also bill to client</span>
               </label>
               {alsoBillToClient && (
-                <>
-                  <label style={{ display: "block", marginBottom: "8px" }}>
-                    <span style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>Client</span>
+                <div className="add-qty-bill-fields">
+                  <label className="add-qty-field">
+                    <span className="add-qty-field-label">Client</span>
                     <select
                       value={clientId}
                       onChange={(e) => setClientId(e.target.value)}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}
                     >
                       <option value="">Select client…</option>
                       {clients.map((c) => (
@@ -107,30 +107,31 @@ export const AddQuantityModal: React.FC<Props> = ({ item, clients = [], onClose,
                       ))}
                     </select>
                   </label>
-                  <label style={{ display: "block", marginBottom: "0" }}>
-                    <span style={{ display: "block", marginBottom: "4px", fontSize: "14px" }}>Quantity to bill (max {quantity})</span>
+                  <label className="add-qty-field">
+                    <span className="add-qty-field-label">Quantity to bill (max {quantity})</span>
                     <input
                       type="number"
                       min={1}
                       max={quantity}
                       value={quantityToBill}
                       onChange={(e) => setQuantityToBill(Math.max(0, parseInt(e.target.value, 10) || 0))}
-                      style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid #e2e8f0" }}
                     />
                     {quantityToBill > 0 && (
-                      <p style={{ margin: "6px 0 0", fontSize: "13px", color: "#64748b" }}>
+                      <p className="add-qty-line-total">
                         Line total: ${lineTotal.toFixed(2)} (qty × ${item.finalPrice.toFixed(2)})
                       </p>
                     )}
                   </label>
-                </>
+                </div>
               )}
             </div>
           )}
 
-          {error && <p style={{ color: "#dc2626", margin: "0 0 12px", fontSize: "14px" }}>{error}</p>}
-          <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", marginTop: "16px" }}>
-            <button type="button" className="secondary" onClick={onClose}>Cancel</button>
+          {error && <p className="add-qty-error">{error}</p>}
+          <div className="add-qty-actions">
+            <button type="button" className="secondary" onClick={onClose}>
+              Cancel
+            </button>
             <button type="submit" disabled={submitting}>
               {submitting ? "Saving…" : "Add"}
             </button>

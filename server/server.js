@@ -951,6 +951,10 @@ const userHasPageAccess = (user, pageKey) => {
   return Array.isArray(user.allowedPages) && user.allowedPages.includes(pageKey);
 };
 
+// Inventory read is allowed for both "inventory" and "shopping-list" (Shopping List page needs to fetch inventory)
+const userCanReadInventory = (user) =>
+  userHasPageAccess(user, "inventory") || userHasPageAccess(user, "shopping-list");
+
 // ==================== PROPERTY ROUTES ====================
 
 // Get current team's properties
@@ -1157,7 +1161,7 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
 
-    if (!userHasPageAccess(currentUser, "inventory")) {
+    if (!userCanReadInventory(currentUser)) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
@@ -1217,7 +1221,7 @@ app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
 
-    if (!userHasPageAccess(currentUser, "inventory")) {
+    if (!userCanReadInventory(currentUser)) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 

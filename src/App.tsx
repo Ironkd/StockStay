@@ -58,7 +58,7 @@ export const App: React.FC = () => {
           <Route
             path="/shopping-list"
             element={
-              <ProtectedRoute pageKey="inventory">
+              <ProtectedRoute pageKey="shopping-list">
                 <ProOnlyRoute>
                   <Layout>
                     <ShoppingListPage />
