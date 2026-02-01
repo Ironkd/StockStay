@@ -154,24 +154,6 @@ export const LandingPage: React.FC = () => {
                 and properties. Manage invitations and billing from Settings (Pro).
               </p>
             </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">⚙️</div>
-              <h3>Profile & Billing</h3>
-              <p>
-                Update your profile — first and last name, email, street, city, province, postal code, phone.
-                Manage your plan, start trials, and use the Stripe customer portal for subscriptions.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">🔒</div>
-              <h3>Plans & Data</h3>
-              <p>
-                Free: 1 property. Starter: more properties, invoices, exports. Pro: more properties,
-                team members, granular permissions, trials. Your data is isolated per team.
-              </p>
-            </div>
           </div>
 
           {/* Coming Soon */}
