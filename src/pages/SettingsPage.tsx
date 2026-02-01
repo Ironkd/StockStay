@@ -850,7 +850,7 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
-      <section className="panel" style={{ marginBottom: "24px" }}>
+      <section id="support" className="panel" style={{ marginBottom: "24px" }} aria-label="Support">
         <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Support</h3>
         <p style={{ color: "#64748b", margin: "0 0 12px 0", fontSize: "14px" }}>
           Have a question or need help? Send us a message and we'll reply at support@stockstay.com.
@@ -859,6 +859,7 @@ export const SettingsPage: React.FC = () => {
           type="button"
           className="nav-button secondary"
           onClick={() => setShowSupportModal(true)}
+          aria-label="Open contact support form"
         >
           Contact support
         </button>

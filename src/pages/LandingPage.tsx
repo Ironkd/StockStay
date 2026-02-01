@@ -346,9 +346,16 @@ export const LandingPage: React.FC = () => {
             <div className="footer-links">
               <a href="#features">Features</a>
               <Link to="/pricing">Pricing</Link>
-              <button type="button" className="footer-link-button" onClick={() => setSupportOpen(true)}>
+              <a
+                href="#"
+                className="footer-support-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  setSupportOpen(true);
+                }}
+              >
                 Support
-              </button>
+              </a>
               <Link to="/terms">Terms</Link>
               <Link to="/privacy">Privacy</Link>
               <Link to="/login">Sign In</Link>

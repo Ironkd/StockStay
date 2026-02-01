@@ -2391,7 +2391,9 @@ button.secondary:hover {
   color: white;
 }
 
-.footer-links .footer-link-button {
+.footer-links .footer-link-button,
+.footer-links .footer-support-link,
+.footer-links a.footer-support-link {
   background: none;
   border: none;
   padding: 0;
@@ -2402,7 +2404,8 @@ button.secondary:hover {
   transition: color 0.2s ease;
 }
 
-.footer-links .footer-link-button:hover {
+.footer-links .footer-link-button:hover,
+.footer-links .footer-support-link:hover {
   color: white;
 }
 
