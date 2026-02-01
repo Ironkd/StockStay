@@ -21,6 +21,7 @@ import { FilterModal } from "../components/FilterModal";
 import { TransferModal } from "../components/TransferModal";
 import { SubtractItemModal } from "../components/SubtractItemModal";
 import { AddQuantityModal } from "../components/AddQuantityModal";
+import { BillToClientModal } from "../components/BillToClientModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
@@ -70,6 +71,7 @@ export const InventoryPage: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
   const [subtractItem, setSubtractItem] = useState<InventoryItem | null>(null);
   const [addQuantityItem, setAddQuantityItem] = useState<InventoryItem | null>(null);
+  const [billToClientItem, setBillToClientItem] = useState<InventoryItem | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
   const [activeWarehouseTab, setActiveWarehouseTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -89,11 +91,11 @@ export const InventoryPage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Load clients when subtract modal opens (for "bill to client")
+  // Load clients when subtract or bill-to-client modal opens
   useEffect(() => {
-    if (!subtractItem) return;
+    if (!subtractItem && !billToClientItem) return;
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
-  }, [subtractItem]);
+  }, [subtractItem, billToClientItem]);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -307,6 +309,40 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
+  const createInvoiceForItem = async (item: InventoryItem, quantity: number, clientId: string) => {
+    const client = clients.find((c) => c.id === clientId);
+    if (!client) throw new Error("Client not found");
+    const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Date.now().toString(36)}`;
+    const date = new Date().toISOString().split("T")[0];
+    const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+    const lineTotal = quantity * item.finalPrice;
+    const subtotal = lineTotal;
+    const tax = 0;
+    const total = subtotal + tax;
+    const invoiceItem = {
+      id: crypto.randomUUID(),
+      name: item.name,
+      quantity,
+      unitPrice: item.finalPrice,
+      total: lineTotal,
+      inventoryItemId: item.id,
+      sku: item.sku,
+    };
+    await invoicesApi.create({
+      invoiceNumber,
+      clientId,
+      clientName: client.name,
+      date,
+      dueDate,
+      items: [invoiceItem],
+      subtotal,
+      tax,
+      total,
+      status: "draft",
+    });
+    window.dispatchEvent(new CustomEvent("invoices-refresh"));
+  };
+
   const handleSubtractSubmit = async (
     item: InventoryItem,
     quantity: number,
@@ -314,37 +350,7 @@ export const InventoryPage: React.FC = () => {
     clientId: string | null
   ) => {
     if (billToClient && clientId) {
-      const client = clients.find((c) => c.id === clientId);
-      if (!client) throw new Error("Client not found");
-      const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Date.now().toString(36)}`;
-      const date = new Date().toISOString().split("T")[0];
-      const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-      const lineTotal = quantity * item.finalPrice;
-      const subtotal = lineTotal;
-      const tax = 0;
-      const total = subtotal + tax;
-      const invoiceItem = {
-        id: crypto.randomUUID(),
-        name: item.name,
-        quantity,
-        unitPrice: item.finalPrice,
-        total: lineTotal,
-        inventoryItemId: item.id,
-        sku: item.sku,
-      };
-      await invoicesApi.create({
-        invoiceNumber,
-        clientId,
-        clientName: client.name,
-        date,
-        dueDate,
-        items: [invoiceItem],
-        subtotal,
-        tax,
-        total,
-        status: "draft",
-      });
-      window.dispatchEvent(new CustomEvent("invoices-refresh"));
+      await createInvoiceForItem(item, quantity, clientId);
     } else {
       await updateItem(item.id, {
         ...item,
@@ -358,6 +364,10 @@ export const InventoryPage: React.FC = () => {
       ...item,
       quantity: item.quantity + quantity,
     });
+  };
+
+  const handleBillToClientSubmit = async (item: InventoryItem, quantity: number, clientId: string) => {
+    await createInvoiceForItem(item, quantity, clientId);
   };
 
   const handleEditCategory = (categoryName: string, categoryId?: string) => {
@@ -688,6 +698,7 @@ export const InventoryPage: React.FC = () => {
               onDelete={removeItem}
               onAddQuantity={(item) => setAddQuantityItem(item)}
               onSubtract={(item) => setSubtractItem(item)}
+              onBillToClient={(item) => setBillToClientItem(item)}
             />
           </>
         ) : (
@@ -729,6 +740,7 @@ export const InventoryPage: React.FC = () => {
               onDelete={removeItem}
               onAddQuantity={(item) => setAddQuantityItem(item)}
               onSubtract={(item) => setSubtractItem(item)}
+              onBillToClient={(item) => setBillToClientItem(item)}
             />
           </>
         )}
@@ -786,6 +798,17 @@ export const InventoryPage: React.FC = () => {
           onClose={() => setAddQuantityItem(null)}
           onSubmit={async (quantity) => {
             await handleAddQuantitySubmit(addQuantityItem, quantity);
+          }}
+        />
+      )}
+
+      {billToClientItem && (
+        <BillToClientModal
+          item={billToClientItem}
+          clients={clients}
+          onClose={() => setBillToClientItem(null)}
+          onSubmit={async (quantity, clientId) => {
+            await handleBillToClientSubmit(billToClientItem, quantity, clientId);
           }}
         />
       )}

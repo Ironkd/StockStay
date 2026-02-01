@@ -8,6 +8,7 @@ type Props = {
   onDelete: (id: string) => void;
   onAddQuantity?: (item: InventoryItem) => void;
   onSubtract?: (item: InventoryItem) => void;
+  onBillToClient?: (item: InventoryItem) => void;
 };
 
 const formatDate = (iso: string) =>
@@ -31,6 +32,7 @@ export const InventoryTable: React.FC<Props> = ({
   onDelete,
   onAddQuantity,
   onSubtract,
+  onBillToClient,
 }) => {
   const getWarehouseName = (warehouseId: string | undefined) => {
     if (!warehouseId) return null;
@@ -118,28 +120,41 @@ export const InventoryTable: React.FC<Props> = ({
                   </span>
                 </td>
                 <td>{formatDate(item.updatedAt)}</td>
-                <td className="row-actions add-subtract-actions">
-                  {onAddQuantity && (
+                <td className="row-actions add-subtract-cell">
+                  <div className="add-subtract-actions">
+                    {onAddQuantity && (
+                      <button
+                        type="button"
+                        className="icon-button add-qty-button"
+                        onClick={() => onAddQuantity(item)}
+                        aria-label="Add quantity"
+                        title="Add quantity"
+                      >
+                        +
+                      </button>
+                    )}
+                    {onSubtract && (
+                      <button
+                        type="button"
+                        className="icon-button subtract-qty-button"
+                        onClick={() => onSubtract(item)}
+                        aria-label="Subtract quantity"
+                        title="Subtract quantity"
+                        disabled={item.quantity <= 0}
+                      >
+                        −
+                      </button>
+                    )}
+                  </div>
+                  {onBillToClient && (
                     <button
                       type="button"
-                      className="icon-button add-qty-button"
-                      onClick={() => onAddQuantity(item)}
-                      aria-label="Add quantity"
-                      title="Add quantity"
-                    >
-                      +
-                    </button>
-                  )}
-                  {onSubtract && (
-                    <button
-                      type="button"
-                      className="icon-button subtract-qty-button"
-                      onClick={() => onSubtract(item)}
-                      aria-label="Subtract quantity"
-                      title="Subtract quantity"
+                      className="bill-to-client-row-button"
+                      onClick={() => onBillToClient(item)}
                       disabled={item.quantity <= 0}
+                      title="Bill to client (create invoice)"
                     >
-                      −
+                      Bill to client
                     </button>
                   )}
                 </td>

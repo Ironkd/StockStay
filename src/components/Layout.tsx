@@ -51,7 +51,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "inventory", proOnly: true },
     { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },
-    { path: "/sales", label: "Sales", icon: "💰", pageKey: "sales" },
+    { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
     { path: "/settings", label: "Settings", icon: "⚙️", pageKey: "settings" }
   ];
 

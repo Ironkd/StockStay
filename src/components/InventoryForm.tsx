@@ -18,6 +18,7 @@ const defaultValues: InventoryItemFormValues = {
   quantity: 0,
   unit: "pcs",
   reorderPoint: 0,
+  reorderQuantity: 0,
   priceBoughtFor: 0,
   markupPercentage: 0,
   finalPrice: 0,
@@ -45,6 +46,7 @@ export const InventoryForm: React.FC<Props> = ({
           quantity: initialValues.quantity,
           unit: initialValues.unit,
           reorderPoint: initialValues.reorderPoint,
+          reorderQuantity: initialValues.reorderQuantity ?? 0,
           priceBoughtFor: initialValues.priceBoughtFor,
           markupPercentage: initialValues.markupPercentage,
           finalPrice: initialValues.finalPrice,
@@ -68,7 +70,7 @@ export const InventoryForm: React.FC<Props> = ({
     >
   ) => {
     const { name, value } = e.target;
-    if (name === "quantity" || name === "reorderPoint" || name === "priceBoughtFor" || name === "markupPercentage" || name === "finalPrice") {
+    if (name === "quantity" || name === "reorderPoint" || name === "reorderQuantity" || name === "priceBoughtFor" || name === "markupPercentage" || name === "finalPrice") {
       const numeric = Number(value);
       setValues((prev) => {
         const updated = { ...prev, [name]: Number.isNaN(numeric) ? 0 : numeric };
@@ -218,11 +220,20 @@ export const InventoryForm: React.FC<Props> = ({
                 </select>
               </label>
               <label>
-                <span>Quantity</span>
+                <span>Starting quantity</span>
                 <input
                   type="number"
                   value={item.quantity}
                   onChange={(e) => handleBulkItemChange(index, "quantity", Number(e.target.value) || 0)}
+                  min={0}
+                />
+              </label>
+              <label>
+                <span>Quantity to reorder</span>
+                <input
+                  type="number"
+                  value={item.reorderQuantity ?? 0}
+                  onChange={(e) => handleBulkItemChange(index, "reorderQuantity", Number(e.target.value) || 0)}
                   min={0}
                 />
               </label>
@@ -350,7 +361,7 @@ export const InventoryForm: React.FC<Props> = ({
         </label>
 
         <label>
-          <span>Quantity</span>
+          <span>Starting quantity</span>
           <input
             type="number"
             name="quantity"
@@ -376,6 +387,17 @@ export const InventoryForm: React.FC<Props> = ({
             type="number"
             name="reorderPoint"
             value={values.reorderPoint}
+            onChange={handleChange}
+            min={0}
+          />
+        </label>
+
+        <label>
+          <span>Quantity to reorder</span>
+          <input
+            type="number"
+            name="reorderQuantity"
+            value={values.reorderQuantity}
             onChange={handleChange}
             min={0}
           />

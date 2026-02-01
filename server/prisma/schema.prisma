@@ -113,6 +113,7 @@ model Inventory {
   quantity         Float    @default(0)
   unit             String   @default("")
   reorderPoint     Float    @default(0)
+  reorderQuantity  Float    @default(0)
   priceBoughtFor   Float?
   markupPercentage Float?
   finalPrice       Float?
@@ -125,6 +126,22 @@ model Inventory {
 
   @@index([warehouseId])
   @@index([category])
+}
+
+model InventoryMovement {
+  id               String   @id @default(uuid())
+  teamId           String?
+  inventoryItemId  String
+  quantityDelta    Float    // positive = in, negative = out
+  movementType     String   // adjustment, invoice, sale, transfer_in, transfer_out
+  referenceType    String?  // invoice, sale, transfer
+  referenceId      String?
+  referenceLabel   String?
+  createdAt        DateTime @default(now())
+
+  @@index([teamId])
+  @@index([inventoryItemId])
+  @@index([createdAt])
 }
 
 model Client {

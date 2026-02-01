@@ -16,6 +16,7 @@ import {
   invoiceOps,
   saleOps,
   invitationOps,
+  movementOps,
   passwordResetTokenOps,
   prisma,
 } from "./db.js";
@@ -1194,6 +1195,24 @@ async function inventoryItemBelongsToTeam(item, currentUser) {
   return warehouses.some((w) => w.id === item.warehouseId);
 }
 
+/** Log inventory movement for reports (ins/outs). Non-blocking. */
+async function logMovement(teamId, inventoryItemId, quantityDelta, movementType, referenceType = null, referenceId = null, referenceLabel = null) {
+  if (!teamId || !inventoryItemId || quantityDelta === 0) return;
+  try {
+    await movementOps.create({
+      teamId,
+      inventoryItemId,
+      quantityDelta: Number(quantityDelta),
+      movementType,
+      referenceType: referenceType || null,
+      referenceId: referenceId || null,
+      referenceLabel: referenceLabel || null,
+    });
+  } catch (err) {
+    console.warn("[Reports] Failed to log movement:", err?.message);
+  }
+}
+
 app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
@@ -1427,6 +1446,18 @@ app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
     }
 
     const updatedItem = await inventoryOps.update(req.params.id, req.body);
+    const qtyDelta = updatedItem.quantity - existingItem.quantity;
+    if (qtyDelta !== 0 && currentUser?.teamId) {
+      await logMovement(
+        currentUser.teamId,
+        req.params.id,
+        qtyDelta,
+        "adjustment",
+        "adjustment",
+        null,
+        qtyDelta > 0 ? "Quantity added" : "Quantity removed"
+      );
+    }
     res.json(updatedItem);
   } catch (error) {
     console.error("Error updating item:", error);
@@ -1510,12 +1541,19 @@ app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
       (i) => i.name === sourceItem.name && (i.sku || "") === (sourceItem.sku || "")
     );
 
+    const fromWh = teamWarehouses.find((w) => w.id === fromWarehouseId);
+    const toWh = teamWarehouses.find((w) => w.id === toWarehouseId);
+    const fromName = fromWh?.name || fromWarehouseId;
+    const toName = toWh?.name || toWarehouseId;
+
+    let destItemId = null;
     if (existingInDest) {
       await inventoryOps.update(existingInDest.id, {
         quantity: existingInDest.quantity + quantity,
       });
+      destItemId = existingInDest.id;
     } else {
-      await inventoryOps.create({
+      const newDestItem = await inventoryOps.create({
         name: sourceItem.name,
         sku: sourceItem.sku || "",
         category: sourceItem.category || "",
@@ -1524,21 +1562,94 @@ app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
         quantity,
         unit: sourceItem.unit || "",
         reorderPoint: sourceItem.reorderPoint ?? 0,
+        reorderQuantity: sourceItem.reorderQuantity ?? 0,
         priceBoughtFor: sourceItem.priceBoughtFor ?? null,
         markupPercentage: sourceItem.markupPercentage ?? null,
         finalPrice: sourceItem.finalPrice ?? null,
         tags: sourceItem.tags || [],
         notes: sourceItem.notes || "",
       });
+      destItemId = newDestItem.id;
     }
 
     const newSourceQty = sourceItem.quantity - quantity;
     await inventoryOps.update(inventoryItemId, { quantity: newSourceQty });
 
+    if (currentUser?.teamId) {
+      await logMovement(currentUser.teamId, inventoryItemId, -quantity, "transfer_out", "transfer", null, `Transfer to ${toName}`);
+      if (destItemId) {
+        await logMovement(currentUser.teamId, destItemId, quantity, "transfer_in", "transfer", null, `Transfer from ${fromName}`);
+      }
+    }
+
     res.json({ message: `Transferred ${quantity} ${sourceItem.unit || "units"} of ${sourceItem.name} successfully.` });
   } catch (error) {
     console.error("Transfer error:", error);
     res.status(500).json({ message: "Transfer failed" });
+  }
+});
+
+// ==================== REPORTS ROUTES ====================
+
+app.get("/api/reports/movements", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Reports." });
+    }
+    if (!currentUser?.teamId) {
+      return res.json([]);
+    }
+    const { inventoryItemId, fromDate, toDate, limit } = req.query;
+    const movements = await movementOps.findByTeam(currentUser.teamId, {
+      inventoryItemId: inventoryItemId || undefined,
+      fromDate: fromDate || undefined,
+      toDate: toDate || undefined,
+      limit: limit ? Math.min(parseInt(limit, 10) || 500, 1000) : 500,
+    });
+    const itemIds = [...new Set(movements.map((m) => m.inventoryItemId))];
+    const itemMap = {};
+    for (const id of itemIds) {
+      const item = await inventoryOps.findById(id);
+      if (item) itemMap[id] = { name: item.name, unit: item.unit || "" };
+    }
+    const withNames = movements.map((m) => ({
+      ...m,
+      itemName: itemMap[m.inventoryItemId]?.name || "—",
+      unit: itemMap[m.inventoryItemId]?.unit || "",
+    }));
+    res.json(withNames);
+  } catch (error) {
+    console.error("Reports movements error:", error);
+    res.status(500).json({ message: "Error loading movements" });
+  }
+});
+
+app.get("/api/reports/summary", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Reports." });
+    }
+    const teamWarehouses =
+      currentUser?.teamId
+        ? (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        : [];
+    const items = await inventoryOps.findAll(teamWarehouses.length ? teamWarehouses : null);
+    const lowStock = items.filter((i) => i.quantity <= (i.reorderPoint || 0) && i.reorderPoint > 0).length;
+    const outOfStock = items.filter((i) => i.quantity <= 0).length;
+    const totalValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.priceBoughtFor || 0), 0);
+    const retailValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.finalPrice || 0), 0);
+    res.json({
+      totalItems: items.length,
+      lowStockCount: lowStock,
+      outOfStockCount: outOfStock,
+      totalCostValue: Math.round(totalValue * 100) / 100,
+      totalRetailValue: Math.round(retailValue * 100) / 100,
+    });
+  } catch (error) {
+    console.error("Reports summary error:", error);
+    res.status(500).json({ message: "Error loading report summary" });
   }
 });
 
@@ -1739,6 +1850,21 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
       ...invoiceData,
       teamId: currentUser?.teamId ?? undefined,
     });
+
+    if (currentUser?.teamId && newInvoice?.items && Array.isArray(newInvoice.items)) {
+      for (const item of newInvoice.items) {
+        if (!item.inventoryItemId) continue;
+        await logMovement(
+          currentUser.teamId,
+          item.inventoryItemId,
+          -Number(item.quantity),
+          "invoice",
+          "invoice",
+          newInvoice.id,
+          `Invoice #${newInvoice.invoiceNumber || newInvoice.id}`
+        );
+      }
+    }
     res.status(201).json(newInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);
@@ -2124,6 +2250,21 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
         await inventoryOps.update(saleItem.inventoryItemId, {
           quantity: inventoryItem.quantity - saleItem.quantity,
         });
+      }
+    }
+
+    if (currentUser?.teamId && newSale?.id) {
+      for (const saleItem of saleData.items || []) {
+        if (!saleItem.inventoryItemId) continue;
+        await logMovement(
+          currentUser.teamId,
+          saleItem.inventoryItemId,
+          -Number(saleItem.quantity),
+          "sale",
+          "sale",
+          newSale.id,
+          `Sale #${newSale.saleNumber || newSale.id}`
+        );
       }
     }
 

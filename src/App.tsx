@@ -14,8 +14,8 @@ import { InventoryPage } from "./pages/InventoryPage";
 import { ShoppingListPage } from "./pages/ShoppingListPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { InvoicesPage } from "./pages/InvoicesPage";
-import { SalesPage } from "./pages/SalesPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { ReportsPage } from "./pages/ReportsPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
@@ -87,22 +87,23 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
-          <Route
-            path="/sales"
-            element={
-              <ProtectedRoute pageKey="sales">
-                <Layout>
-                  <SalesPage />
-                </Layout>
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/sales" element={<Navigate to="/inventory" replace />} />
           <Route
             path="/settings"
             element={
               <ProtectedRoute pageKey="settings">
                 <Layout>
                   <SettingsPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/reports"
+            element={
+              <ProtectedRoute pageKey="reports">
+                <Layout>
+                  <ReportsPage />
                 </Layout>
               </ProtectedRoute>
             }

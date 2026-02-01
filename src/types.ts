@@ -32,6 +32,7 @@ export type InventoryItem = {
   quantity: number;
   unit: string;
   reorderPoint: number;
+  reorderQuantity?: number;
   priceBoughtFor: number;
   markupPercentage: number;
   finalPrice: number;
@@ -50,6 +51,7 @@ export type InventoryItemFormValues = {
   quantity: number;
   unit: string;
   reorderPoint: number;
+  reorderQuantity: number;
   priceBoughtFor: number;
   markupPercentage: number;
   finalPrice: number;

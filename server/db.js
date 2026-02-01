@@ -603,4 +603,27 @@ export const invitationOps = {
   },
 };
 
+// Inventory movement (for ins/outs reports)
+export const movementOps = {
+  async create(data) {
+    return await prisma.inventoryMovement.create({ data });
+  },
+
+  async findByTeam(teamId, opts = {}) {
+    const { inventoryItemId, fromDate, toDate, limit = 500 } = opts;
+    const where = { teamId: teamId || undefined };
+    if (inventoryItemId) where.inventoryItemId = inventoryItemId;
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) where.createdAt.gte = new Date(fromDate);
+      if (toDate) where.createdAt.lte = new Date(toDate);
+    }
+    return await prisma.inventoryMovement.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: Math.min(limit, 1000),
+    });
+  },
+};
+
 export { prisma };
