@@ -221,6 +221,17 @@ export const InvoicesPage: React.FC = () => {
     }));
   }, [invoices, selectedYear, selectedMonth]);
 
+  const { monthlyTotal, yearlyTotal } = useMemo(() => {
+    const inMonth = (d: string) => {
+      const dt = new Date(d);
+      return dt.getFullYear() === selectedYear && dt.getMonth() + 1 === selectedMonth;
+    };
+    const inYear = (d: string) => new Date(d).getFullYear() === selectedYear;
+    const monthly = invoices.filter((inv) => inMonth(inv.date)).reduce((sum, inv) => sum + (inv.total ?? 0), 0);
+    const yearly = invoices.filter((inv) => inYear(inv.date)).reduce((sum, inv) => sum + (inv.total ?? 0), 0);
+    return { monthlyTotal: monthly, yearlyTotal: yearly };
+  }, [invoices, selectedYear, selectedMonth]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.invoiceNumber || !formData.clientId) {
@@ -598,6 +609,16 @@ export const InvoicesPage: React.FC = () => {
           <p style={{ marginTop: "4px", fontSize: "0.9em", color: "#64748b" }}>
             Invoices are automatically created and updated from sales. Auto-generated invoices are marked with "(Auto-generated)".
           </p>
+          <div className="invoice-totals-bar">
+            <span className="invoice-total-item">
+              <strong>Monthly total</strong> ({monthNames[selectedMonth - 1]} {selectedYear}):{" "}
+              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(monthlyTotal)}
+            </span>
+            <span className="invoice-total-item">
+              <strong>Yearly total</strong> ({selectedYear}):{" "}
+              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(yearlyTotal)}
+            </span>
+          </div>
         </div>
         <button
           className="clear-button"

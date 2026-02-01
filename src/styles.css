@@ -1381,6 +1381,23 @@ button.secondary:hover {
   gap: 16px;
 }
 
+.invoice-totals-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin-top: 12px;
+  padding: 12px 16px;
+  background: rgba(241, 245, 249, 0.9);
+  border-radius: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  font-size: 14px;
+  color: #334155;
+}
+
+.invoice-total-item strong {
+  color: #0f172a;
+}
+
 .invoice-card {
   background: rgba(255, 255, 255, 0.96);
   border-radius: 16px;
