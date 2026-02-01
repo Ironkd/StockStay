@@ -268,14 +268,15 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
  * @returns {Promise<boolean>} - true if sent (or logged in dev), false on error
  */
 export async function sendInvitationEmail(to, token, teamName = "the team", inviterName = "A team owner") {
-  const inviteLink = `${APP_URL}/accept-invite?token=${encodeURIComponent(token)}`;
+  const acceptPath = `/accept-invite?token=${encodeURIComponent(token)}`;
+  const inviteLink = `${APP_URL}/login?mode=signup&redirect=${encodeURIComponent(acceptPath)}`;
   const subject = `You're invited to join ${teamName} on Stock Stay`;
-  const text = `Hi,\n\n${inviterName} invited you to join ${teamName} on Stock Stay.\n\nAccept the invitation by clicking this link (you'll need to sign in or create an account first):\n\n${inviteLink}\n\nThis link expires in 14 days.\n\n— Stock Stay`;
+  const text = `Hi,\n\n${inviterName} invited you to join ${teamName} on Stock Stay.\n\nSign up to join by clicking this link:\n\n${inviteLink}\n\nThis link expires in 14 days.\n\n— Stock Stay`;
   const html = `
     <p>Hi,</p>
     <p><strong>${escapeHtml(inviterName)}</strong> invited you to join <strong>${escapeHtml(teamName)}</strong> on Stock Stay.</p>
-    <p><a href="${inviteLink}">Accept invitation</a></p>
-    <p>You'll need to sign in or create an account first. This link expires in 14 days.</p>
+    <p><a href="${inviteLink}">Sign up to join</a></p>
+    <p>Create an account to accept the invitation. This link expires in 14 days.</p>
     <p>— Stock Stay</p>
   `;
 

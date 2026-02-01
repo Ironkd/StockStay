@@ -139,6 +139,10 @@ export const LoginPage: React.FC = () => {
         }
         setPassword("");
         setConfirmPassword("");
+        const redirect = new URLSearchParams(location.search).get("redirect");
+        if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
+          navigate(redirect);
+        }
       } catch (err) {
         const message = err instanceof Error ? err.message : "Sign up failed";
         if (message.toLowerCase().includes("already exists")) {

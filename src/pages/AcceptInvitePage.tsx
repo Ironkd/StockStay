@@ -27,7 +27,7 @@ export const AcceptInvitePage: React.FC = () => {
       }
       if (!isAuthenticated) {
         const returnPath = `/accept-invite?token=${encodeURIComponent(token)}`;
-        navigate(`/login?redirect=${encodeURIComponent(returnPath)}`);
+        navigate(`/login?mode=signup&redirect=${encodeURIComponent(returnPath)}`);
         return;
       }
 
