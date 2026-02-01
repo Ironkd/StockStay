@@ -113,33 +113,18 @@ export const SettingsPage: React.FC = () => {
 
   const isOwner = user?.teamRole === "owner";
 
-  // Pre-fill profile from user (including signup data: name → first/last, address → street)
   useEffect(() => {
     if (user) {
-      const hasFirstLast = (user.firstName ?? "").trim() || (user.lastName ?? "").trim();
-      if (hasFirstLast) {
-        setProfileFirstName(user.firstName ?? "");
-        setProfileLastName(user.lastName ?? "");
-      } else {
-        // Derive first/last from full name stored at signup
-        const full = (user.name ?? "").trim();
-        if (full) {
-          const space = full.indexOf(" ");
-          setProfileFirstName(space === -1 ? full : full.slice(0, space));
-          setProfileLastName(space === -1 ? "" : full.slice(space + 1).trim());
-        } else {
-          setProfileFirstName("");
-          setProfileLastName("");
-        }
-      }
+      setProfileFirstName(user.firstName ?? "");
+      setProfileLastName(user.lastName ?? "");
       setProfileEmail(user.email ?? "");
-      setProfileStreet((user.streetAddress ?? user.address ?? "").trim());
+      setProfileStreet(user.streetAddress ?? "");
       setProfileCity(user.city ?? "");
       setProfileProvince(user.province ?? "");
       setProfilePostalCode(user.postalCode ?? "");
       setProfilePhone(user.phone ?? "");
     }
-  }, [user?.id, user?.name, user?.firstName, user?.lastName, user?.email, user?.address, user?.streetAddress, user?.city, user?.province, user?.postalCode, user?.phone]);
+  }, [user?.id, user?.firstName, user?.lastName, user?.email, user?.streetAddress, user?.city, user?.province, user?.postalCode, user?.phone]);
 
   // Pre-fill support form when opening modal
   useEffect(() => {
