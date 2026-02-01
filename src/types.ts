@@ -127,3 +127,49 @@ export type SaleItem = {
   unitPrice: number;
   total: number;
 };
+
+// Team (GET /api/team response)
+export type TeamInfo = {
+  id: string;
+  name: string;
+  ownerId: string;
+  plan: string;
+  effectivePlan: string;
+  maxWarehouses: number | null;
+  warehouseCount: number;
+  billingInterval: string | null;
+  isOnTrial: boolean;
+  trialEndsAt: string | null;
+  trialStatus?: string;
+  billingPortalAvailable: boolean;
+};
+
+export type TeamMemberInfo = {
+  id: string;
+  teamRole: string;
+  maxInventoryItems: number | null;
+  allowedPages: string[] | null;
+  allowedWarehouseIds: string[] | null;
+  email?: string;
+  name?: string;
+  isTeammate?: boolean;
+};
+
+export type TeamInvitationInfo = {
+  id: string;
+  email: string;
+  teamRole: string;
+  maxInventoryItems: number | null;
+  status: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string | null;
+  allowedPages: string[] | null;
+  allowedWarehouseIds: string[] | null;
+};
+
+export type TeamData = {
+  team: TeamInfo;
+  members: TeamMemberInfo[];
+  invitations: TeamInvitationInfo[];
+};
