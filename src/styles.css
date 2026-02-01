@@ -54,6 +54,16 @@ body {
   color: #64748b;
 }
 
+.app-header .welcome-line {
+  font-size: 1rem;
+}
+
+.app-header .team-line {
+  margin-top: 2px;
+  font-size: 0.875rem;
+  color: #94a3b8;
+}
+
 .app-header-brand {
   display: flex;
   align-items: center;

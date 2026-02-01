@@ -5,6 +5,7 @@ export interface AuthUser {
   email: string;
   name: string;
   teamId?: string | null;
+  teamName?: string | null;
   teamRole?: "owner" | "member" | "viewer";
   maxInventoryItems?: number | null;
   allowedPages?: string[] | null;

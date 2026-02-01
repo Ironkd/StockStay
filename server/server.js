@@ -224,12 +224,19 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       { expiresIn: "7d" }
     );
 
+    let teamName = null;
+    if (user.teamId) {
+      const team = await teamOps.findById(user.teamId);
+      if (team) teamName = team.name;
+    }
+
     res.json({
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
         teamId: user.teamId,
+        teamName: teamName ?? null,
         teamRole: user.teamRole,
         maxInventoryItems: user.maxInventoryItems ?? null,
         allowedPages: user.allowedPages ?? null,
@@ -565,11 +572,18 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
       user = await userOps.update(user.id, updates);
     }
 
+    let teamName = null;
+    if (user.teamId) {
+      const team = await teamOps.findById(user.teamId);
+      if (team) teamName = team.name;
+    }
+
     res.json({
       id: user.id,
       email: user.email,
       name: user.name,
       teamId: user.teamId,
+      teamName: teamName ?? null,
       teamRole: user.teamRole,
       maxInventoryItems: user.maxInventoryItems ?? null,
       allowedPages: user.allowedPages ?? null,
