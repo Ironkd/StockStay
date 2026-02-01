@@ -97,6 +97,41 @@ export async function createCheckoutSession(opts) {
 }
 
 /**
+ * Create a Stripe Checkout Session for new signup (no team yet). Uses customer_email.
+ * After payment, call signup/complete with sessionId to create team and user.
+ * @param {Object} opts - { customerEmail, successUrl, cancelUrl, metadata }
+ * @param {string} opts.customerEmail
+ * @param {string} opts.successUrl - must include {CHECKOUT_SESSION_ID} for Stripe to substitute
+ * @param {string} opts.cancelUrl
+ * @param {Object} [opts.metadata] - optional metadata for the session
+ * @returns {Promise<{ url: string, sessionId: string }>}
+ */
+export async function createCheckoutSessionForNewSignup(opts) {
+  if (!stripe || !stripeProPriceId) {
+    throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRO_PRICE_ID.");
+  }
+  const { customerEmail, successUrl, cancelUrl, metadata = {} } = opts;
+  const priceId = getPriceIdForPlan("pro", "monthly");
+  if (!priceId) throw new Error("No Stripe price configured for Pro monthly.");
+
+  const session = await stripe.checkout.sessions.create({
+    customer_email: customerEmail,
+    mode: "subscription",
+    line_items: [{ price: priceId, quantity: 1 }],
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    metadata: { ...metadata },
+    subscription_data: {
+      metadata: { ...metadata },
+      trial_period_days: 14,
+    },
+    allow_promotion_codes: true,
+  });
+
+  return { url: session.url, sessionId: session.id };
+}
+
+/**
  * Ensure team has a Stripe customer (create if missing). Returns customer ID.
  * @param {string} teamId
  * @param {string} customerEmail

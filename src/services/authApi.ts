@@ -53,6 +53,27 @@ export interface SignupResponse {
   teamName?: string;
 }
 
+export interface SignupCheckoutPayload {
+  email: string;
+  password: string;
+  fullName: string;
+  address?: string;
+  phoneNumber?: string;
+}
+
+export interface SignupCheckoutResponse {
+  checkoutUrl: string;
+}
+
+export interface SignupCompletePayload {
+  pendingToken: string;
+  sessionId: string;
+}
+
+export interface SignupCompleteResponse {
+  message: string;
+}
+
 export const authApi = {
   signup: async (payload: SignupPayload): Promise<SignupResponse> => {
     const response = await apiRequest<SignupResponse>("/auth/signup", {
@@ -131,5 +152,19 @@ export const authApi = {
       method: "POST",
       body: JSON.stringify({ token, password })
     });
-  }
+  },
+
+  signupCheckout: async (payload: SignupCheckoutPayload): Promise<SignupCheckoutResponse> => {
+    return apiRequest<SignupCheckoutResponse>("/auth/signup/checkout", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  signupComplete: async (payload: SignupCompletePayload): Promise<SignupCompleteResponse> => {
+    return apiRequest<SignupCompleteResponse>("/auth/signup/complete", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
 };

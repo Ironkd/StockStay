@@ -58,16 +58,15 @@ export const LoginPage: React.FC = () => {
   const [postalCode, setPostalCode] = useState("");
   const [phoneCountry, setPhoneCountry] = useState<"CA" | "US">("CA");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [startProTrial, setStartProTrial] = useState(false);
   const [agreeToTerms, setAgreeToTerms] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [signupStep, setSignupStep] = useState<1 | 2 | 3>(1);
   const [isSignUpMode, setIsSignUpMode] = useState(
     () => new URLSearchParams(typeof window !== "undefined" ? window.location.search : "").get("mode") === "signup"
   );
   const [signupSuccess, setSignupSuccess] = useState("");
-  const [checkoutUrlForTrial, setCheckoutUrlForTrial] = useState<string | null>(null);
   const [showForgotPassword, setShowForgotPassword] = useState(false);
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
@@ -79,7 +78,10 @@ export const LoginPage: React.FC = () => {
   // Sync sign-up mode when URL changes (e.g. client-side nav to /login?mode=signup)
   React.useEffect(() => {
     const mode = new URLSearchParams(location.search).get("mode");
-    if (mode === "signup") setIsSignUpMode(true);
+    if (mode === "signup") {
+      setIsSignUpMode(true);
+      setSignupStep(1);
+    }
   }, [location.search]);
 
   const resetSuccessMessage = location.state?.message;
@@ -125,83 +127,86 @@ export const LoginPage: React.FC = () => {
     e.preventDefault();
     setError("");
     setSignupSuccess("");
-    setCheckoutUrlForTrial(null);
     setLoading(true);
 
     if (isSignUpMode) {
-      if (!email || !password || !firstName.trim() || !lastName.trim()) {
-        setError("Please enter email, first name, last name, and password");
-        setLoading(false);
-        return;
-      }
-      if (password !== confirmPassword) {
-        setError("Passwords do not match");
-        setLoading(false);
-        return;
-      }
-      const passwordError = getPasswordError(password);
-      if (passwordError) {
-        setError(passwordError);
-        setLoading(false);
-        return;
-      }
-      if (!agreeToTerms) {
-        setError("You must agree to the Terms of Service and Privacy Policy to sign up.");
-        setLoading(false);
-        return;
-      }
-      if (isInviteSignup && !inviteToken) {
-        setError("The invitation link is incomplete. Please use the full link from your invitation email to join the team.");
-        setLoading(false);
-        return;
-      }
-      const fullName = `${firstName.trim()} ${lastName.trim()}`;
-      const addressParts = [street.trim(), city.trim(), province.trim(), postalCode.trim()].filter(Boolean);
-      const addressStr = addressParts.length > 0 ? addressParts.join(", ") : undefined;
-      const prefix = phoneCountry === "CA" ? "+1" : "+1";
-      const phoneStr = phoneNumber.trim() ? `${prefix} ${phoneNumber.trim().replace(/\D/g, "")}` : undefined;
-      try {
-        const response = await authApi.signup({
-          email: email.trim(),
-          password,
-          fullName,
-          address: addressStr,
-          phoneNumber: phoneStr,
-          startProTrial: isInviteSignup ? false : startProTrial,
-          ...(inviteToken ? { inviteToken: inviteToken.trim() } : {}),
-        });
-        if (response.joinedTeam) {
-          navigate("/verify-email?pending=1");
+      if (signupStep === 1) {
+        if (!email?.trim() || !firstName.trim() || !lastName.trim()) {
+          setError("Please enter first name, last name, and email");
+          setLoading(false);
           return;
-        } else {
-          const trialMessage = startProTrial
-            ? " Your 14-day Pro trial has been activated!"
-            : "";
-          setSignupSuccess(`Account created.${trialMessage} Check your email to verify your address, then sign in.`);
         }
-        if (response.checkoutUrl) {
-          setCheckoutUrlForTrial(response.checkoutUrl);
+        setSignupStep(2);
+        setLoading(false);
+        return;
+      }
+
+      if (signupStep === 2) {
+        if (!password || password !== confirmPassword) {
+          setError("Passwords do not match");
+          setLoading(false);
+          return;
         }
-        setPassword("");
-        setConfirmPassword("");
-        if (!response.joinedTeam) {
+        const passwordError = getPasswordError(password);
+        if (passwordError) {
+          setError(passwordError);
+          setLoading(false);
+          return;
+        }
+        if (!agreeToTerms) {
+          setError("You must agree to the Terms of Service and Privacy Policy to sign up.");
+          setLoading(false);
+          return;
+        }
+        if (!isInviteSignup) {
+          setSignupStep(3);
+          setLoading(false);
+          return;
+        }
+        if (isInviteSignup && !inviteToken) {
+          setError("The invitation link is incomplete. Please use the full link from your invitation email to join the team.");
+          setLoading(false);
+          return;
+        }
+        const fullName = `${firstName.trim()} ${lastName.trim()}`;
+        const addressParts = [street.trim(), city.trim(), province.trim(), postalCode.trim()].filter(Boolean);
+        const addressStr = addressParts.length > 0 ? addressParts.join(", ") : undefined;
+        const prefix = phoneCountry === "CA" ? "+1" : "+1";
+        const phoneStr = phoneNumber.trim() ? `${prefix} ${phoneNumber.trim().replace(/\D/g, "")}` : undefined;
+        try {
+          const response = await authApi.signup({
+            email: email.trim(),
+            password,
+            fullName,
+            address: addressStr,
+            phoneNumber: phoneStr,
+            startProTrial: false,
+            ...(inviteToken ? { inviteToken: inviteToken.trim() } : {}),
+          });
+          if (response.joinedTeam) {
+            navigate("/verify-email?pending=1");
+            return;
+          }
+          setSignupSuccess("Account created. Check your email to verify your address, then sign in.");
+          setPassword("");
+          setConfirmPassword("");
           const redirect = new URLSearchParams(location.search).get("redirect");
           if (redirect && redirect.startsWith("/") && !redirect.startsWith("//")) {
             navigate(redirect);
           }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Sign up failed";
+          if (message.toLowerCase().includes("already exists")) {
+            setShowEmailAlreadyRegisteredPopup(true);
+            setError("");
+          } else {
+            setError(message);
+          }
+        } finally {
+          setLoading(false);
         }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : "Sign up failed";
-        if (message.toLowerCase().includes("already exists")) {
-          setShowEmailAlreadyRegisteredPopup(true);
-          setError("");
-        } else {
-          setError(message);
-        }
-      } finally {
-        setLoading(false);
+        return;
       }
-      return;
     }
 
     if (!email || !password) {
@@ -225,6 +230,35 @@ export const LoginPage: React.FC = () => {
       setError(err instanceof Error ? err.message : "Login failed");
       console.error("Login error:", err);
     } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleContinueToPayment = async () => {
+    setError("");
+    setLoading(true);
+    const fullName = `${firstName.trim()} ${lastName.trim()}`;
+    const addressParts = [street.trim(), city.trim(), province.trim(), postalCode.trim()].filter(Boolean);
+    const addressStr = addressParts.length > 0 ? addressParts.join(", ") : undefined;
+    const prefix = phoneCountry === "CA" ? "+1" : "+1";
+    const phoneStr = phoneNumber.trim() ? `${prefix} ${phoneNumber.trim().replace(/\D/g, "")}` : undefined;
+    try {
+      const { checkoutUrl } = await authApi.signupCheckout({
+        email: email.trim(),
+        password,
+        fullName,
+        address: addressStr,
+        phoneNumber: phoneStr,
+      });
+      window.location.href = checkoutUrl;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to start checkout. Please try again.";
+      if (message.toLowerCase().includes("already exists")) {
+        setShowEmailAlreadyRegisteredPopup(true);
+        setError("");
+      } else {
+        setError(message);
+      }
       setLoading(false);
     }
   };
@@ -271,7 +305,11 @@ export const LoginPage: React.FC = () => {
           <span className="brand-stay">Stay</span>
         </h1>
         <p className="login-subtitle">
-          {isSignUpMode ? "Create your account" : "Sign in to continue"}
+          {isSignUpMode
+            ? isInviteSignup
+              ? "Create your account"
+              : `Create your account — Step ${signupStep} of 3`
+            : "Sign in to continue"}
         </p>
 
         {showEmailAlreadyRegisteredPopup ? (
@@ -307,43 +345,17 @@ export const LoginPage: React.FC = () => {
               <div className="success-message" role="alert">
                 {signupSuccess}
               </div>
-              {!inviteToken && checkoutUrlForTrial ? (
-                <>
-                  <div className="signup-payment-copy">
-                    <p>We use this to prevent spam and ensure access for active hosts.</p>
-                    <p><strong>You won&apos;t be charged until your trial ends.</strong></p>
-                  </div>
-                  <button
-                    type="button"
-                    className="login-button"
-                    onClick={() => { window.location.href = checkoutUrlForTrial; }}
-                  >
-                    Add payment method
-                  </button>
-                  <button
-                    type="button"
-                    className="login-button secondary signup-skip-payment"
-                    onClick={() => setCheckoutUrlForTrial(null)}
-                  >
-                    I&apos;ll add it later
-                  </button>
-                </>
-              ) : (
-                <>
-                  <p className="signup-success-hint">Check your inbox for the verification link, then sign in below.</p>
-                  <button
-                    type="button"
-                    className="login-button"
-                    onClick={() => {
-                      setSignupSuccess("");
-                      setCheckoutUrlForTrial(null);
-                      setIsSignUpMode(false);
-                    }}
-                  >
-                    Sign in
-                  </button>
-                </>
-              )}
+              <p className="signup-success-hint">Check your inbox for the verification link, then sign in below.</p>
+              <button
+                type="button"
+                className="login-button"
+                onClick={() => {
+                  setSignupSuccess("");
+                  setIsSignUpMode(false);
+                }}
+              >
+                Sign in
+              </button>
             </div>
           ) : (
           <form onSubmit={handleSubmit} className="login-form">
@@ -357,12 +369,12 @@ export const LoginPage: React.FC = () => {
             )}
             {!inviteToken && checkoutCancelledFromUrl && (
               <div className="forgot-password-message success" role="alert">
-                You can add a payment method later from Settings to continue Pro after your trial.
+                Payment is required to complete signup. Complete the steps and click Continue to payment when ready.
               </div>
             )}
             {error && <div className="error-message">{error}</div>}
 
-            {isSignUpMode && (
+            {isSignUpMode && signupStep === 1 && (
               <>
                 <label>
                   <span>First name</span>
@@ -372,7 +384,7 @@ export const LoginPage: React.FC = () => {
                     onChange={(e) => setFirstName(e.target.value)}
                     placeholder="First name"
                     required
-                    autoFocus={isSignUpMode}
+                    autoFocus
                   />
                 </label>
                 <label>
@@ -385,23 +397,16 @@ export const LoginPage: React.FC = () => {
                     required
                   />
                 </label>
-              </>
-            )}
-
-            <label>
-              <span>Email</span>
-              <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                autoFocus={!isSignUpMode}
-              />
-            </label>
-
-            {isSignUpMode && (
-              <>
+                <label>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                  />
+                </label>
                 <label>
                   <span>Street address</span>
                   <input
@@ -467,155 +472,200 @@ export const LoginPage: React.FC = () => {
                     />
                   </div>
                 </label>
+                <button type="submit" className="login-button" disabled={loading}>
+                  {loading ? "Next..." : "Next"}
+                </button>
               </>
             )}
 
-            <label>
-              <span>Password</span>
-              <div className="password-input-wrapper">
-                <input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={isSignUpMode ? "8+ chars, upper, lower, number, symbol" : "Enter your password"}
-                  required
-                  minLength={isSignUpMode ? 8 : undefined}
-                />
-                <button
-                  type="button"
-                  className="password-toggle"
-                  onClick={() => setShowPassword(!showPassword)}
-                  aria-label={showPassword ? "Hide password" : "Show password"}
-                >
-                  {showPassword ? (
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+            {isSignUpMode && signupStep === 2 && (
+              <>
+                {isInviteSignup && (
+                  <p className="invite-signup-hint" style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
+                    You&apos;re signing up to join a team. No payment required.
+                  </p>
+                )}
+                <label>
+                  <span>Password</span>
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="8+ chars, upper, lower, number, symbol"
+                      required
+                      minLength={8}
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                     >
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                      <line x1="1" y1="1" x2="23" y2="23"></line>
-                    </svg>
-                  ) : (
-                    <svg
-                      width="20"
-                      height="20"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
+                      {showPassword ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </label>
+                <label>
+                  <span>Confirm password</span>
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder="Re-enter your password"
+                      required
+                      minLength={8}
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
                     >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                      <circle cx="12" cy="12" r="3"></circle>
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </label>
-            {isSignUpMode && (
-              <label>
-                <span>Confirm password</span>
-                <div className="password-input-wrapper">
+                      {showPassword ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </label>
+                <p className="password-requirements">
+                  At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
+                </p>
+                <label className="trial-checkbox">
                   <input
-                    type={showPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder="Re-enter your password"
+                    type="checkbox"
+                    checked={agreeToTerms}
+                    onChange={(e) => setAgreeToTerms(e.target.checked)}
                     required
-                    minLength={8}
                   />
+                  <span>
+                    I agree to the{" "}
+                    <Link to="/terms" target="_blank" rel="noopener noreferrer">
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link to="/privacy" target="_blank" rel="noopener noreferrer">
+                      Privacy Policy
+                    </Link>
+                  </span>
+                </label>
+                <div className="signup-step-actions">
                   <button
                     type="button"
-                    className="password-toggle"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? "Hide password" : "Show password"}
+                    className="login-button secondary"
+                    onClick={() => setSignupStep(1)}
                   >
-                    {showPassword ? (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-                        <line x1="1" y1="1" x2="23" y2="23"></line>
-                      </svg>
-                    ) : (
-                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <circle cx="12" cy="12" r="3"></circle>
-                      </svg>
-                    )}
+                    Back
+                  </button>
+                  <button type="submit" className="login-button" disabled={loading}>
+                    {loading ? "Creating account..." : isInviteSignup ? "Sign Up" : "Next"}
                   </button>
                 </div>
-              </label>
-            )}
-            {isSignUpMode && (
-              <p className="password-requirements">
-                At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
-              </p>
+              </>
             )}
 
-            {isInviteSignup && (
-              <p className="invite-signup-hint" style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
-                You&apos;re signing up to join a team. No payment required.
-              </p>
-            )}
-            {isSignUpMode && !isInviteSignup && (
-              <label className="trial-checkbox">
-                <input
-                  type="checkbox"
-                  checked={startProTrial}
-                  onChange={(e) => setStartProTrial(e.target.checked)}
-                />
-                <span>
-                  🎁 Start 14-day Pro trial <span style={{ color: '#10b981', fontWeight: '600' }}>(Free)</span>
-                  <br />
-                  <small style={{ color: '#64748b', fontSize: '12px' }}>
-                    Get 10 warehouses, team members & advanced features. No credit card required.
-                  </small>
-                </span>
-              </label>
-            )}
-
-            {isSignUpMode && (
-              <label className="trial-checkbox">
-                <input
-                  type="checkbox"
-                  checked={agreeToTerms}
-                  onChange={(e) => setAgreeToTerms(e.target.checked)}
-                  required
-                />
-                <span>
-                  I agree to the{" "}
-                  <Link to="/terms" target="_blank" rel="noopener noreferrer">
-                    Terms of Service
-                  </Link>{" "}
-                  and{" "}
-                  <Link to="/privacy" target="_blank" rel="noopener noreferrer">
-                    Privacy Policy
-                  </Link>
-                </span>
-              </label>
+            {isSignUpMode && signupStep === 3 && (
+              <>
+                <div className="signup-payment-copy">
+                  <p><strong>Payment is required to complete signup.</strong></p>
+                  <p>Add a payment method to start your 14-day Pro trial. You won&apos;t be charged until your trial ends.</p>
+                </div>
+                <div className="signup-step-actions">
+                  <button
+                    type="button"
+                    className="login-button secondary"
+                    onClick={() => setSignupStep(2)}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="login-button"
+                    onClick={handleContinueToPayment}
+                    disabled={loading}
+                  >
+                    {loading ? "Redirecting..." : "Continue to payment"}
+                  </button>
+                </div>
+              </>
             )}
 
             {!isSignUpMode && (
-              <div className="forgot-password-link">
-                <button
-                  type="button"
-                  onClick={() => setShowForgotPassword(true)}
-                  className="forgot-password-button"
-                >
-                  Forgot Password?
+              <>
+                <label>
+                  <span>Email</span>
+                  <input
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="your@email.com"
+                    required
+                    autoFocus
+                  />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <div className="password-input-wrapper">
+                    <input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="Enter your password"
+                      required
+                    />
+                    <button
+                      type="button"
+                      className="password-toggle"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? "Hide password" : "Show password"}
+                    >
+                      {showPassword ? (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
+                          <line x1="1" y1="1" x2="23" y2="23"></line>
+                        </svg>
+                      ) : (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                          <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                      )}
+                    </button>
+                  </div>
+                </label>
+                <div className="forgot-password-link">
+                  <button
+                    type="button"
+                    onClick={() => setShowForgotPassword(true)}
+                    className="forgot-password-button"
+                  >
+                    Forgot Password?
+                  </button>
+                </div>
+                <button type="submit" className="login-button" disabled={loading}>
+                  {loading ? "Signing in..." : "Sign In"}
                 </button>
-              </div>
+              </>
             )}
-
-            <button type="submit" className="login-button" disabled={loading}>
-              {loading ? (isSignUpMode ? "Creating account..." : "Signing in...") : isSignUpMode ? "Sign Up" : "Sign In"}
-            </button>
 
             <div className="auth-switch">
               {isSignUpMode ? (
@@ -627,6 +677,7 @@ export const LoginPage: React.FC = () => {
                     onClick={() => {
                       setIsSignUpMode(false);
                       setSignupSuccess("");
+                      setSignupStep(1);
                     }}
                   >
                     Sign in
@@ -642,7 +693,7 @@ export const LoginPage: React.FC = () => {
                       setIsSignUpMode(true);
                       setShowForgotPassword(false);
                       setSignupSuccess("");
-                      setCheckoutUrlForTrial(null);
+                      setSignupStep(1);
                     }}
                   >
                     Sign up

@@ -1012,6 +1012,19 @@ button.secondary:hover {
   border: 1px solid #fca5a5;
 }
 
+.signup-step-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 12px;
+}
+.signup-step-actions button {
+  flex: 1;
+}
+.signup-complete-loading {
+  color: #64748b;
+  margin: 12px 0;
+}
+
 .forgot-password-actions {
   display: flex;
   gap: 12px;

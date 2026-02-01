@@ -32,10 +32,12 @@ import {
 } from "./trialManager.js";
 import {
   createCheckoutSession,
+  createCheckoutSessionForNewSignup,
   createCustomerPortalSession,
   ensureTeamStripeCustomer,
   handleWebhook,
   isBillingConfigured,
+  stripe,
 } from "./billing.js";
 
 const app = express();
@@ -524,6 +526,166 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
     const isDev = process.env.NODE_ENV !== "production";
     res.status(500).json({
       message: isDev && msg ? msg : "Something went wrong creating your account. Please try again.",
+    });
+  }
+});
+
+// Pending signups: store signup data before Stripe checkout (TTL 30 min)
+const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
+const pendingSignups = new Map();
+
+function cleanupExpiredPendingSignups() {
+  const now = Date.now();
+  for (const [token, data] of pendingSignups.entries()) {
+    if (data.expiresAt < now) pendingSignups.delete(token);
+  }
+}
+setInterval(cleanupExpiredPendingSignups, 5 * 60 * 1000);
+
+const signupCheckoutValidation = [
+  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+  body("password")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters")
+    .custom((value) => {
+      const msg = passwordStrengthMessage(value);
+      if (msg) return Promise.reject(msg);
+      return true;
+    }),
+  body("fullName").trim().notEmpty().withMessage("Full name is required"),
+  body("address").optional().trim(),
+  body("phoneNumber").optional().trim(),
+];
+
+app.post("/api/auth/signup/checkout", signupRateLimiter, signupCheckoutValidation, async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      const firstError = errors.array()[0];
+      return res.status(400).json({ message: firstError.msg || "Validation failed" });
+    }
+
+    const { email, password, fullName, address, phoneNumber } = req.body;
+
+    const existing = await userOps.findByEmail(email);
+    if (existing) {
+      return res.status(400).json({ message: "An account with this email already exists. Sign in or use a different email." });
+    }
+
+    if (!isBillingConfigured()) {
+      return res.status(503).json({ message: "Payment is not available right now. Please try again later." });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+    const pendingToken = crypto.randomUUID();
+    pendingSignups.set(pendingToken, {
+      email,
+      hashedPassword,
+      fullName: fullName.trim(),
+      address: (address || "").trim() || null,
+      phoneNumber: (phoneNumber || "").trim() || null,
+      expiresAt: Date.now() + PENDING_SIGNUP_TTL_MS,
+    });
+
+    const base = (process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
+    const successUrl = `${base}/signup-complete?pending=${encodeURIComponent(pendingToken)}&session_id={CHECKOUT_SESSION_ID}`;
+    const cancelUrl = `${base}/login?mode=signup&checkout=cancelled`;
+
+    const { url: checkoutUrl } = await createCheckoutSessionForNewSignup({
+      customerEmail: email,
+      successUrl,
+      cancelUrl,
+      metadata: { pendingToken },
+    });
+
+    res.status(200).json({ checkoutUrl });
+  } catch (error) {
+    console.error("Signup checkout error:", error?.message || error);
+    res.status(500).json({
+      message: error?.message || "Failed to start checkout. Please try again.",
+    });
+  }
+});
+
+app.post("/api/auth/signup/complete", async (req, res) => {
+  try {
+    const { pendingToken, sessionId } = req.body;
+    if (!pendingToken || !sessionId) {
+      return res.status(400).json({ message: "Missing pending token or session ID." });
+    }
+
+    const pending = pendingSignups.get(pendingToken);
+    if (!pending) {
+      return res.status(400).json({ message: "This signup link has expired. Please sign up again from the login page." });
+    }
+    if (pending.expiresAt < Date.now()) {
+      pendingSignups.delete(pendingToken);
+      return res.status(400).json({ message: "This signup link has expired. Please sign up again from the login page." });
+    }
+
+    if (!stripe) {
+      return res.status(503).json({ message: "Payment verification is not available. Please contact support." });
+    }
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
+    const paymentOk = session.payment_status === "paid" || session.status === "complete";
+    if (!paymentOk) {
+      return res.status(400).json({ message: "Payment was not completed. Please complete payment to finish signup." });
+    }
+
+    const customerId = session.customer;
+    const subscriptionId =
+      typeof session.subscription === "string"
+        ? session.subscription
+        : session.subscription?.id;
+    const newUserId = crypto.randomUUID();
+    const teamId = crypto.randomUUID();
+    const verificationToken = crypto.randomUUID();
+    const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    await teamOps.create({
+      id: teamId,
+      name: `${pending.fullName}'s Team`,
+      ownerId: newUserId,
+      stripeCustomerId: typeof customerId === "string" ? customerId : customerId?.id ?? null,
+    });
+
+    await startProTrial(teamId);
+
+    await userOps.create({
+      id: newUserId,
+      email: pending.email,
+      name: pending.fullName,
+      password: pending.hashedPassword,
+      address: pending.address,
+      phone: pending.phoneNumber,
+      emailVerified: false,
+      emailVerificationToken: verificationToken,
+      emailVerificationExpiresAt: verificationExpiresAt,
+      teamId,
+      teamRole: "owner",
+      maxInventoryItems: null,
+      allowedPages: null,
+      allowedWarehouseIds: null,
+    });
+
+    if (subscriptionId && typeof subscriptionId === "string") {
+      try {
+        await stripe.subscriptions.update(subscriptionId, { metadata: { teamId, plan: "pro" } });
+      } catch (subErr) {
+        console.error("Signup complete: could not update subscription metadata:", subErr?.message);
+      }
+    }
+
+    pendingSignups.delete(pendingToken);
+
+    await sendVerificationEmail(pending.email, verificationToken, pending.fullName);
+
+    res.status(200).json({ message: "Account created successfully. Check your email to verify your address, then sign in." });
+  } catch (error) {
+    console.error("Signup complete error:", error?.message || error);
+    res.status(500).json({
+      message: error?.message || "Could not complete signup. Please contact support.",
     });
   }
 });

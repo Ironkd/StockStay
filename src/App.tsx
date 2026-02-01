@@ -19,6 +19,7 @@ import { SettingsPage } from "./pages/SettingsPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { SignupCompletePage } from "./pages/SignupCompletePage";
 
 export const App: React.FC = () => {
   return (
@@ -33,6 +34,7 @@ export const App: React.FC = () => {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/signup-complete" element={<SignupCompletePage />} />
           <Route
             path="/dashboard"
             element={
