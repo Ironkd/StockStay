@@ -6,7 +6,7 @@
 import { prisma } from './db.js';
 
 /**
- * Start a 14-day Pro trial for a team (10 warehouses during trial)
+ * Start a 14-day Pro trial for a team (10 properties during trial)
  * @param {string} teamId - The team ID to start trial for
  * @returns {Promise<Object>} Updated team object
  */
@@ -22,13 +22,13 @@ export async function startProTrial(teamId) {
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
       trialPlan: 'pro',
-      maxWarehouses: limits.maxWarehouses, // 10 for Pro
+      maxProperties: limits.maxProperties, // 10 for Pro
     },
   });
 }
 
 /**
- * Start a 14-day Starter trial for a team (3 warehouses during trial)
+ * Start a 14-day Starter trial for a team (3 properties during trial)
  * @param {string} teamId - The team ID to start trial for
  * @returns {Promise<Object>} Updated team object
  */
@@ -44,7 +44,7 @@ export async function startStarterTrial(teamId) {
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
       trialPlan: 'starter',
-      maxWarehouses: limits.maxWarehouses, // 3 for Starter
+      maxProperties: limits.maxProperties, // 3 for Starter
     },
   });
 }
@@ -86,15 +86,15 @@ export function getEffectivePlan(team) {
 export function getPlanLimits(plan) {
   const limits = {
     free: {
-      maxWarehouses: 1,
+      maxProperties: 1,
       features: ['basic_tracking'],
     },
     starter: {
-      maxWarehouses: 3,
+      maxProperties: 3,
       features: ['basic_tracking', 'exports', 'invoices', 'history'],
     },
     pro: {
-      maxWarehouses: 10,
+      maxProperties: 10,
       features: ['basic_tracking', 'exports', 'invoices', 'history', 'team_members', 'permissions', 'advanced_reports', 'value_tracking'],
     },
   };
@@ -103,19 +103,19 @@ export function getPlanLimits(plan) {
 }
 
 /**
- * Check if a team can create more warehouses based on their plan
+ * Check if a team can create more properties based on their plan
  * @param {Object} team - Team object
- * @param {number} currentWarehouseCount - Current number of warehouses
+ * @param {number} currentPropertyCount - Current number of properties
  * @returns {Object} { canCreate: boolean, limit: number, current: number }
  */
-export function canCreateWarehouse(team, currentWarehouseCount) {
+export function canCreateProperty(team, currentPropertyCount) {
   const effectivePlan = getEffectivePlan(team);
   const limits = getPlanLimits(effectivePlan);
   
   return {
-    canCreate: currentWarehouseCount < limits.maxWarehouses,
-    limit: limits.maxWarehouses,
-    current: currentWarehouseCount,
+    canCreate: currentPropertyCount < limits.maxProperties,
+    limit: limits.maxProperties,
+    current: currentPropertyCount,
     plan: effectivePlan,
   };
 }
@@ -148,7 +148,7 @@ export async function downgradeExpiredTrials() {
           isOnTrial: false,
           trialEndsAt: null,
           trialPlan: null,
-          maxWarehouses: 1,
+          maxProperties: 1,
         },
       });
       console.log(`[TRIAL] Downgraded team ${team.id} (${team.name}) from trial to free`);

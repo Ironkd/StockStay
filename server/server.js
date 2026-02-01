@@ -10,7 +10,7 @@ import {
   initDemoUser,
   userOps,
   teamOps,
-  warehouseOps,
+  propertyOps,
   inventoryOps,
   clientOps,
   invoiceOps,
@@ -26,7 +26,7 @@ import {
   isTrialExpired,
   getEffectivePlan,
   getPlanLimits,
-  canCreateWarehouse,
+  canCreateProperty,
   downgradeExpiredTrials,
   getTrialStatus,
   startStarterTrial,
@@ -223,7 +223,7 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     }
     if (!user.teamRole) updates.teamRole = "owner";
     if (typeof user.allowedPages === "undefined") updates.allowedPages = null;
-    if (typeof user.allowedWarehouseIds === "undefined") updates.allowedWarehouseIds = null;
+    if (typeof user.allowedPropertyIds === "undefined") updates.allowedPropertyIds = null;
 
     if (Object.keys(updates).length > 0) {
       try {
@@ -286,7 +286,7 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         teamRole: user.teamRole ?? null,
         maxInventoryItems: user.maxInventoryItems ?? null,
         allowedPages: user.allowedPages ?? null,
-        allowedWarehouseIds: user.allowedWarehouseIds ?? null,
+        allowedPropertyIds: user.allowedPropertyIds ?? null,
       },
       token,
     };
@@ -402,7 +402,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
           teamRole: null,
           maxInventoryItems: null,
           allowedPages: null,
-          allowedWarehouseIds: null,
+          allowedPropertyIds: null,
         });
 
         await userOps.update(user.id, {
@@ -414,9 +414,9 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
             Array.isArray(invitation.allowedPages) && invitation.allowedPages.length > 0
               ? invitation.allowedPages
               : null,
-          allowedWarehouseIds:
-            Array.isArray(invitation.allowedWarehouseIds) && invitation.allowedWarehouseIds.length > 0
-              ? invitation.allowedWarehouseIds
+          allowedPropertyIds:
+            Array.isArray(invitation.allowedPropertyIds) && invitation.allowedPropertyIds.length > 0
+              ? invitation.allowedPropertyIds
               : null,
         });
 
@@ -468,7 +468,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       teamRole: "owner",
       maxInventoryItems: null,
       allowedPages: null,
-      allowedWarehouseIds: null,
+      allowedPropertyIds: null,
     });
 
     await sendVerificationEmail(email, verificationToken, fullName.trim());
@@ -667,7 +667,7 @@ app.post("/api/auth/signup/complete", async (req, res) => {
       teamRole: "owner",
       maxInventoryItems: null,
       allowedPages: null,
-      allowedWarehouseIds: null,
+      allowedPropertyIds: null,
     });
 
     if (subscriptionId && typeof subscriptionId === "string") {
@@ -835,8 +835,8 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
     if (typeof user.allowedPages === "undefined") {
       updates.allowedPages = null;
     }
-    if (typeof user.allowedWarehouseIds === "undefined") {
-      updates.allowedWarehouseIds = null;
+    if (typeof user.allowedPropertyIds === "undefined") {
+      updates.allowedPropertyIds = null;
     }
 
     if (Object.keys(updates).length > 0) {
@@ -866,7 +866,7 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
       teamRole: user.teamRole,
       maxInventoryItems: user.maxInventoryItems ?? null,
       allowedPages: user.allowedPages ?? null,
-      allowedWarehouseIds: user.allowedWarehouseIds ?? null,
+      allowedPropertyIds: user.allowedPropertyIds ?? null,
     });
   } catch (error) {
     console.error("Error fetching user:", error);
@@ -933,7 +933,7 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
       teamRole: updated.teamRole,
       maxInventoryItems: updated.maxInventoryItems ?? null,
       allowedPages: updated.allowedPages ?? null,
-      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+      allowedPropertyIds: updated.allowedPropertyIds ?? null,
     });
   } catch (error) {
     console.error("Error updating profile:", error);
@@ -951,27 +951,27 @@ const userHasPageAccess = (user, pageKey) => {
   return Array.isArray(user.allowedPages) && user.allowedPages.includes(pageKey);
 };
 
-// ==================== WAREHOUSE ROUTES ====================
+// ==================== PROPERTY ROUTES ====================
 
-// Get current team's warehouses
-app.get("/api/warehouses", authenticateToken, async (req, res) => {
+// Get current team's properties
+app.get("/api/properties", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "User does not belong to a team." });
     }
 
-    const warehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
-    res.json(warehouses);
+    const properties = await propertyOps.findAllByTeam(currentUser.teamId);
+    res.json(properties);
   } catch (error) {
-    console.error("Error fetching warehouses:", error);
-    res.status(500).json({ message: "Error fetching warehouses" });
+    console.error("Error fetching properties:", error);
+    res.status(500).json({ message: "Error fetching properties" });
   }
 });
 
-// Create a new warehouse for the current team,
-// enforcing plan-based maxWarehouses limits.
-app.post("/api/warehouses", authenticateToken, async (req, res) => {
+// Create a new property for the current team,
+// enforcing plan-based maxProperties limits.
+app.post("/api/properties", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
 
@@ -979,11 +979,11 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "User does not belong to a team." });
     }
 
-    // Only owners can create warehouses (simple rule for now)
+    // Only owners can create properties (simple rule for now)
     if (currentUser.teamRole !== "owner") {
       return res
         .status(403)
-        .json({ message: "Only team owners can create warehouses." });
+        .json({ message: "Only team owners can create properties." });
     }
 
     const team = await teamOps.findById(currentUser.teamId);
@@ -1000,89 +1000,89 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
           isOnTrial: false,
           trialEndsAt: null,
           trialPlan: null,
-          maxWarehouses: 1,
+          maxProperties: 1,
         },
       });
       team.plan = 'free';
       team.isOnTrial = false;
-      team.maxWarehouses = 1;
+      team.maxProperties = 1;
       console.log(`[TRIAL] Auto-downgraded team ${team.id} from expired trial`);
     }
 
-    // Use trial manager to check warehouse limits
-    const currentCount = await warehouseOps.countByTeam(team.id);
-    const warehouseCheck = canCreateWarehouse(team, currentCount);
+    // Use trial manager to check property limits
+    const currentCount = await propertyOps.countByTeam(team.id);
+    const propertyCheck = canCreateProperty(team, currentCount);
 
-    if (!warehouseCheck.canCreate) {
+    if (!propertyCheck.canCreate) {
       const effectivePlan = getEffectivePlan(team);
       return res.status(403).json({
         message:
           effectivePlan === "free"
-            ? "Free plan allows only 1 warehouse. Upgrade your plan to add more."
-            : `Warehouse limit reached for your current plan (${warehouseCheck.limit} max).`,
-        limit: warehouseCheck.limit,
-        current: warehouseCheck.current,
-        plan: warehouseCheck.plan,
+            ? "Free plan allows only 1 property. Upgrade your plan to add more."
+            : `Property limit reached for your current plan (${propertyCheck.limit} max).`,
+        limit: propertyCheck.limit,
+        current: propertyCheck.current,
+        plan: propertyCheck.plan,
         upgradeAvailable: true,
       });
     }
 
     const { name, location } = req.body;
     if (!name || typeof name !== "string") {
-      return res.status(400).json({ message: "Warehouse name is required." });
+      return res.status(400).json({ message: "Property name is required." });
     }
 
-    const warehouse = await warehouseOps.createForTeam(currentUser.teamId, {
+    const property = await propertyOps.createForTeam(currentUser.teamId, {
       name,
       location,
     });
 
-    res.status(201).json(warehouse);
+    res.status(201).json(property);
   } catch (error) {
-    console.error("Error creating warehouse:", error);
-    res.status(500).json({ message: "Error creating warehouse" });
+    console.error("Error creating property:", error);
+    res.status(500).json({ message: "Error creating property" });
   }
 });
 
-app.put("/api/warehouses/:id", authenticateToken, async (req, res) => {
+app.put("/api/properties/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
     if (!currentUser?.teamId) {
       return res.status(400).json({ message: "You do not belong to a team." });
     }
-    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
-    const warehouse = teamWarehouses.find((w) => w.id === req.params.id);
-    if (!warehouse) {
-      return res.status(404).json({ message: "Warehouse not found." });
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const property = teamProperties.find((w) => w.id === req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: "Property not found." });
     }
     const { name, location } = req.body;
-    const updated = await warehouseOps.update(req.params.id, {
-      name: typeof name === "string" ? name : warehouse.name,
-      location: typeof location === "string" ? location : warehouse.location ?? "",
+    const updated = await propertyOps.update(req.params.id, {
+      name: typeof name === "string" ? name : property.name,
+      location: typeof location === "string" ? location : property.location ?? "",
     });
     res.json(updated);
   } catch (error) {
-    console.error("Error updating warehouse:", error);
-    res.status(500).json({ message: "Error updating warehouse" });
+    console.error("Error updating property:", error);
+    res.status(500).json({ message: "Error updating property" });
   }
 });
 
-app.delete("/api/warehouses/:id", authenticateToken, async (req, res) => {
+app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
     if (!currentUser?.teamId) {
       return res.status(400).json({ message: "You do not belong to a team." });
     }
-    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
-    const warehouse = teamWarehouses.find((w) => w.id === req.params.id);
-    if (!warehouse) {
-      return res.status(404).json({ message: "Warehouse not found." });
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const property = teamProperties.find((w) => w.id === req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: "Property not found." });
     }
-    await warehouseOps.delete(req.params.id);
-    res.json({ message: "Warehouse deleted successfully" });
+    await propertyOps.delete(req.params.id);
+    res.json({ message: "Property deleted successfully" });
   } catch (error) {
-    console.error("Error deleting warehouse:", error);
-    res.status(500).json({ message: "Error deleting warehouse" });
+    console.error("Error deleting property:", error);
+    res.status(500).json({ message: "Error deleting property" });
   }
 });
 
@@ -1161,23 +1161,23 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    // Only return items in this user's team's warehouses (not all items in the DB)
-    const teamWarehouseIds =
+    // Only return items in this user's team's properties (not all items in the DB)
+    const teamPropertyIds =
       currentUser?.teamId ?
-        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
       : [];
-    let items = await inventoryOps.findAll(teamWarehouseIds);
+    let items = await inventoryOps.findAll(teamPropertyIds);
 
-    // If the user has warehouse restrictions, only return items from allowed warehouses
+    // If the user has property restrictions, only return items from allowed properties
     if (
       currentUser &&
-      Array.isArray(currentUser.allowedWarehouseIds) &&
-      currentUser.allowedWarehouseIds.length > 0
+      Array.isArray(currentUser.allowedPropertyIds) &&
+      currentUser.allowedPropertyIds.length > 0
     ) {
       items = items.filter(
         (item) =>
-          item.warehouseId &&
-          currentUser.allowedWarehouseIds.includes(item.warehouseId)
+          item.propertyId &&
+          currentUser.allowedPropertyIds.includes(item.propertyId)
       );
     }
 
@@ -1188,11 +1188,11 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
   }
 });
 
-// Helper: item is in one of the current user's team's warehouses
+// Helper: item is in one of the current user's team's properties
 async function inventoryItemBelongsToTeam(item, currentUser) {
-  if (!currentUser?.teamId || !item?.warehouseId) return false;
-  const warehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
-  return warehouses.some((w) => w.id === item.warehouseId);
+  if (!currentUser?.teamId || !item?.propertyId) return false;
+  const properties = await propertyOps.findAllByTeam(currentUser.teamId);
+  return properties.some((w) => w.id === item.propertyId);
 }
 
 /** Log inventory movement for reports (ins/outs). Non-blocking. */
@@ -1227,18 +1227,18 @@ app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Item must be in this user's team's warehouses
+    // Item must be in this user's team's properties
     if (!(await inventoryItemBelongsToTeam(item, currentUser))) {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Enforce warehouse-level restrictions (allowedWarehouseIds)
+    // Enforce property-level restrictions (allowedPropertyIds)
     if (
       currentUser &&
-      Array.isArray(currentUser.allowedWarehouseIds) &&
-      currentUser.allowedWarehouseIds.length > 0 &&
-      (!item.warehouseId ||
-        !currentUser.allowedWarehouseIds.includes(item.warehouseId))
+      Array.isArray(currentUser.allowedPropertyIds) &&
+      currentUser.allowedPropertyIds.length > 0 &&
+      (!item.propertyId ||
+        !currentUser.allowedPropertyIds.includes(item.propertyId))
     ) {
       return res.status(404).json({ message: "Item not found" });
     }
@@ -1258,12 +1258,12 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    // Team-scoped limit: only count items in this team's warehouses
-    const teamWarehouseIds =
+    // Team-scoped limit: only count items in this team's properties
+    const teamPropertyIds =
       currentUser?.teamId ?
-        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
       : [];
-    const inventoryCount = await inventoryOps.countByWarehouseIds(teamWarehouseIds);
+    const inventoryCount = await inventoryOps.countByPropertyIds(teamPropertyIds);
     if (
       currentUser &&
       typeof currentUser.maxInventoryItems === "number" &&
@@ -1274,34 +1274,34 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
       });
     }
 
-    // New item must be in one of this team's warehouses
-    const warehouseId = req.body.warehouseId;
-    if (warehouseId && teamWarehouseIds.length > 0 && !teamWarehouseIds.includes(warehouseId)) {
+    // New item must be in one of this team's properties
+    const propertyId = req.body.propertyId;
+    if (propertyId && teamPropertyIds.length > 0 && !teamPropertyIds.includes(propertyId)) {
       return res.status(403).json({
-        message: "You can only add items to warehouses in your team.",
+        message: "You can only add items to properties in your team.",
       });
     }
 
-    // Warehouse-level restrictions – user can only create items in allowed warehouses
+    // Warehouse-level restrictions – user can only create items in allowed properties
     if (
       currentUser &&
-      Array.isArray(currentUser.allowedWarehouseIds) &&
-      currentUser.allowedWarehouseIds.length > 0
+      Array.isArray(currentUser.allowedPropertyIds) &&
+      currentUser.allowedPropertyIds.length > 0
     ) {
       if (
-        !warehouseId ||
-        !currentUser.allowedWarehouseIds.includes(warehouseId)
+        !propertyId ||
+        !currentUser.allowedPropertyIds.includes(propertyId)
       ) {
         return res.status(403).json({
-          message: "You are not allowed to use this warehouse for new items.",
+          message: "You are not allowed to use this property for new items.",
         });
       }
     }
 
     const name = req.body.name;
     const sku = req.body.sku != null ? req.body.sku : "";
-    const existing = warehouseId
-      ? await inventoryOps.findInWarehouseByNameAndSku(warehouseId, name, sku)
+    const existing = propertyId
+      ? await inventoryOps.findInPropertyByNameAndSku(propertyId, name, sku)
       : null;
 
     let item;
@@ -1331,12 +1331,12 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    const teamWarehouseIds =
+    const teamPropertyIds =
       currentUser?.teamId ?
-        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
       : [];
     const incomingCount = Array.isArray(req.body.items) ? req.body.items.length : 0;
-    const inventoryCount = await inventoryOps.countByWarehouseIds(teamWarehouseIds);
+    const inventoryCount = await inventoryOps.countByPropertyIds(teamPropertyIds);
 
     if (
       currentUser &&
@@ -1348,46 +1348,46 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
       });
     }
 
-    // Bulk items must be in this team's warehouses
-    if (Array.isArray(req.body.items) && teamWarehouseIds.length > 0) {
+    // Bulk items must be in this team's properties
+    if (Array.isArray(req.body.items) && teamPropertyIds.length > 0) {
       const invalidItem = req.body.items.find(
         (item) =>
-          !item.warehouseId || !teamWarehouseIds.includes(item.warehouseId)
+          !item.propertyId || !teamPropertyIds.includes(item.propertyId)
       );
       if (invalidItem) {
         return res.status(403).json({
-          message: "Bulk import includes warehouses that are not in your team.",
+          message: "Bulk import includes properties that are not in your team.",
         });
       }
     }
 
-    // Ensure all imported items stay within allowed warehouses (if restricted)
+    // Ensure all imported items stay within allowed properties (if restricted)
     if (
       currentUser &&
-      Array.isArray(currentUser.allowedWarehouseIds) &&
-      currentUser.allowedWarehouseIds.length > 0 &&
+      Array.isArray(currentUser.allowedPropertyIds) &&
+      currentUser.allowedPropertyIds.length > 0 &&
       Array.isArray(req.body.items)
     ) {
       const invalidItem = req.body.items.find(
         (item) =>
-          !item.warehouseId ||
-          !currentUser.allowedWarehouseIds.includes(item.warehouseId)
+          !item.propertyId ||
+          !currentUser.allowedPropertyIds.includes(item.propertyId)
       );
       if (invalidItem) {
         return res.status(403).json({
           message:
-            "Bulk import includes items for warehouses you are not allowed to access.",
+            "Bulk import includes items for properties you are not allowed to access.",
         });
       }
     }
 
     const items = await Promise.all(
       req.body.items.map(async (item) => {
-        const whId = item.warehouseId;
+        const whId = item.propertyId;
         const name = item.name;
         const sku = item.sku != null ? item.sku : "";
         const existing = whId
-          ? await inventoryOps.findInWarehouseByNameAndSku(whId, name, sku)
+          ? await inventoryOps.findInPropertyByNameAndSku(whId, name, sku)
           : null;
         if (existing) {
           const addQty = Number(item.quantity) || 0;
@@ -1424,23 +1424,23 @@ app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Item not found" });
     }
 
-    // Enforce warehouse-level restrictions for updates
+    // Enforce property-level restrictions for updates
     if (
       currentUser &&
-      Array.isArray(currentUser.allowedWarehouseIds) &&
-      currentUser.allowedWarehouseIds.length > 0
+      Array.isArray(currentUser.allowedPropertyIds) &&
+      currentUser.allowedPropertyIds.length > 0
     ) {
-      const targetWarehouseId =
-        typeof req.body.warehouseId !== "undefined"
-          ? req.body.warehouseId
-          : existingItem.warehouseId;
+      const targetPropertyId =
+        typeof req.body.propertyId !== "undefined"
+          ? req.body.propertyId
+          : existingItem.propertyId;
 
       if (
-        !targetWarehouseId ||
-        !currentUser.allowedWarehouseIds.includes(targetWarehouseId)
+        !targetPropertyId ||
+        !currentUser.allowedPropertyIds.includes(targetPropertyId)
       ) {
         return res.status(403).json({
-          message: "You are not allowed to modify items in this warehouse.",
+          message: "You are not allowed to modify items in this property.",
         });
       }
     }
@@ -1487,11 +1487,11 @@ app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
 app.delete("/api/inventory", authenticateToken, async (req, res) => {
   try {
     const currentUser = await userOps.findById(req.user.id);
-    const teamWarehouseIds =
+    const teamPropertyIds =
       currentUser?.teamId ?
-        (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
       : [];
-    const result = await inventoryOps.deleteByWarehouseIds(teamWarehouseIds);
+    const result = await inventoryOps.deleteByPropertyIds(teamPropertyIds);
     res.json({
       message: `Deleted ${result.count ?? 0} item(s) from your team's inventory.`,
     });
@@ -1508,43 +1508,43 @@ app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    const { fromWarehouseId, toWarehouseId, inventoryItemId, quantity } = req.body || {};
-    if (!fromWarehouseId || !toWarehouseId || !inventoryItemId || typeof quantity !== "number" || quantity <= 0) {
-      return res.status(400).json({ message: "Invalid transfer request. Provide fromWarehouseId, toWarehouseId, inventoryItemId, and quantity." });
+    const { fromPropertyId, toPropertyId, inventoryItemId, quantity } = req.body || {};
+    if (!fromPropertyId || !toPropertyId || !inventoryItemId || typeof quantity !== "number" || quantity <= 0) {
+      return res.status(400).json({ message: "Invalid transfer request. Provide fromPropertyId, toPropertyId, inventoryItemId, and quantity." });
     }
 
-    if (fromWarehouseId === toWarehouseId) {
-      return res.status(400).json({ message: "From and To warehouses must be different." });
+    if (fromPropertyId === toPropertyId) {
+      return res.status(400).json({ message: "From and To properties must be different." });
     }
 
-    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
-    const teamWarehouseIds = new Set(teamWarehouses.map((w) => w.id));
-    if (!teamWarehouseIds.has(fromWarehouseId) || !teamWarehouseIds.has(toWarehouseId)) {
-      return res.status(403).json({ message: "Warehouses not found or access denied." });
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const teamPropertyIds = new Set(teamProperties.map((w) => w.id));
+    if (!teamPropertyIds.has(fromPropertyId) || !teamPropertyIds.has(toPropertyId)) {
+      return res.status(403).json({ message: "Properties not found or access denied." });
     }
 
     const sourceItem = await inventoryOps.findById(inventoryItemId);
     if (!sourceItem) {
       return res.status(404).json({ message: "Item not found." });
     }
-    if (sourceItem.warehouseId !== fromWarehouseId) {
-      return res.status(400).json({ message: "Item is not in the selected source warehouse." });
+    if (sourceItem.propertyId !== fromPropertyId) {
+      return res.status(400).json({ message: "Item is not in the selected source property." });
     }
     if (sourceItem.quantity < quantity) {
       return res.status(400).json({ message: `Insufficient stock. Available: ${sourceItem.quantity}` });
     }
 
-    const itemsInToWarehouse = await prisma.inventory.findMany({
-      where: { warehouseId: toWarehouseId },
+    const itemsInToProperty = await prisma.inventory.findMany({
+      where: { propertyId: toPropertyId },
     });
-    const existingInDest = itemsInToWarehouse.find(
+    const existingInDest = itemsInToProperty.find(
       (i) => i.name === sourceItem.name && (i.sku || "") === (sourceItem.sku || "")
     );
 
-    const fromWh = teamWarehouses.find((w) => w.id === fromWarehouseId);
-    const toWh = teamWarehouses.find((w) => w.id === toWarehouseId);
-    const fromName = fromWh?.name || fromWarehouseId;
-    const toName = toWh?.name || toWarehouseId;
+    const fromWh = teamProperties.find((w) => w.id === fromPropertyId);
+    const toWh = teamProperties.find((w) => w.id === toPropertyId);
+    const fromName = fromWh?.name || fromPropertyId;
+    const toName = toWh?.name || toPropertyId;
 
     let destItemId = null;
     if (existingInDest) {
@@ -1558,7 +1558,7 @@ app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
         sku: sourceItem.sku || "",
         category: sourceItem.category || "",
         location: sourceItem.location || "",
-        warehouseId: toWarehouseId,
+        propertyId: toPropertyId,
         quantity,
         unit: sourceItem.unit || "",
         reorderPoint: sourceItem.reorderPoint ?? 0,
@@ -1631,11 +1631,11 @@ app.get("/api/reports/summary", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Reports." });
     }
-    const teamWarehouses =
+    const teamProperties =
       currentUser?.teamId
-        ? (await warehouseOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
+        ? (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
         : [];
-    const items = await inventoryOps.findAll(teamWarehouses.length ? teamWarehouses : null);
+    const items = await inventoryOps.findAll(teamProperties.length ? teamProperties : null);
     const lowStock = items.filter((i) => i.quantity <= (i.reorderPoint || 0) && i.reorderPoint > 0).length;
     const outOfStock = items.filter((i) => i.quantity <= 0).length;
     const totalValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.priceBoughtFor || 0), 0);
@@ -2474,7 +2474,7 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
 
 // ==================== TEAM & INVITE ROUTES ====================
 
-// Get team warehouse limit (no settings access required – used by Inventory page)
+// Get team property limit (no settings access required – used by Inventory page)
 app.get("/api/team/limits", authenticateToken, async (req, res) => {
   try {
     const user = await userOps.findById(req.user.id);
@@ -2488,7 +2488,7 @@ app.get("/api/team/limits", authenticateToken, async (req, res) => {
     const effectivePlan = getEffectivePlan(team);
     const planLimits = getPlanLimits(effectivePlan);
     res.json({
-      effectiveMaxWarehouses: planLimits.maxWarehouses,
+      effectiveMaxProperties: planLimits.maxProperties,
       effectivePlan,
     });
   } catch (error) {
@@ -2540,7 +2540,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         teamRole: u.teamRole || (u.id === team.ownerId ? "owner" : "member"),
         maxInventoryItems: u.maxInventoryItems ?? null,
         allowedPages: u.allowedPages ?? null,
-        allowedWarehouseIds: u.allowedWarehouseIds ?? null,
+        allowedPropertyIds: u.allowedPropertyIds ?? null,
       };
       if (u.id === currentUserId) {
         return { ...base, email: u.email, name: u.name };
@@ -2559,17 +2559,17 @@ app.get("/api/team", authenticateToken, async (req, res) => {
       createdAt: inv.createdAt,
       expiresAt: inv.expiresAt,
       allowedPages: inv.allowedPages ?? null,
-      allowedWarehouseIds: inv.allowedWarehouseIds ?? null,
+      allowedPropertyIds: inv.allowedPropertyIds ?? null,
     }));
 
-    // Count warehouses for basic plan/usage info
-    const warehouseCount = await warehouseOps.countByTeam(team.id);
+    // Count properties for basic plan/usage info
+    const propertyCount = await propertyOps.countByTeam(team.id);
     
     // Get trial status
     const trialStatus = getTrialStatus(team);
     const effectivePlan = getEffectivePlan(team);
     const planLimits = getPlanLimits(effectivePlan);
-    const effectiveMaxWarehouses = planLimits.maxWarehouses;
+    const effectiveMaxProperties = planLimits.maxProperties;
 
     // Parse invoice style JSON for frontend
     let invoiceStyle = null;
@@ -2585,9 +2585,9 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         ownerId: team.ownerId,
         plan: team.plan || "free",
         effectivePlan, // The actual plan considering trial status
-        maxWarehouses: team.maxWarehouses,
-        effectiveMaxWarehouses, // Limit for current plan/trial (Pro trial = 10, Starter trial = 3, etc.)
-        warehouseCount,
+        maxProperties: team.maxProperties,
+        effectiveMaxProperties, // Limit for current plan/trial (Pro trial = 10, Starter trial = 3, etc.)
+        propertyCount,
         billingInterval: team.billingInterval || null, // "month" | "year" from Stripe
         // Trial information
         isOnTrial: team.isOnTrial || false,
@@ -2670,7 +2670,7 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
       teamRole = "member",
       maxInventoryItems = null,
       allowedPages = null,
-      allowedWarehouseIds = null,
+      allowedPropertyIds = null,
     } = req.body || {};
 
     if (!email) {
@@ -2701,9 +2701,9 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
 
     const normalisedAllowedPages =
       Array.isArray(allowedPages) && allowedPages.length > 0 ? allowedPages : null;
-    const normalisedAllowedWarehouseIds =
-      Array.isArray(allowedWarehouseIds) && allowedWarehouseIds.length > 0
-        ? allowedWarehouseIds
+    const normalisedAllowedPropertyIds =
+      Array.isArray(allowedPropertyIds) && allowedPropertyIds.length > 0
+        ? allowedPropertyIds
         : null;
 
     const invitation = await invitationOps.create({
@@ -2712,7 +2712,7 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
       teamRole,
       maxInventoryItems: typeof maxInventoryItems === "number" ? maxInventoryItems : null,
       allowedPages: normalisedAllowedPages,
-      allowedWarehouseIds: normalisedAllowedWarehouseIds,
+      allowedPropertyIds: normalisedAllowedPropertyIds,
       status: "pending",
       token: crypto.randomUUID(),
       expiresAt,
@@ -2735,7 +2735,7 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
       createdAt: invitation.createdAt,
       expiresAt: invitation.expiresAt,
       allowedPages: invitation.allowedPages,
-      allowedWarehouseIds: invitation.allowedWarehouseIds,
+      allowedPropertyIds: invitation.allowedPropertyIds,
     });
   } catch (error) {
     console.error("Error creating invitation:", error);
@@ -2790,11 +2790,11 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
         Array.isArray(invitation.allowedPages) && invitation.allowedPages.length > 0
           ? invitation.allowedPages
           : user.allowedPages ?? null,
-      allowedWarehouseIds:
-        Array.isArray(invitation.allowedWarehouseIds) &&
-        invitation.allowedWarehouseIds.length > 0
-          ? invitation.allowedWarehouseIds
-          : user.allowedWarehouseIds ?? null,
+      allowedPropertyIds:
+        Array.isArray(invitation.allowedPropertyIds) &&
+        invitation.allowedPropertyIds.length > 0
+          ? invitation.allowedPropertyIds
+          : user.allowedPropertyIds ?? null,
     });
 
     await invitationOps.update(invitation.id, {
@@ -2809,7 +2809,7 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
       teamRole: updatedUser.teamRole,
       maxInventoryItems: updatedUser.maxInventoryItems,
       allowedPages: updatedUser.allowedPages ?? null,
-      allowedWarehouseIds: updatedUser.allowedWarehouseIds ?? null,
+      allowedPropertyIds: updatedUser.allowedPropertyIds ?? null,
     });
   } catch (error) {
     console.error("Error accepting invitation:", error);
@@ -2835,12 +2835,12 @@ app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
     if (!targetUser || targetUser.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Member not found in your team" });
     }
-    const { teamRole, maxInventoryItems, allowedPages, allowedWarehouseIds } = req.body || {};
+    const { teamRole, maxInventoryItems, allowedPages, allowedPropertyIds } = req.body || {};
     const updates = {};
     if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
     if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
     if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
-    if (Array.isArray(allowedWarehouseIds)) updates.allowedWarehouseIds = allowedWarehouseIds;
+    if (Array.isArray(allowedPropertyIds)) updates.allowedPropertyIds = allowedPropertyIds;
     await userOps.update(targetUserId, updates);
     const updated = await userOps.findById(targetUserId);
     res.json({
@@ -2850,7 +2850,7 @@ app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
       teamRole: updated.teamRole,
       maxInventoryItems: updated.maxInventoryItems ?? null,
       allowedPages: updated.allowedPages ?? null,
-      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+      allowedPropertyIds: updated.allowedPropertyIds ?? null,
     });
   } catch (error) {
     console.error("Error updating member:", error);
@@ -2876,7 +2876,7 @@ app.delete("/api/team/members/:userId", authenticateToken, async (req, res) => {
     if (!targetUser || targetUser.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Member not found in your team" });
     }
-    await userOps.update(targetUserId, { teamId: null, teamRole: null, maxInventoryItems: null, allowedPages: null, allowedWarehouseIds: null });
+    await userOps.update(targetUserId, { teamId: null, teamRole: null, maxInventoryItems: null, allowedPages: null, allowedPropertyIds: null });
     res.json({ message: "Member removed from team" });
   } catch (error) {
     console.error("Error removing member:", error);
@@ -2902,12 +2902,12 @@ app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, 
     if (invitation.status !== "pending") {
       return res.status(400).json({ message: "Only pending invitations can be edited" });
     }
-    const { teamRole, maxInventoryItems, allowedPages, allowedWarehouseIds } = req.body || {};
+    const { teamRole, maxInventoryItems, allowedPages, allowedPropertyIds } = req.body || {};
     const updates = {};
     if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
     if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
     if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
-    if (Array.isArray(allowedWarehouseIds)) updates.allowedWarehouseIds = allowedWarehouseIds;
+    if (Array.isArray(allowedPropertyIds)) updates.allowedPropertyIds = allowedPropertyIds;
     await invitationOps.update(invitationId, updates);
     const updated = await invitationOps.findById(invitationId);
     res.json({
@@ -2920,7 +2920,7 @@ app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, 
       createdAt: updated.createdAt,
       expiresAt: updated.expiresAt,
       allowedPages: updated.allowedPages ?? null,
-      allowedWarehouseIds: updated.allowedWarehouseIds ?? null,
+      allowedPropertyIds: updated.allowedPropertyIds ?? null,
     });
   } catch (error) {
     console.error("Error updating invitation:", error);
@@ -3050,7 +3050,7 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
       team: {
         plan: updatedTeam.plan,
         effectivePlan: getEffectivePlan(updatedTeam),
-        maxWarehouses: updatedTeam.maxWarehouses,
+        maxProperties: updatedTeam.maxProperties,
       },
     });
   } catch (error) {

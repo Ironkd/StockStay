@@ -1,23 +1,23 @@
 import React, { useState } from "react";
-import { Warehouse, WarehouseFormValues } from "../types";
+import { Property, PropertyFormValues } from "../types";
 
 type Props = {
-  initialValues?: Warehouse;
-  onSubmit: (values: WarehouseFormValues) => void;
+  initialValues?: Property;
+  onSubmit: (values: PropertyFormValues) => void;
   onCancel?: () => void;
 };
 
-const defaultValues: WarehouseFormValues = {
+const defaultValues: PropertyFormValues = {
   name: "",
   location: ""
 };
 
-export const WarehouseForm: React.FC<Props> = ({
+export const PropertyForm: React.FC<Props> = ({
   initialValues,
   onSubmit,
   onCancel
 }) => {
-  const [values, setValues] = useState<WarehouseFormValues>(
+  const [values, setValues] = useState<PropertyFormValues>(
     initialValues
       ? {
           name: initialValues.name,
@@ -36,11 +36,11 @@ export const WarehouseForm: React.FC<Props> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!values.name.trim()) {
-      alert("Warehouse name is required.");
+      alert("Property name is required.");
       return;
     }
     if (!values.location.trim()) {
-      alert("Warehouse location is required.");
+      alert("Property location is required.");
       return;
     }
     onSubmit({
@@ -56,12 +56,12 @@ export const WarehouseForm: React.FC<Props> = ({
     <form className="inventory-form" onSubmit={handleSubmit}>
       <div className="form-grid">
         <label>
-          <span>Warehouse Name *</span>
+          <span>Property Name *</span>
           <input
             name="name"
             value={values.name}
             onChange={handleChange}
-            placeholder="e.g. Main Warehouse"
+            placeholder="e.g. Main Property"
             required
           />
         </label>

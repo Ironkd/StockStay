@@ -1,4 +1,4 @@
-export type Warehouse = {
+export type Property = {
   id: string;
   name: string;
   location: string;
@@ -6,7 +6,7 @@ export type Warehouse = {
   updatedAt: string;
 };
 
-export type WarehouseFormValues = {
+export type PropertyFormValues = {
   name: string;
   location: string;
 };
@@ -28,7 +28,7 @@ export type InventoryItem = {
   sku: string;
   category: string;
   location: string;
-  warehouseId?: string;
+  propertyId?: string;
   quantity: number;
   unit: string;
   reorderPoint: number;
@@ -47,7 +47,7 @@ export type InventoryItemFormValues = {
   sku: string;
   category: string;
   location: string;
-  warehouseId?: string;
+  propertyId?: string;
   quantity: number;
   unit: string;
   reorderPoint: number;
@@ -148,10 +148,10 @@ export type TeamInfo = {
   ownerId: string;
   plan: string;
   effectivePlan: string;
-  maxWarehouses: number | null;
-  /** Effective warehouse limit for current plan/trial (Pro trial = 10, Starter = 3, free = 1) */
-  effectiveMaxWarehouses?: number;
-  warehouseCount: number;
+  maxProperties: number | null;
+  /** Effective property limit for current plan/trial (Pro trial = 10, Starter = 3, free = 1) */
+  effectiveMaxProperties?: number;
+  propertyCount: number;
   billingInterval: string | null;
   isOnTrial: boolean;
   trialEndsAt: string | null;
@@ -167,7 +167,7 @@ export type TeamMemberInfo = {
   teamRole: string;
   maxInventoryItems: number | null;
   allowedPages: string[] | null;
-  allowedWarehouseIds: string[] | null;
+  allowedPropertyIds: string[] | null;
   email?: string;
   name?: string;
   isTeammate?: boolean;
@@ -183,7 +183,7 @@ export type TeamInvitationInfo = {
   createdAt: string;
   expiresAt: string | null;
   allowedPages: string[] | null;
-  allowedWarehouseIds: string[] | null;
+  allowedPropertyIds: string[] | null;
 };
 
 export type TeamData = {

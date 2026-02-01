@@ -40,7 +40,7 @@ export const PricingPage: React.FC = () => {
 
           <section>
             <h2>Starter & Pro</h2>
-            <p>More warehouses, more team members, and advanced features. See the app or contact us for current pricing.</p>
+            <p>More properties, more team members, and advanced features. See the app or contact us for current pricing.</p>
             <button type="button" onClick={() => navigate("/login")} className="nav-button primary">
               Sign in to see plans
             </button>

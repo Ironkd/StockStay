@@ -95,18 +95,18 @@ export const LandingPage: React.FC = () => {
       {/* Features Section */}
       <section id="features" className="landing-features">
         <div className="landing-container">
-          <h2 className="section-title">What Stock Stay Does</h2>
+          <h2 className="section-title">Built for Short-Term Rentals</h2>
           <p className="section-subtitle">
-            One app for inventory, warehouses, clients, invoices, sales, and your team
+            One app for inventory, properties, guests, invoices, and your team
           </p>
 
           <div className="features-grid">
             <div className="feature-card">
               <div className="feature-icon">📦</div>
-              <h3>Inventory & Warehouses</h3>
+              <h3>Inventory & Properties</h3>
               <p>
-                Track products and quantities across multiple warehouses. Organize with categories,
-                search and filter, and see low-stock alerts. Free plan includes one warehouse; Starter and Pro add more.
+                Track linens, supplies, and quantities per property. Organize with categories,
+                search and filter, and get low-stock alerts so you're never short before a turnover. Free plan includes one property; Starter and Pro add more.
               </p>
             </div>
 
@@ -114,17 +114,17 @@ export const LandingPage: React.FC = () => {
               <div className="feature-icon">🔄</div>
               <h3>Transfers & Shopping List</h3>
               <p>
-                Move stock between warehouses in one place. A shopping list is built from low-stock items
-                so you know what to reorder at a glance.
+                Move stock between properties in one place. A shopping list is built from low-stock items
+                so you know what to reorder for your next clean.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">👤</div>
-              <h3>Clients</h3>
+              <h3>Clients & Guests</h3>
               <p>
-                Store client details — name, email, phone, address. Keep contacts in one place
-                and link them to invoices and sales. Data stays private to your team.
+                Store client and guest details — name, email, phone, address. Keep contacts in one place
+                and link them to invoices and bookings. Data stays private to your team.
               </p>
             </div>
 
@@ -132,17 +132,17 @@ export const LandingPage: React.FC = () => {
               <div className="feature-icon">📄</div>
               <h3>Invoices</h3>
               <p>
-                Create and manage invoices, link them to clients and sales. Export to PDF and CSV.
+                Create and manage invoices, link them to clients and stays. Export to PDF and CSV.
                 Available on Starter and Pro plans.
               </p>
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">💰</div>
-              <h3>Sales</h3>
+              <div className="feature-icon">🏠</div>
+              <h3>Turnover & Stock</h3>
               <p>
-                Record sales and track what’s sold. Connect sales to clients and invoices
-                so inventory, billing, and history stay in sync.
+                Adjust quantities as you restock after each stay. Track what's used per property
+                so inventory, billing, and history stay in sync across your listings.
               </p>
             </div>
 
@@ -150,8 +150,8 @@ export const LandingPage: React.FC = () => {
               <div className="feature-icon">👥</div>
               <h3>Team & Permissions</h3>
               <p>
-                Invite team members and set roles: owner, member, or viewer. Control who can see which pages
-                and warehouses. Manage invitations and billing from Settings (Pro).
+                Invite cleaners or co-hosts and set roles: owner, member, or viewer. Control who can see which pages
+                and properties. Manage invitations and billing from Settings (Pro).
               </p>
             </div>
 
@@ -168,7 +168,7 @@ export const LandingPage: React.FC = () => {
               <div className="feature-icon">🔒</div>
               <h3>Plans & Data</h3>
               <p>
-                Free: 1 warehouse. Starter: more warehouses, invoices, exports. Pro: more warehouses,
+                Free: 1 property. Starter: more properties, invoices, exports. Pro: more properties,
                 team members, granular permissions, trials. Your data is isolated per team.
               </p>
             </div>
@@ -237,7 +237,7 @@ export const LandingPage: React.FC = () => {
                 </div>
               </div>
               <ul className="pricing-features">
-                <li>✓ 1 warehouse</li>
+                <li>✓ 1 property</li>
                 <li>✓ Unlimited products</li>
                 <li>✓ Basic inventory tracking</li>
               </ul>
@@ -269,7 +269,7 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 3 warehouses</li>
+                <li>✓ Up to 3 properties</li>
                 <li>✓ PDF & CSV exports</li>
                 <li>✓ Invoices</li>
                 <li>✓ Inventory history</li>
@@ -306,9 +306,9 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 10 warehouses</li>
+                <li>✓ Up to 10 properties</li>
                 <li>✓ Team members</li>
-                <li>✓ Warehouse permissions</li>
+                <li>✓ Property permissions</li>
                 <li>✓ Shopping list from low stock</li>
                 <li>✓ Advanced reports</li>
                 <li>✓ Inventory value tracking</li>
@@ -327,7 +327,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="cta-title">Ready to Get Started?</h2>
           <p className="cta-subtitle">
-            Manage inventory, warehouses, clients, invoices, and sales in one place. Start free at stockstay.com
+            Manage inventory, properties, clients, invoices, and turnover in one place. Start free at stockstay.com
           </p>
           <button onClick={handleGetStarted} className="cta-button large">
             Start Your Free Trial

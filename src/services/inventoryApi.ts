@@ -44,8 +44,8 @@ export const inventoryApi = {
   },
 
   transfer: async (params: {
-    fromWarehouseId: string;
-    toWarehouseId: string;
+    fromPropertyId: string;
+    toPropertyId: string;
     inventoryItemId: string;
     quantity: number;
   }): Promise<{ message: string }> => {

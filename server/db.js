@@ -100,7 +100,7 @@ export async function initDemoUser() {
         teamRole: 'owner',
         maxInventoryItems: null,
         allowedPages: null,
-        allowedWarehouseIds: null,
+        allowedPropertyIds: null,
         emailVerified: true,
       },
     });
@@ -122,7 +122,7 @@ export const userOps = {
     return {
       ...user,
       allowedPages: parseJson(user.allowedPages),
-      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(user.allowedPropertyIds),
     };
   },
 
@@ -144,7 +144,7 @@ export const userOps = {
     return {
       ...user,
       allowedPages: parseJson(user.allowedPages),
-      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(user.allowedPropertyIds),
     };
   },
 
@@ -160,7 +160,7 @@ export const userOps = {
     return {
       ...user,
       allowedPages: parseJson(user.allowedPages),
-      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(user.allowedPropertyIds),
     };
   },
 
@@ -169,13 +169,13 @@ export const userOps = {
       data: {
         ...data,
         allowedPages: stringifyJson(data.allowedPages),
-        allowedWarehouseIds: stringifyJson(data.allowedWarehouseIds),
+        allowedPropertyIds: stringifyJson(data.allowedPropertyIds),
       },
     });
     return {
       ...user,
       allowedPages: parseJson(user.allowedPages),
-      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(user.allowedPropertyIds),
     };
   },
 
@@ -185,16 +185,16 @@ export const userOps = {
       data: {
         ...data,
         allowedPages: data.allowedPages !== undefined ? stringifyJson(data.allowedPages) : undefined,
-        allowedWarehouseIds:
-          data.allowedWarehouseIds !== undefined
-            ? stringifyJson(data.allowedWarehouseIds)
+        allowedPropertyIds:
+          data.allowedPropertyIds !== undefined
+            ? stringifyJson(data.allowedPropertyIds)
             : undefined,
       },
     });
     return {
       ...user,
       allowedPages: parseJson(user.allowedPages),
-      allowedWarehouseIds: parseJson(user.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(user.allowedPropertyIds),
     };
   },
 
@@ -203,7 +203,7 @@ export const userOps = {
     return users.map((u) => ({
       ...u,
       allowedPages: parseJson(u.allowedPages),
-      allowedWarehouseIds: parseJson(u.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(u.allowedPropertyIds),
     }));
   },
 };
@@ -254,21 +254,21 @@ export const teamOps = {
   },
 };
 
-// Warehouse operations
-export const warehouseOps = {
+// Property operations
+export const propertyOps = {
   async findAllByTeam(teamId) {
-    return await prisma.warehouse.findMany({
+    return await prisma.property.findMany({
       where: { teamId },
       orderBy: { createdAt: 'asc' },
     });
   },
 
   async countByTeam(teamId) {
-    return await prisma.warehouse.count({ where: { teamId } });
+    return await prisma.property.count({ where: { teamId } });
   },
 
   async createForTeam(teamId, data) {
-    return await prisma.warehouse.create({
+    return await prisma.property.create({
       data: {
         teamId,
         name: data.name,
@@ -278,7 +278,7 @@ export const warehouseOps = {
   },
 
   async update(id, data) {
-    return await prisma.warehouse.update({
+    return await prisma.property.update({
       where: { id },
       data: {
         name: data.name,
@@ -288,25 +288,26 @@ export const warehouseOps = {
   },
 
   async delete(id) {
-    // Note: inventory items referencing this warehouse are NOT auto-deleted.
-    // The app should prevent deleting warehouses that still have inventory.
-    return await prisma.warehouse.delete({ where: { id } });
+    // Note: inventory items referencing this property are NOT auto-deleted.
+    // The app should prevent deleting properties that still have inventory.
+    return await prisma.property.delete({ where: { id } });
   },
 };
 
 // Inventory operations
 export const inventoryOps = {
-  async findAll(warehouseFilter = null) {
+  async findAll(propertyFilter = null) {
     let where;
-    if (!warehouseFilter) {
+    if (!propertyFilter) {
       where = {};
-    } else if (warehouseFilter.length === 0) {
-      where = { warehouseId: { in: [] } };
+    } else if (propertyFilter.length === 0) {
+      // Team has no properties yet: show unassigned items so inventory isn't "empty" and new items can appear
+      where = { propertyId: null };
     } else {
       where = {
         OR: [
-          { warehouseId: { in: warehouseFilter } },
-          { warehouseId: null },
+          { propertyId: { in: propertyFilter } },
+          { propertyId: null },
         ],
       };
     }
@@ -326,12 +327,12 @@ export const inventoryOps = {
     };
   },
 
-  /** Find an existing product in a warehouse by name and sku (same warehouse = same product). */
-  async findInWarehouseByNameAndSku(warehouseId, name, sku) {
-    if (!warehouseId) return null;
+  /** Find an existing product in a property by name and sku (same property = same product). */
+  async findInPropertyByNameAndSku(propertyId, name, sku) {
+    if (!propertyId) return null;
     const item = await prisma.inventory.findFirst({
       where: {
-        warehouseId,
+        propertyId,
         name: name || "",
         sku: sku != null && sku !== undefined ? String(sku) : "",
       },
@@ -378,13 +379,13 @@ export const inventoryOps = {
     return await prisma.inventory.deleteMany();
   },
 
-  /** Delete only items in the given warehouse IDs (for team-scoped clear). */
-  async deleteByWarehouseIds(warehouseIds) {
-    if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
+  /** Delete only items in the given property IDs (for team-scoped clear). */
+  async deleteByPropertyIds(propertyIds) {
+    if (!Array.isArray(propertyIds) || propertyIds.length === 0) {
       return { count: 0 };
     }
     return await prisma.inventory.deleteMany({
-      where: { warehouseId: { in: warehouseIds } },
+      where: { propertyId: { in: propertyIds } },
     });
   },
 
@@ -392,13 +393,13 @@ export const inventoryOps = {
     return await prisma.inventory.count();
   },
 
-  /** Count items in the given warehouse IDs (for team-scoped limits). */
-  async countByWarehouseIds(warehouseIds) {
-    if (!Array.isArray(warehouseIds) || warehouseIds.length === 0) {
+  /** Count items in the given property IDs (for team-scoped limits). */
+  async countByPropertyIds(propertyIds) {
+    if (!Array.isArray(propertyIds) || propertyIds.length === 0) {
       return 0;
     }
     return await prisma.inventory.count({
-      where: { warehouseId: { in: warehouseIds } },
+      where: { propertyId: { in: propertyIds } },
     });
   },
 };
@@ -551,7 +552,7 @@ export const invitationOps = {
     return invitations.map((inv) => ({
       ...inv,
       allowedPages: parseJson(inv.allowedPages),
-      allowedWarehouseIds: parseJson(inv.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(inv.allowedPropertyIds),
     }));
   },
 
@@ -561,7 +562,7 @@ export const invitationOps = {
     return {
       ...invitation,
       allowedPages: parseJson(invitation.allowedPages),
-      allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(invitation.allowedPropertyIds),
     };
   },
 
@@ -570,13 +571,13 @@ export const invitationOps = {
       data: {
         ...data,
         allowedPages: stringifyJson(data.allowedPages),
-        allowedWarehouseIds: stringifyJson(data.allowedWarehouseIds),
+        allowedPropertyIds: stringifyJson(data.allowedPropertyIds),
       },
     });
     return {
       ...invitation,
       allowedPages: parseJson(invitation.allowedPages),
-      allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(invitation.allowedPropertyIds),
     };
   },
 
@@ -587,16 +588,16 @@ export const invitationOps = {
         ...data,
         allowedPages:
           data.allowedPages !== undefined ? stringifyJson(data.allowedPages) : undefined,
-        allowedWarehouseIds:
-          data.allowedWarehouseIds !== undefined
-            ? stringifyJson(data.allowedWarehouseIds)
+        allowedPropertyIds:
+          data.allowedPropertyIds !== undefined
+            ? stringifyJson(data.allowedPropertyIds)
             : undefined,
       },
     });
     return {
       ...invitation,
       allowedPages: parseJson(invitation.allowedPages),
-      allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(invitation.allowedPropertyIds),
     };
   },
 
@@ -610,7 +611,7 @@ export const invitationOps = {
     return {
       ...invitation,
       allowedPages: parseJson(invitation.allowedPages),
-      allowedWarehouseIds: parseJson(invitation.allowedWarehouseIds),
+      allowedPropertyIds: parseJson(invitation.allowedPropertyIds),
     };
   },
 };

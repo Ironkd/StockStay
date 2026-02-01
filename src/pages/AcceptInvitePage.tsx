@@ -36,7 +36,7 @@ export const AcceptInvitePage: React.FC = () => {
         const response = await teamApi.acceptInvitation(token);
         setStatus("success");
         setMessage(response.message);
-        // Refresh user so nav and warehouse restrictions (allowedPages, allowedWarehouseIds) are applied
+        // Refresh user so nav and property restrictions (allowedPages, allowedPropertyIds) are applied
         refreshUser();
         // After a short delay, return to home
         setTimeout(() => navigate("/dashboard"), 2000);

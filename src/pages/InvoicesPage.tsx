@@ -3,7 +3,7 @@ import { useInvoices } from "../hooks/useInvoices";
 import { useClients } from "../hooks/useClients";
 import { useSales } from "../hooks/useSales";
 import { useInventory } from "../hooks/useInventory";
-import { useWarehouses } from "../hooks/useWarehouses";
+import { useProperties } from "../hooks/useProperties";
 import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
 import { Invoice, InvoiceItem } from "../types";
@@ -12,9 +12,9 @@ export const InvoicesPage: React.FC = () => {
   const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
   const { clients } = useClients();
   const { sales, refresh: refreshSales } = useSales();
-   // Inventory & warehouses for picking items into invoices
+   // Inventory & properties for picking items into invoices
   const { items: inventoryItems, refresh: refreshInventory } = useInventory();
-  const { getWarehouseById } = useWarehouses();
+  const { getPropertyById } = useProperties();
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
@@ -121,7 +121,7 @@ export const InvoicesPage: React.FC = () => {
 
   const addItemToInvoice = () => {
     if (!currentItem.inventoryItemId || currentItem.quantity <= 0) {
-      alert("Please select an item from the warehouse and enter a quantity");
+      alert("Please select an item from the property and enter a quantity");
       return;
     }
 
@@ -728,15 +728,15 @@ export const InvoicesPage: React.FC = () => {
                       setCurrentItem({ ...currentItem, inventoryItemId: e.target.value })
                     }
                   >
-                    <option value="">Select an item from warehouse</option>
+                    <option value="">Select an item from property</option>
                     {availableInventoryItems.map((item) => (
                       <option key={item.id} value={item.id}>
                         {item.name} (SKU: {item.sku}){" "}
                         {(() => {
-                          const warehouse = getWarehouseById(item.warehouseId);
-                          return warehouse
-                            ? `· Warehouse: ${warehouse.name}`
-                            : "· Warehouse: Unassigned";
+                          const property = getPropertyById(item.propertyId);
+                          return property
+                            ? `· Property: ${property.name}`
+                            : "· Property: Unassigned";
                         })()}{" "}
                         - Available: {item.quantity} {item.unit} @ ${item.finalPrice.toFixed(2)}
                       </option>

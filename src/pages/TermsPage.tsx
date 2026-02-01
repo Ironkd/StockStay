@@ -44,7 +44,7 @@ export const TermsPage: React.FC = () => {
           <section>
             <h2>2. Description of Service</h2>
             <p>
-              Stock Stay is an inventory management platform that helps you track stock levels, manage warehouses,
+              Stock Stay is an inventory management platform that helps you track stock levels, manage properties,
               create invoices, and collaborate with your team. We reserve the right to modify or discontinue the Service
               (in whole or in part) with reasonable notice where practicable.
             </p>

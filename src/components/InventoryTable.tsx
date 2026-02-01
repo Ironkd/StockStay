@@ -1,14 +1,13 @@
 import React from "react";
-import { InventoryItem, Warehouse } from "../types";
+import { InventoryItem, Property } from "../types";
 
 type Props = {
   items: InventoryItem[];
-  warehouses?: Warehouse[];
+  properties?: Property[];
   onEdit: (item: InventoryItem) => void;
   onDelete: (id: string) => void;
   onAddQuantity?: (item: InventoryItem) => void;
   onSubtract?: (item: InventoryItem) => void;
-  onBillToClient?: (item: InventoryItem) => void;
 };
 
 const formatDate = (iso: string) =>
@@ -27,17 +26,16 @@ const formatCurrency = (amount: number) => {
 
 export const InventoryTable: React.FC<Props> = ({
   items,
-  warehouses = [],
+  properties = [],
   onEdit,
   onDelete,
   onAddQuantity,
   onSubtract,
-  onBillToClient,
 }) => {
-  const getWarehouseName = (warehouseId: string | undefined) => {
-    if (!warehouseId) return null;
-    const warehouse = warehouses.find((w) => w.id === warehouseId);
-    return warehouse?.name || null;
+  const getPropertyName = (propertyId: string | undefined) => {
+    if (!propertyId) return null;
+    const property = properties.find((w) => w.id === propertyId);
+    return property?.name || null;
   };
   if (!items.length) {
     return (
@@ -56,7 +54,7 @@ export const InventoryTable: React.FC<Props> = ({
             <th>Name</th>
             <th>SKU</th>
             <th>Category</th>
-            <th>Warehouse</th>
+            <th>Property</th>
             <th>Location</th>
             <th>Quantity</th>
             <th>Price Bought</th>
@@ -101,7 +99,7 @@ export const InventoryTable: React.FC<Props> = ({
                 </td>
                 <td>{item.sku}</td>
                 <td>{item.category || "—"}</td>
-                <td>{getWarehouseName(item.warehouseId) || "—"}</td>
+                <td>{getPropertyName(item.propertyId) || "—"}</td>
                 <td>{item.location || "—"}</td>
                 <td>
                   {item.quantity} {item.unit}
@@ -146,17 +144,6 @@ export const InventoryTable: React.FC<Props> = ({
                       </button>
                     )}
                   </div>
-                  {onBillToClient && (
-                    <button
-                      type="button"
-                      className="bill-to-client-row-button"
-                      onClick={() => onBillToClient(item)}
-                      disabled={item.quantity <= 0}
-                      title="Bill to client (create invoice)"
-                    >
-                      Bill to client
-                    </button>
-                  )}
                 </td>
                 <td className="row-actions">
                   <button

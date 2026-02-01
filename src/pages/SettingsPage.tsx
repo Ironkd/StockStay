@@ -3,9 +3,9 @@ import { useAuth } from "../contexts/AuthContext";
 import { apiRequest } from "../config/api";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
-import { warehousesApi } from "../services/warehousesApi";
+import { propertiesApi } from "../services/propertiesApi";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
-import type { Warehouse } from "../types";
+import type { Property } from "../types";
 
 const PAGE_KEYS = [
   { key: "home", label: "Home" },
@@ -18,14 +18,14 @@ const PAGE_KEYS = [
 type AccessFormState = {
   teamRole: "member" | "viewer";
   allowedPages: string[];
-  allowedWarehouseIds: string[];
+  allowedPropertyIds: string[];
   maxInventoryItems: string;
 };
 
 const emptyAccessForm: AccessFormState = {
   teamRole: "member",
   allowedPages: [],
-  allowedWarehouseIds: [],
+  allowedPropertyIds: [],
   maxInventoryItems: "",
 };
 
@@ -34,7 +34,7 @@ function toAllowedPages(arr: string[]): string[] | null {
   return arr;
 }
 
-function toAllowedWarehouseIds(arr: string[]): string[] | null {
+function toAllowedPropertyIds(arr: string[]): string[] | null {
   if (arr.length === 0) return null;
   return arr;
 }
@@ -54,7 +54,7 @@ export const SettingsPage: React.FC = () => {
   const [teamNameEdit, setTeamNameEdit] = useState("");
   const [savingName, setSavingName] = useState(false);
 
-  const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
   const [inviteEmail, setInviteEmail] = useState("");
   const [inviteAccess, setInviteAccess] = useState<AccessFormState>(emptyAccessForm);
@@ -170,8 +170,8 @@ export const SettingsPage: React.FC = () => {
   useEffect(() => {
     if (!isOwner) return;
     let cancelled = false;
-    warehousesApi.getAll().then((list) => {
-      if (!cancelled) setWarehouses(list);
+    propertiesApi.getAll().then((list) => {
+      if (!cancelled) setProperties(list);
     }).catch(() => {});
     return () => { cancelled = true; };
   }, [isOwner]);
@@ -250,7 +250,7 @@ export const SettingsPage: React.FC = () => {
         email: inviteEmail.trim(),
         teamRole: inviteAccess.teamRole,
         allowedPages: toAllowedPages(inviteAccess.allowedPages),
-        allowedWarehouseIds: toAllowedWarehouseIds(inviteAccess.allowedWarehouseIds),
+        allowedPropertyIds: toAllowedPropertyIds(inviteAccess.allowedPropertyIds),
         maxInventoryItems: toMaxInventoryItems(inviteAccess.maxInventoryItems),
       });
       const base = window.location.origin;
@@ -335,7 +335,7 @@ export const SettingsPage: React.FC = () => {
     setEditAccess({
       teamRole: (m.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
       allowedPages: m.allowedPages ?? [],
-      allowedWarehouseIds: m.allowedWarehouseIds ?? [],
+      allowedPropertyIds: m.allowedPropertyIds ?? [],
       maxInventoryItems: m.maxInventoryItems != null ? String(m.maxInventoryItems) : "",
     });
   };
@@ -346,7 +346,7 @@ export const SettingsPage: React.FC = () => {
     setEditAccess({
       teamRole: (inv.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
       allowedPages: inv.allowedPages ?? [],
-      allowedWarehouseIds: inv.allowedWarehouseIds ?? [],
+      allowedPropertyIds: inv.allowedPropertyIds ?? [],
       maxInventoryItems: inv.maxInventoryItems != null ? String(inv.maxInventoryItems) : "",
     });
   };
@@ -358,7 +358,7 @@ export const SettingsPage: React.FC = () => {
         const updated = await teamApi.updateMember(editingMember.id, {
           teamRole: editAccess.teamRole,
           allowedPages: toAllowedPages(editAccess.allowedPages),
-          allowedWarehouseIds: toAllowedWarehouseIds(editAccess.allowedWarehouseIds),
+          allowedPropertyIds: toAllowedPropertyIds(editAccess.allowedPropertyIds),
           maxInventoryItems: toMaxInventoryItems(editAccess.maxInventoryItems),
         });
         setTeamData((prev) =>
@@ -381,7 +381,7 @@ export const SettingsPage: React.FC = () => {
         const updated = await teamApi.updateInvitation(editingInvitation.id, {
           teamRole: editAccess.teamRole,
           allowedPages: toAllowedPages(editAccess.allowedPages),
-          allowedWarehouseIds: toAllowedWarehouseIds(editAccess.allowedWarehouseIds),
+          allowedPropertyIds: toAllowedPropertyIds(editAccess.allowedPropertyIds),
           maxInventoryItems: toMaxInventoryItems(editAccess.maxInventoryItems),
         });
         setTeamData((prev) =>
@@ -589,10 +589,10 @@ export const SettingsPage: React.FC = () => {
           </div>
         </div>
       </div>
-      {warehouses.length > 0 && (
+      {properties.length > 0 && (
         <div style={{ marginBottom: "12px" }}>
           <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-            Warehouses they can access (click to add; leave Selected empty for all)
+            Properties they can access (click to add; leave Selected empty for all)
           </span>
           <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
@@ -610,14 +610,14 @@ export const SettingsPage: React.FC = () => {
                   overflowY: "auto",
                 }}
               >
-                {warehouses
-                  .filter((w) => !access.allowedWarehouseIds.includes(w.id))
+                {properties
+                  .filter((w) => !access.allowedPropertyIds.includes(w.id))
                   .map((w) => (
                     <button
                       key={w.id}
                       type="button"
                       onClick={() =>
-                        setAccess((a) => ({ ...a, allowedWarehouseIds: [...a.allowedWarehouseIds, w.id] }))
+                        setAccess((a) => ({ ...a, allowedPropertyIds: [...a.allowedPropertyIds, w.id] }))
                       }
                       style={{
                         display: "block",
@@ -642,7 +642,7 @@ export const SettingsPage: React.FC = () => {
                       {w.name}
                     </button>
                   ))}
-                {warehouses.filter((w) => !access.allowedWarehouseIds.includes(w.id)).length === 0 && (
+                {properties.filter((w) => !access.allowedPropertyIds.includes(w.id)).length === 0 && (
                   <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
                     All selected
                   </p>
@@ -664,13 +664,13 @@ export const SettingsPage: React.FC = () => {
                   overflowY: "auto",
                 }}
               >
-                {access.allowedWarehouseIds.length === 0 && (
+                {access.allowedPropertyIds.length === 0 && (
                   <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
-                    None (all warehouses)
+                    None (all properties)
                   </p>
                 )}
-                {access.allowedWarehouseIds.map((id) => {
-                  const w = warehouses.find((x) => x.id === id);
+                {access.allowedPropertyIds.map((id) => {
+                  const w = properties.find((x) => x.id === id);
                   if (!w) return null;
                   return (
                     <button
@@ -679,7 +679,7 @@ export const SettingsPage: React.FC = () => {
                       onClick={() =>
                         setAccess((a) => ({
                           ...a,
-                          allowedWarehouseIds: a.allowedWarehouseIds.filter((i) => i !== w.id),
+                          allowedPropertyIds: a.allowedPropertyIds.filter((i) => i !== w.id),
                         }))
                       }
                       style={{

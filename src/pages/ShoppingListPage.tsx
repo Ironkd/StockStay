@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { useInventory } from "../hooks/useInventory";
-import { useWarehouses } from "../hooks/useWarehouses";
+import { useProperties } from "../hooks/useProperties";
 import type { InventoryItem } from "../types";
 
 export const ShoppingListPage: React.FC = () => {
   const { items, loading, error, refresh } = useInventory();
-  const { getWarehouseById } = useWarehouses();
+  const { getPropertyById } = useProperties();
   const navigate = useNavigate();
 
   // Refetch when user returns to this tab so items drop off after adding stock elsewhere
@@ -101,8 +101,8 @@ export const ShoppingListPage: React.FC = () => {
                           {item.sku ? ` (${item.sku})` : ""}
                         </span>
                         <span className="shopping-list-item-meta">
-                          <span className="shopping-list-warehouse">
-                            {getWarehouseById(item.warehouseId)?.name ?? "No warehouse"}
+                          <span className="shopping-list-property">
+                            {getPropertyById(item.propertyId)?.name ?? "No property"}
                           </span>
                           {" · "}
                           Current: {item.quantity} {item.unit}

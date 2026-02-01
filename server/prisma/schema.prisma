@@ -26,7 +26,7 @@ model User {
   teamRole                   String?   @default("member") // "owner" or "member"
   maxInventoryItems          Int?
   allowedPages               String?   // JSON array of allowed page keys
-  allowedWarehouseIds        String?   // JSON array of allowed warehouse IDs
+  allowedPropertyIds         String?   // JSON array of allowed property IDs
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
 
@@ -60,7 +60,7 @@ model Team {
 
   // Billing / plan info
   plan          String   @default("free") // "free", "starter", "pro"
-  maxWarehouses Int?     // null = unlimited, or explicit cap
+  maxProperties Int?     // null = unlimited, or explicit cap
   
   // Trial fields
   isOnTrial     Boolean  @default(false)
@@ -78,7 +78,7 @@ model Team {
   invoiceStyle       String?  // JSON: { companyName?, primaryColor?, accentColor?, footerText? }
 
   members User[]
-  warehouses   Warehouse[]
+  properties   Property[]
   clients     Client[]
   invoices    Invoice[]
   sales       Sale[]
@@ -89,7 +89,7 @@ model Team {
   @@index([stripeCustomerId])
 }
 
-model Warehouse {
+model Property {
   id        String   @id @default(uuid())
   teamId    String
   name      String
@@ -109,7 +109,7 @@ model Inventory {
   sku              String   @default("")
   category         String   @default("")
   location         String   @default("")
-  warehouseId      String?
+  propertyId       String?
   quantity         Float    @default(0)
   unit             String   @default("")
   reorderPoint     Float    @default(0)
@@ -122,9 +122,9 @@ model Inventory {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  warehouse        Warehouse? @relation(fields: [warehouseId], references: [id])
+  property         Property? @relation(fields: [propertyId], references: [id])
 
-  @@index([warehouseId])
+  @@index([propertyId])
   @@index([category])
 }
 
@@ -219,7 +219,7 @@ model Invitation {
   teamRole          String    @default("member")
   maxInventoryItems Int?
   allowedPages      String?   // JSON array
-  allowedWarehouseIds String? // JSON array
+  allowedPropertyIds  String? // JSON array
   status            String    @default("pending") // pending, accepted, expired
   token             String    @unique
   createdAt         DateTime  @default(now())

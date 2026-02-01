@@ -3,17 +3,17 @@ import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   InventoryItem,
   InventoryItemFormValues,
-  Warehouse,
-  WarehouseFormValues,
+  Property,
+  PropertyFormValues,
   Category,
   CategoryFormValues,
   Client
 } from "../types";
 import { useInventory } from "../hooks/useInventory";
-import { useWarehouses } from "../hooks/useWarehouses";
+import { useProperties } from "../hooks/useProperties";
 import { useCategories } from "../hooks/useCategories";
 import { InventoryForm } from "../components/InventoryForm";
-import { WarehouseForm } from "../components/WarehouseForm";
+import { PropertyForm } from "../components/PropertyForm";
 import { CategoryForm } from "../components/CategoryForm";
 import { InventoryTable } from "../components/InventoryTable";
 import { SummaryBar } from "../components/SummaryBar";
@@ -30,7 +30,7 @@ export const InventoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const { user } = useAuth();
-  const [maxWarehouses, setMaxWarehouses] = useState<number>(1);
+  const [maxProperties, setMaxProperties] = useState<number>(1);
   const [teamLimitsLoaded, setTeamLimitsLoaded] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const {
@@ -46,12 +46,12 @@ export const InventoryPage: React.FC = () => {
   } = useInventory();
 
   const {
-    warehouses,
-    addWarehouse,
-    updateWarehouse,
-    removeWarehouse,
-    getWarehouseById
-  } = useWarehouses();
+    properties,
+    addProperty,
+    updateProperty,
+    removeProperty,
+    getPropertyById
+  } = useProperties();
 
   const {
     categories,
@@ -61,9 +61,9 @@ export const InventoryPage: React.FC = () => {
   } = useCategories();
 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
-  const [editingWarehouse, setEditingWarehouse] = useState<Warehouse | null>(null);
+  const [editingProperty, setEditingProperty] = useState<Property | null>(null);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
-  const [showWarehouseModal, setShowWarehouseModal] = useState(false);
+  const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
@@ -71,29 +71,29 @@ export const InventoryPage: React.FC = () => {
   const [addQuantityItem, setAddQuantityItem] = useState<InventoryItem | null>(null);
   const [billToClientItem, setBillToClientItem] = useState<InventoryItem | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
-  const [activeWarehouseTab, setActiveWarehouseTab] = useState<string | null>(null);
+  const [activePropertyTab, setActivePropertyTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [locationFilter, setLocationFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Load team warehouse limit (Pro trial = 10, Starter = 3, free = 1). Use /team/limits so we don't need settings access.
+  // Load team property limit (Pro trial = 10, Starter = 3, free = 1). Use /team/limits so we don't need settings access.
   useEffect(() => {
     let cancelled = false;
     teamApi.getTeamLimits().then((data) => {
-      if (!cancelled && data.effectiveMaxWarehouses != null) {
-        setMaxWarehouses(data.effectiveMaxWarehouses);
+      if (!cancelled && data.effectiveMaxProperties != null) {
+        setMaxProperties(data.effectiveMaxProperties);
         setTeamLimitsLoaded(true);
       }
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
 
-  // Load clients when subtract or bill-to-client modal opens
+  // Load clients when subtract or add-quantity modal opens (add modal can bill to client)
   useEffect(() => {
-    if (!subtractItem && !billToClientItem) return;
+    if (!subtractItem && !addQuantityItem) return;
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
-  }, [subtractItem, billToClientItem]);
+  }, [subtractItem, addQuantityItem]);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -134,43 +134,43 @@ export const InventoryPage: React.FC = () => {
     [items]
   );
 
-  // Apply warehouse visibility restrictions: invited members see only warehouses the owner picked (empty = all)
-  const visibleWarehouses = useMemo(() => {
-    if (!user) return warehouses;
-    if (user.teamRole === "owner") return warehouses;
-    if (!user.allowedWarehouseIds || user.allowedWarehouseIds.length === 0) {
-      return warehouses;
+  // Apply property visibility restrictions: invited members see only properties the owner picked (empty = all)
+  const visibleProperties = useMemo(() => {
+    if (!user) return properties;
+    if (user.teamRole === "owner") return properties;
+    if (!user.allowedPropertyIds || user.allowedPropertyIds.length === 0) {
+      return properties;
     }
-    return warehouses.filter((w) => user.allowedWarehouseIds!.includes(w.id));
-  }, [user, warehouses]);
+    return properties.filter((w) => user.allowedPropertyIds!.includes(w.id));
+  }, [user, properties]);
 
   // Set default active tab to "all" to show all products
   useEffect(() => {
-    if (activeWarehouseTab === null) {
-      setActiveWarehouseTab("all");
+    if (activePropertyTab === null) {
+      setActivePropertyTab("all");
     } else if (
-      activeWarehouseTab !== "all" &&
-      activeWarehouseTab !== "unassigned" &&
-      visibleWarehouses.length > 0 &&
-      !visibleWarehouses.find((w) => w.id === activeWarehouseTab)
+      activePropertyTab !== "all" &&
+      activePropertyTab !== "unassigned" &&
+      visibleProperties.length > 0 &&
+      !visibleProperties.find((w) => w.id === activePropertyTab)
     ) {
-      // If the active warehouse was deleted, switch to "all"
-      setActiveWarehouseTab("all");
+      // If the active property was deleted, switch to "all"
+      setActivePropertyTab("all");
     }
-  }, [warehouses, activeWarehouseTab]);
+  }, [properties, activePropertyTab]);
 
   const filteredItems = useMemo(() => {
-    // Members: only filter by warehouse when owner explicitly picked some; empty = see all
-    const allowedWarehouseIds =
-      user && user.teamRole !== "owner" && user.allowedWarehouseIds && user.allowedWarehouseIds.length > 0
-        ? new Set(user.allowedWarehouseIds)
+    // Members: only filter by property when owner explicitly picked some; empty = see all
+    const allowedPropertyIds =
+      user && user.teamRole !== "owner" && user.allowedPropertyIds && user.allowedPropertyIds.length > 0
+        ? new Set(user.allowedPropertyIds)
         : null;
 
     const normalizedSearch = search.trim().toLowerCase();
     return items.filter((item) => {
-      // Enforce warehouse-level visibility: members only see items in allowed warehouses (when restricted)
-      if (allowedWarehouseIds !== null) {
-        if (!item.warehouseId || !allowedWarehouseIds.has(item.warehouseId)) return false;
+      // Enforce property-level visibility: members only see items in allowed properties (when restricted)
+      if (allowedPropertyIds !== null) {
+        if (!item.propertyId || !allowedPropertyIds.has(item.propertyId)) return false;
       }
 
       const matchesSearch =
@@ -186,12 +186,12 @@ export const InventoryPage: React.FC = () => {
         categoryFilter === "all" || item.category === categoryFilter;
       const matchesLocation =
         locationFilter === "all" || item.location === locationFilter;
-      const matchesWarehouse =
-        activeWarehouseTab === "all" || activeWarehouseTab === null
+      const matchesProperty =
+        activePropertyTab === "all" || activePropertyTab === null
           ? true
-          : activeWarehouseTab === "unassigned"
-          ? !item.warehouseId
-          : item.warehouseId === activeWarehouseTab;
+          : activePropertyTab === "unassigned"
+          ? !item.propertyId
+          : item.propertyId === activePropertyTab;
       const matchesStatus =
         statusFilter === "all" ||
         (statusFilter === "in-stock" && item.quantity > 0) ||
@@ -204,7 +204,7 @@ export const InventoryPage: React.FC = () => {
         matchesSearch &&
         matchesCategory &&
         matchesLocation &&
-        matchesWarehouse &&
+        matchesProperty &&
         matchesStatus
       );
     });
@@ -213,7 +213,7 @@ export const InventoryPage: React.FC = () => {
     search,
     categoryFilter,
     locationFilter,
-    activeWarehouseTab,
+    activePropertyTab,
     statusFilter,
     user
   ]);
@@ -248,50 +248,50 @@ export const InventoryPage: React.FC = () => {
     setShowInventoryModal(true);
   };
 
-  const handleWarehouseSubmit = async (values: WarehouseFormValues) => {
+  const handlePropertySubmit = async (values: PropertyFormValues) => {
     try {
-      if (editingWarehouse) {
-        await updateWarehouse(editingWarehouse.id, values);
-        setEditingWarehouse(null);
+      if (editingProperty) {
+        await updateProperty(editingProperty.id, values);
+        setEditingProperty(null);
       } else {
-        await addWarehouse(values);
+        await addProperty(values);
       }
-      setShowWarehouseModal(false);
+      setShowPropertyModal(false);
     } catch {
-      // Error already set in useWarehouses; keep modal open
+      // Error already set in useProperties; keep modal open
     }
   };
 
-  const handleEditWarehouse = (warehouse: Warehouse) => {
-    setEditingWarehouse(warehouse);
-    setShowWarehouseModal(true);
+  const handleEditProperty = (property: Property) => {
+    setEditingProperty(property);
+    setShowPropertyModal(true);
   };
 
-  const handleCancelWarehouseEdit = () => {
-    setEditingWarehouse(null);
-    setShowWarehouseModal(false);
+  const handleCancelPropertyEdit = () => {
+    setEditingProperty(null);
+    setShowPropertyModal(false);
   };
 
-  const handleAddWarehouse = () => {
+  const handleAddProperty = () => {
     // Only block when we've loaded limits from the server (Pro trial = 10, so we don't block at 1 incorrectly)
-    if (teamLimitsLoaded && warehouses.length >= maxWarehouses) {
+    if (teamLimitsLoaded && properties.length >= maxProperties) {
       setShowUpgradeModal(true);
       return;
     }
-    setEditingWarehouse(null);
-    setShowWarehouseModal(true);
+    setEditingProperty(null);
+    setShowPropertyModal(true);
   };
 
-  const handleDeleteWarehouse = async (id: string) => {
-    const warehouse = warehouses.find((w) => w.id === id);
-    if (!warehouse) return;
+  const handleDeleteProperty = async (id: string) => {
+    const property = properties.find((w) => w.id === id);
+    if (!property) return;
     
-    const itemsInWarehouse = items.filter((item) => item.warehouseId === id);
-    const itemCount = itemsInWarehouse.length;
+    const itemsInProperty = items.filter((item) => item.propertyId === id);
+    const itemCount = itemsInProperty.length;
     
-    let message = `Are you sure you want to delete the warehouse "${warehouse.name}"?`;
+    let message = `Are you sure you want to delete the property "${property.name}"?`;
     if (itemCount > 0) {
-      message += `\n\n⚠️ WARNING: This warehouse has ${itemCount} item(s) assigned to it. Deleting this warehouse will remove the warehouse assignment from these items.`;
+      message += `\n\n⚠️ WARNING: This property has ${itemCount} item(s) assigned to it. Deleting this property will remove the property assignment from these items.`;
     }
     message += "\n\nThis action cannot be undone.";
     
@@ -300,9 +300,9 @@ export const InventoryPage: React.FC = () => {
     }
     
     try {
-      await removeWarehouse(id);
+      await removeProperty(id);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete warehouse");
+      alert(err instanceof Error ? err.message : "Failed to delete property");
     }
   };
 
@@ -356,15 +356,18 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
-  const handleAddQuantitySubmit = async (item: InventoryItem, quantity: number) => {
+  const handleAddQuantitySubmit = async (
+    item: InventoryItem,
+    quantity: number,
+    billToClient?: { clientId: string; quantityToBill: number }
+  ) => {
     await updateItem(item.id, {
       ...item,
       quantity: item.quantity + quantity,
     });
-  };
-
-  const handleBillToClientSubmit = async (item: InventoryItem, quantity: number, clientId: string) => {
-    await createInvoiceForItem(item, quantity, clientId);
+    if (billToClient) {
+      await createInvoiceForItem(item, billToClient.quantityToBill, billToClient.clientId);
+    }
   };
 
   const handleEditCategory = (categoryName: string, categoryId?: string) => {
@@ -483,22 +486,22 @@ export const InventoryPage: React.FC = () => {
       <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
         <button
           type="button"
-          className="add-warehouse-button"
-          onClick={handleAddWarehouse}
+          className="add-property-button"
+          onClick={handleAddProperty}
         >
           Add property
         </button>
         <button
           type="button"
-          className="add-warehouse-button"
+          className="add-property-button"
           onClick={handleAddItem}
         >
           Add new item
         </button>
-        {visibleWarehouses.length >= 2 && (
+        {visibleProperties.length >= 2 && (
           <button
             type="button"
-            className="add-warehouse-button"
+            className="add-property-button"
             onClick={() => setShowTransferModal(true)}
           >
             Transfer
@@ -506,7 +509,7 @@ export const InventoryPage: React.FC = () => {
         )}
         <button
           type="button"
-          className="add-warehouse-button"
+          className="add-property-button"
           onClick={() => {
             setEditingCategory(null);
             setShowCategoryModal(true);
@@ -520,7 +523,7 @@ export const InventoryPage: React.FC = () => {
         <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <h3>Warehouse limit reached</h3>
+              <h3>Property limit reached</h3>
               <button
                 type="button"
                 className="icon-button close-button"
@@ -531,7 +534,7 @@ export const InventoryPage: React.FC = () => {
               </button>
             </div>
             <p style={{ marginBottom: "20px" }}>
-              You can&apos;t add more warehouses on your current plan (limit: {maxWarehouses}). Click below to upgrade your plan and get more warehouses.
+              You can&apos;t add more properties on your current plan (limit: {maxProperties}). Click below to upgrade your plan and get more properties.
             </p>
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
               <button type="button" className="secondary" onClick={() => setShowUpgradeModal(false)}>
@@ -552,25 +555,25 @@ export const InventoryPage: React.FC = () => {
         </div>
       )}
 
-      {showWarehouseModal && (
-        <div className="modal-overlay" onClick={handleCancelWarehouseEdit}>
+      {showPropertyModal && (
+        <div className="modal-overlay" onClick={handleCancelPropertyEdit}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>{editingWarehouse ? "Edit Property" : "Add property"}</h3>
+              <h3>{editingProperty ? "Edit Property" : "Add property"}</h3>
               <button
                 type="button"
                 className="icon-button close-button"
-                onClick={handleCancelWarehouseEdit}
+                onClick={handleCancelPropertyEdit}
                 aria-label="Close"
               >
                 ✕
               </button>
             </div>
-            <WarehouseForm
-              key={editingWarehouse ? editingWarehouse.id : "new"}
-              initialValues={editingWarehouse ?? undefined}
-              onSubmit={handleWarehouseSubmit}
-              onCancel={handleCancelWarehouseEdit}
+            <PropertyForm
+              key={editingProperty ? editingProperty.id : "new"}
+              initialValues={editingProperty ?? undefined}
+              onSubmit={handlePropertySubmit}
+              onCancel={handleCancelPropertyEdit}
             />
           </div>
         </div>
@@ -578,39 +581,39 @@ export const InventoryPage: React.FC = () => {
 
       <section className="panel">
 
-        {visibleWarehouses.length > 0 ? (
+        {visibleProperties.length > 0 ? (
           <>
-            <div className="warehouse-tabs">
+            <div className="property-tabs">
               <button
                 type="button"
-                className={`warehouse-tab ${activeWarehouseTab === "all" ? "active" : ""}`}
-                onClick={() => setActiveWarehouseTab("all")}
+                className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
+                onClick={() => setActivePropertyTab("all")}
               >
                 All Products
                 <span className="tab-count">({items.length})</span>
               </button>
-              {visibleWarehouses.map((warehouse) => {
-                const itemsInWarehouse = items.filter((item) => item.warehouseId === warehouse.id);
+              {visibleProperties.map((property) => {
+                const itemsInProperty = items.filter((item) => item.propertyId === property.id);
                 return (
                   <button
-                    key={warehouse.id}
+                    key={property.id}
                     type="button"
-                    className={`warehouse-tab ${activeWarehouseTab === warehouse.id ? "active" : ""}`}
-                    onClick={() => setActiveWarehouseTab(warehouse.id)}
+                    className={`property-tab ${activePropertyTab === property.id ? "active" : ""}`}
+                    onClick={() => setActivePropertyTab(property.id)}
                   >
-                    {warehouse.name}
-                    <span className="tab-count">({itemsInWarehouse.length})</span>
+                    {property.name}
+                    <span className="tab-count">({itemsInProperty.length})</span>
                   </button>
                 );
               })}
-              {items.some((item) => !item.warehouseId) && (
+              {items.some((item) => !item.propertyId) && (
                 <button
                   type="button"
-                  className={`warehouse-tab ${activeWarehouseTab === "unassigned" ? "active" : ""}`}
-                  onClick={() => setActiveWarehouseTab("unassigned")}
+                  className={`property-tab ${activePropertyTab === "unassigned" ? "active" : ""}`}
+                  onClick={() => setActivePropertyTab("unassigned")}
                 >
                   Unassigned
-                  <span className="tab-count">({items.filter((item) => !item.warehouseId).length})</span>
+                  <span className="tab-count">({items.filter((item) => !item.propertyId).length})</span>
                 </button>
               )}
             </div>
@@ -624,12 +627,12 @@ export const InventoryPage: React.FC = () => {
                 Export all inventory
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <label htmlFor="export-warehouse-select" style={{ fontSize: "13px", color: "#64748b" }}>
-                  Export by warehouse:
+                <label htmlFor="export-property-select" style={{ fontSize: "13px", color: "#64748b" }}>
+                  Export by property:
                 </label>
                 <select
-                  id="export-warehouse-select"
-                  className="export-warehouse-select"
+                  id="export-property-select"
+                  className="export-property-select"
                   value=""
                   onChange={(e) => {
                     const v = e.target.value;
@@ -641,36 +644,36 @@ export const InventoryPage: React.FC = () => {
                     }
                     const subset =
                       v === "unassigned"
-                        ? items.filter((i) => !i.warehouseId)
-                        : items.filter((i) => i.warehouseId === v);
+                        ? items.filter((i) => !i.propertyId)
+                        : items.filter((i) => i.propertyId === v);
                     const name =
                       v === "unassigned"
                         ? "Unassigned"
-                        : visibleWarehouses.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
+                        : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
                     exportToJsonItems(subset, `inventory-${name}`);
                   }}
                 >
-                  <option value="">Choose warehouse…</option>
+                  <option value="">Choose property…</option>
                   <option value="all">All inventory</option>
-                  {visibleWarehouses.map((w) => (
+                  {visibleProperties.map((w) => (
                     <option key={w.id} value={w.id}>
-                      {w.name} ({items.filter((i) => i.warehouseId === w.id).length})
+                      {w.name} ({items.filter((i) => i.propertyId === w.id).length})
                     </option>
                   ))}
-                  {items.some((i) => !i.warehouseId) && (
+                  {items.some((i) => !i.propertyId) && (
                     <option value="unassigned">
-                      Unassigned ({items.filter((i) => !i.warehouseId).length})
+                      Unassigned ({items.filter((i) => !i.propertyId).length})
                     </option>
                   )}
                 </select>
               </div>
-              {activeWarehouseTab && activeWarehouseTab !== "all" && activeWarehouseTab !== "unassigned" && (
+              {activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned" && (
                 <button
                   type="button"
-                  className="add-warehouse-button"
+                  className="add-property-button"
                   onClick={() => {
-                    if (activeWarehouseTab) {
-                      handleDeleteWarehouse(activeWarehouseTab);
+                    if (activePropertyTab) {
+                      handleDeleteProperty(activePropertyTab);
                     }
                   }}
                 >
@@ -683,21 +686,20 @@ export const InventoryPage: React.FC = () => {
 
             <InventoryTable
               items={filteredItems}
-              warehouses={visibleWarehouses}
+              properties={visibleProperties}
               onEdit={handleEdit}
               onDelete={removeItem}
               onAddQuantity={(item) => setAddQuantityItem(item)}
               onSubtract={(item) => setSubtractItem(item)}
-              onBillToClient={(item) => setBillToClientItem(item)}
             />
           </>
         ) : (
           <>
-            <div className="warehouse-tabs">
+            <div className="property-tabs">
               <button
                 type="button"
-                className={`warehouse-tab ${activeWarehouseTab === "all" ? "active" : ""}`}
-                onClick={() => setActiveWarehouseTab("all")}
+                className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
+                onClick={() => setActivePropertyTab("all")}
               >
                 All Products
                 <span className="tab-count">({items.length})</span>
@@ -713,12 +715,12 @@ export const InventoryPage: React.FC = () => {
                 Export all inventory
               </button>
               <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <label htmlFor="export-warehouse-select-single" style={{ fontSize: "13px", color: "#64748b" }}>
-                  Export by warehouse:
+                <label htmlFor="export-property-select-single" style={{ fontSize: "13px", color: "#64748b" }}>
+                  Export by property:
                 </label>
                 <select
-                  id="export-warehouse-select-single"
-                  className="export-warehouse-select"
+                  id="export-property-select-single"
+                  className="export-property-select"
                   value=""
                   onChange={(e) => {
                     const v = e.target.value;
@@ -730,25 +732,25 @@ export const InventoryPage: React.FC = () => {
                     }
                     const subset =
                       v === "unassigned"
-                        ? items.filter((i) => !i.warehouseId)
-                        : items.filter((i) => i.warehouseId === v);
+                        ? items.filter((i) => !i.propertyId)
+                        : items.filter((i) => i.propertyId === v);
                     const name =
                       v === "unassigned"
                         ? "Unassigned"
-                        : visibleWarehouses.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
+                        : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
                     exportToJsonItems(subset, `inventory-${name}`);
                   }}
                 >
-                  <option value="">Choose warehouse…</option>
+                  <option value="">Choose property…</option>
                   <option value="all">All inventory</option>
-                  {visibleWarehouses.map((w) => (
+                  {visibleProperties.map((w) => (
                     <option key={w.id} value={w.id}>
-                      {w.name} ({items.filter((i) => i.warehouseId === w.id).length})
+                      {w.name} ({items.filter((i) => i.propertyId === w.id).length})
                     </option>
                   ))}
-                  {items.some((i) => !i.warehouseId) && (
+                  {items.some((i) => !i.propertyId) && (
                     <option value="unassigned">
-                      Unassigned ({items.filter((i) => !i.warehouseId).length})
+                      Unassigned ({items.filter((i) => !i.propertyId).length})
                     </option>
                   )}
                 </select>
@@ -759,12 +761,11 @@ export const InventoryPage: React.FC = () => {
 
             <InventoryTable
               items={filteredItems}
-              warehouses={visibleWarehouses}
+              properties={visibleProperties}
               onEdit={handleEdit}
               onDelete={removeItem}
               onAddQuantity={(item) => setAddQuantityItem(item)}
               onSubtract={(item) => setSubtractItem(item)}
-              onBillToClient={(item) => setBillToClientItem(item)}
             />
           </>
         )}
@@ -787,7 +788,7 @@ export const InventoryPage: React.FC = () => {
             <InventoryForm
               key={editingItem ? editingItem.id : "new"}
               initialValues={editingItem ?? undefined}
-              warehouses={visibleWarehouses}
+              properties={visibleProperties}
               categories={allCategories}
               onSubmit={handleSubmit}
               onCancel={handleCancelEdit}
@@ -799,7 +800,7 @@ export const InventoryPage: React.FC = () => {
       {showTransferModal && (
         <TransferModal
           items={items}
-          warehouses={visibleWarehouses}
+          properties={visibleProperties}
           onSubmit={transfer}
           onClose={() => setShowTransferModal(false)}
         />
@@ -819,20 +820,10 @@ export const InventoryPage: React.FC = () => {
       {addQuantityItem && (
         <AddQuantityModal
           item={addQuantityItem}
-          onClose={() => setAddQuantityItem(null)}
-          onSubmit={async (quantity) => {
-            await handleAddQuantitySubmit(addQuantityItem, quantity);
-          }}
-        />
-      )}
-
-      {billToClientItem && (
-        <BillToClientModal
-          item={billToClientItem}
           clients={clients}
-          onClose={() => setBillToClientItem(null)}
-          onSubmit={async (quantity, clientId) => {
-            await handleBillToClientSubmit(billToClientItem, quantity, clientId);
+          onClose={() => setAddQuantityItem(null)}
+          onSubmit={async (quantity, billToClient) => {
+            await handleAddQuantitySubmit(addQuantityItem, quantity, billToClient);
           }}
         />
       )}

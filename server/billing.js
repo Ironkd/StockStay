@@ -199,7 +199,7 @@ export async function handleWebhook(rawBody, signature) {
       const billingInterval = interval === "year" || interval === "month" ? interval : null;
       await teamOps.update(teamId, {
         plan: isActive ? plan : "free",
-        maxWarehouses: isActive ? limits.maxWarehouses : 1,
+        maxProperties: isActive ? limits.maxProperties : 1,
         stripeSubscriptionId: subscription.id,
         stripeSubscriptionStatus: status,
         billingInterval: isActive ? billingInterval : null,
@@ -216,7 +216,7 @@ export async function handleWebhook(rawBody, signature) {
       if (!teamId) break;
       await teamOps.update(teamId, {
         plan: "free",
-        maxWarehouses: 1,
+        maxProperties: 1,
         stripeSubscriptionId: null,
         stripeSubscriptionStatus: "canceled",
         billingInterval: null,

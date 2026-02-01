@@ -1,9 +1,9 @@
 import React, { useState, useMemo } from "react";
-import { InventoryItem, Warehouse } from "../types";
+import { InventoryItem, Property } from "../types";
 
 export interface TransferFormValues {
-  fromWarehouseId: string;
-  toWarehouseId: string;
+  fromPropertyId: string;
+  toPropertyId: string;
   inventoryItemId: string;
   quantity: number;
 }
@@ -16,7 +16,7 @@ interface TransferLine {
 
 interface TransferModalProps {
   items: InventoryItem[];
-  warehouses: Warehouse[];
+  properties: Property[];
   onSubmit: (values: TransferFormValues) => Promise<void>;
   onClose: () => void;
 }
@@ -29,26 +29,26 @@ const newLine = (): TransferLine => ({
 
 export const TransferModal: React.FC<TransferModalProps> = ({
   items,
-  warehouses,
+  properties,
   onSubmit,
   onClose,
 }) => {
-  const [fromWarehouseId, setFromWarehouseId] = useState("");
-  const [toWarehouseId, setToWarehouseId] = useState("");
+  const [fromPropertyId, setFromPropertyId] = useState("");
+  const [toPropertyId, setToPropertyId] = useState("");
   const [lines, setLines] = useState<TransferLine[]>([newLine()]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const itemsInFromWarehouse = useMemo(() => {
-    if (!fromWarehouseId) return [];
+  const itemsInFromProperty = useMemo(() => {
+    if (!fromPropertyId) return [];
     return items.filter(
-      (i) => i.warehouseId === fromWarehouseId && i.quantity > 0
+      (i) => i.propertyId === fromPropertyId && i.quantity > 0
     );
-  }, [items, fromWarehouseId]);
+  }, [items, fromPropertyId]);
 
-  const toWarehouseOptions = useMemo(
-    () => warehouses.filter((w) => w.id !== fromWarehouseId),
-    [warehouses, fromWarehouseId]
+  const toPropertyOptions = useMemo(
+    () => properties.filter((w) => w.id !== fromPropertyId),
+    [properties, fromPropertyId]
   );
 
   const filledLines = useMemo(
@@ -73,20 +73,20 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     );
   };
 
-  const handleFromWarehouseChange = (id: string) => {
-    setFromWarehouseId(id);
+  const handleFromPropertyChange = (id: string) => {
+    setFromPropertyId(id);
     setLines([newLine()]);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    if (!fromWarehouseId || !toWarehouseId) {
-      setError("Please select From and To warehouses.");
+    if (!fromPropertyId || !toPropertyId) {
+      setError("Please select From and To properties.");
       return;
     }
-    if (fromWarehouseId === toWarehouseId) {
-      setError("From and To warehouses must be different.");
+    if (fromPropertyId === toPropertyId) {
+      setError("From and To properties must be different.");
       return;
     }
     if (filledLines.length === 0) {
@@ -113,8 +113,8 @@ export const TransferModal: React.FC<TransferModalProps> = ({
     try {
       for (const line of filledLines) {
         await onSubmit({
-          fromWarehouseId,
-          toWarehouseId,
+          fromPropertyId,
+          toPropertyId,
           inventoryItemId: line.inventoryItemId,
           quantity: parseFloat(line.quantity),
         });
@@ -142,7 +142,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             marginBottom: "20px",
           }}
         >
-          <h3>Transfer Between Warehouses</h3>
+          <h3>Transfer Between Properties</h3>
           <button
             type="button"
             className="icon-button close-button"
@@ -162,14 +162,14 @@ export const TransferModal: React.FC<TransferModalProps> = ({
 
           <div className="form-grid">
             <label>
-              <span>From warehouse</span>
+              <span>From property</span>
               <select
-                value={fromWarehouseId}
-                onChange={(e) => handleFromWarehouseChange(e.target.value)}
+                value={fromPropertyId}
+                onChange={(e) => handleFromPropertyChange(e.target.value)}
                 required
               >
-                <option value="">Select warehouse...</option>
-                {warehouses.map((w) => (
+                <option value="">Select property...</option>
+                {properties.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
                   </option>
@@ -178,15 +178,15 @@ export const TransferModal: React.FC<TransferModalProps> = ({
             </label>
 
             <label>
-              <span>To warehouse</span>
+              <span>To property</span>
               <select
-                value={toWarehouseId}
-                onChange={(e) => setToWarehouseId(e.target.value)}
+                value={toPropertyId}
+                onChange={(e) => setToPropertyId(e.target.value)}
                 required
-                disabled={!fromWarehouseId}
+                disabled={!fromPropertyId}
               >
-                <option value="">Select warehouse...</option>
-                {toWarehouseOptions.map((w) => (
+                <option value="">Select property...</option>
+                {toPropertyOptions.map((w) => (
                   <option key={w.id} value={w.id}>
                     {w.name}
                   </option>
@@ -202,7 +202,7 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                 type="button"
                 className="secondary"
                 onClick={addLine}
-                disabled={itemsInFromWarehouse.length === 0}
+                disabled={itemsInFromProperty.length === 0}
                 style={{ fontSize: "13px" }}
               >
                 + Add product
@@ -226,10 +226,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                     <select
                       value={line.inventoryItemId}
                       onChange={(e) => updateLine(line.id, "inventoryItemId", e.target.value)}
-                      disabled={itemsInFromWarehouse.length === 0}
+                      disabled={itemsInFromProperty.length === 0}
                     >
                       <option value="">Select product...</option>
-                      {itemsInFromWarehouse.map((item) => (
+                      {itemsInFromProperty.map((item) => (
                         <option key={item.id} value={item.id}>
                           {item.name}
                           {item.sku ? ` (${item.sku})` : ""} — {item.quantity}{" "}
@@ -271,9 +271,9 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               );
             })}
           </div>
-          {fromWarehouseId && itemsInFromWarehouse.length === 0 && (
+          {fromPropertyId && itemsInFromProperty.length === 0 && (
             <small style={{ color: "#64748b", marginTop: "4px" }}>
-              No products with stock in this warehouse.
+              No products with stock in this property.
             </small>
           )}
 
@@ -297,8 +297,8 @@ export const TransferModal: React.FC<TransferModalProps> = ({
               className="primary"
               disabled={
                 loading ||
-                !fromWarehouseId ||
-                !toWarehouseId ||
+                !fromPropertyId ||
+                !toPropertyId ||
                 filledLines.length === 0
               }
             >

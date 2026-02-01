@@ -17,7 +17,7 @@ export interface AuthUser {
   teamRole?: "owner" | "member" | "viewer";
   maxInventoryItems?: number | null;
   allowedPages?: string[] | null;
-  allowedWarehouseIds?: string[] | null;
+  allowedPropertyIds?: string[] | null;
 }
 
 export interface ProfileUpdatePayload {

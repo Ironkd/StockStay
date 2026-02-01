@@ -106,8 +106,8 @@ export const useInventory = () => {
   };
 
   const transfer = async (params: {
-    fromWarehouseId: string;
-    toWarehouseId: string;
+    fromPropertyId: string;
+    toPropertyId: string;
     inventoryItemId: string;
     quantity: number;
   }) => {

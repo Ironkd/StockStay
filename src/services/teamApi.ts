@@ -6,9 +6,9 @@ export const teamApi = {
     return apiRequest<TeamData>("/team");
   },
 
-  /** Team warehouse limit (no settings access required – use from Inventory page) */
-  getTeamLimits: async (): Promise<{ effectiveMaxWarehouses: number; effectivePlan: string }> => {
-    return apiRequest<{ effectiveMaxWarehouses: number; effectivePlan: string }>("/team/limits");
+  /** Team property limit (no settings access required – use from Inventory page) */
+  getTeamLimits: async (): Promise<{ effectiveMaxProperties: number; effectivePlan: string }> => {
+    return apiRequest<{ effectiveMaxProperties: number; effectivePlan: string }>("/team/limits");
   },
 
   /** Current team name only (no settings access – use from header so name updates everywhere) */
@@ -48,7 +48,7 @@ export const teamApi = {
     email: string;
     teamRole?: string;
     allowedPages?: string[] | null;
-    allowedWarehouseIds?: string[] | null;
+    allowedPropertyIds?: string[] | null;
     maxInventoryItems?: number | null;
   }): Promise<TeamInvitationInfo> => {
     return apiRequest<TeamInvitationInfo>("/team/invitations", {
@@ -57,7 +57,7 @@ export const teamApi = {
         email: params.email,
         teamRole: params.teamRole || "member",
         allowedPages: params.allowedPages ?? null,
-        allowedWarehouseIds: params.allowedWarehouseIds ?? null,
+        allowedPropertyIds: params.allowedPropertyIds ?? null,
         maxInventoryItems: params.maxInventoryItems ?? null,
       }),
     });
@@ -68,7 +68,7 @@ export const teamApi = {
     params: {
       teamRole?: string;
       allowedPages?: string[] | null;
-      allowedWarehouseIds?: string[] | null;
+      allowedPropertyIds?: string[] | null;
       maxInventoryItems?: number | null;
     }
   ): Promise<TeamInvitationInfo> => {
@@ -89,7 +89,7 @@ export const teamApi = {
     params: {
       teamRole?: string;
       allowedPages?: string[] | null;
-      allowedWarehouseIds?: string[] | null;
+      allowedPropertyIds?: string[] | null;
       maxInventoryItems?: number | null;
     }
   ): Promise<TeamMemberInfo> => {

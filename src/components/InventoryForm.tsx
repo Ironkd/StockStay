@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from "react";
-import { InventoryItem, InventoryItemFormValues, Warehouse } from "../types";
+import { InventoryItem, InventoryItemFormValues, Property } from "../types";
 
 type Props = {
   initialValues?: InventoryItem;
-  warehouses?: Warehouse[];
+  properties?: Property[];
   categories?: string[];
   onSubmit: (values: InventoryItemFormValues | InventoryItemFormValues[]) => void;
   onCancel?: () => void;
@@ -14,7 +14,7 @@ const defaultValues: InventoryItemFormValues = {
   sku: "",
   category: "",
   location: "",
-  warehouseId: undefined,
+  propertyId: undefined,
   quantity: 0,
   unit: "pcs",
   reorderPoint: 0,
@@ -28,7 +28,7 @@ const defaultValues: InventoryItemFormValues = {
 
 export const InventoryForm: React.FC<Props> = ({
   initialValues,
-  warehouses = [],
+  properties = [],
   categories = [],
   onSubmit,
   onCancel
@@ -42,7 +42,7 @@ export const InventoryForm: React.FC<Props> = ({
           sku: initialValues.sku,
           category: initialValues.category,
           location: initialValues.location,
-          warehouseId: initialValues.warehouseId,
+          propertyId: initialValues.propertyId,
           quantity: initialValues.quantity,
           unit: initialValues.unit,
           reorderPoint: initialValues.reorderPoint,
@@ -88,8 +88,8 @@ export const InventoryForm: React.FC<Props> = ({
         .map((t) => t.trim())
         .filter(Boolean);
       setValues((prev) => ({ ...prev, tags }));
-    } else if (name === "warehouseId") {
-      setValues((prev) => ({ ...prev, warehouseId: value || undefined }));
+    } else if (name === "propertyId") {
+      setValues((prev) => ({ ...prev, propertyId: value || undefined }));
     } else {
       setValues((prev) => ({ ...prev, [name]: value }));
     }
@@ -192,13 +192,13 @@ export const InventoryForm: React.FC<Props> = ({
                 />
               </label>
               <label>
-                <span>Warehouse</span>
+                <span>Property</span>
                 <select
-                  value={item.warehouseId || ""}
-                  onChange={(e) => handleBulkItemChange(index, "warehouseId", e.target.value || undefined)}
+                  value={item.propertyId || ""}
+                  onChange={(e) => handleBulkItemChange(index, "propertyId", e.target.value || undefined)}
                 >
                   <option value="">None</option>
-                  {warehouses.map((w) => (
+                  {properties.map((w) => (
                     <option key={w.id} value={w.id}>
                       {w.name}
                     </option>
@@ -329,14 +329,14 @@ export const InventoryForm: React.FC<Props> = ({
         </label>
 
         <label>
-          <span>Warehouse</span>
+          <span>Property</span>
           <select
-            name="warehouseId"
-            value={values.warehouseId || ""}
+            name="propertyId"
+            value={values.propertyId || ""}
             onChange={handleChange}
           >
             <option value="">None</option>
-            {warehouses.map((w) => (
+            {properties.map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
               </option>

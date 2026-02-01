@@ -49,7 +49,7 @@ export const PrivacyPage: React.FC = () => {
                 <strong>Account and profile:</strong> email address, name, and password (stored in hashed form).
               </li>
               <li>
-                <strong>Business data:</strong> inventory items, warehouses, clients, invoices, sales, and other data
+                <strong>Business data:</strong> inventory items, properties, clients, invoices, sales, and other data
                 you enter into the Service.
               </li>
               <li>
