@@ -214,13 +214,13 @@ export const SalesPage: React.FC = () => {
         const response = await addSale(saleData);
         // Refresh inventory to reflect updated quantities
         await refreshInventory();
-        // Invoice is created on the server; notify so Invoices page shows it immediately
+        // Invoice is created on the server when possible; notify so Invoices page shows it
         if (response.invoice) {
           setCreatedInvoiceId(response.invoice.id);
-          window.dispatchEvent(new CustomEvent("invoices-refresh"));
         } else {
           setCreatedInvoiceId(null);
         }
+        window.dispatchEvent(new CustomEvent("invoices-refresh"));
       }
       resetForm();
     } catch (err) {

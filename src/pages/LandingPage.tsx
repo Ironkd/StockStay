@@ -64,63 +64,81 @@ export const LandingPage: React.FC = () => {
       {/* Features Section */}
       <section id="features" className="landing-features">
         <div className="landing-container">
-          <h2 className="section-title">Everything You Need to Manage Inventory</h2>
+          <h2 className="section-title">What Stock Stay Does</h2>
           <p className="section-subtitle">
-            Powerful features designed to help you stay organized and efficient
+            One app for inventory, warehouses, clients, invoices, sales, and your team
           </p>
 
           <div className="features-grid">
             <div className="feature-card">
-              <div className="feature-icon">📊</div>
-              <h3>Real Time Tracking</h3>
+              <div className="feature-icon">📦</div>
+              <h3>Inventory & Warehouses</h3>
               <p>
-                Monitor stock levels in real time across multiple warehouses.
-                Get instant alerts when items are running low.
+                Track products and quantities across multiple warehouses. Organize with categories,
+                search and filter, and see low-stock alerts. Free plan includes one warehouse; Starter and Pro add more.
               </p>
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">🏢</div>
-              <h3>Multi Warehouse Support</h3>
+              <div className="feature-icon">🔄</div>
+              <h3>Transfers & Shopping List</h3>
               <p>
-                Manage inventory across multiple locations. Start with one free warehouse,
-                add more as you grow.
+                Move stock between warehouses in one place. A shopping list is built from low-stock items
+                so you know what to reorder at a glance.
               </p>
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">📋</div>
-              <h3>Smart Categories</h3>
+              <div className="feature-icon">👤</div>
+              <h3>Clients</h3>
               <p>
-                Organize your inventory with custom categories and tags.
-                Find what you need instantly with powerful search and filters.
+                Store client details — name, email, phone, address. Keep contacts in one place
+                and link them to invoices and sales. Data stays private to your team.
+              </p>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon">📄</div>
+              <h3>Invoices</h3>
+              <p>
+                Create and manage invoices, link them to clients and sales. Export to PDF and CSV.
+                Available on Starter and Pro plans.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">💰</div>
-              <h3>Invoice Management</h3>
+              <h3>Sales</h3>
               <p>
-                Create and manage invoices seamlessly. Track payments,
-                send reminders, and manage your client relationships.
-              </p>
-            </div>
-
-            <div className="feature-card">
-              <div className="feature-icon">📈</div>
-              <h3>Analytics & Reports</h3>
-              <p>
-                Get insights into your inventory with detailed analytics.
-                Track trends, identify bestsellers, and make data driven decisions.
+                Record sales and track what’s sold. Connect sales to clients and invoices
+                so inventory, billing, and history stay in sync.
               </p>
             </div>
 
             <div className="feature-card">
               <div className="feature-icon">👥</div>
-              <h3>Team Collaboration</h3>
+              <h3>Team & Permissions</h3>
               <p>
-                Invite team members, assign roles, and collaborate seamlessly.
-                Control access with granular permissions.
+                Invite team members and set roles: owner, member, or viewer. Control who can see which pages
+                and warehouses. Manage invitations and billing from Settings (Pro).
+              </p>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon">⚙️</div>
+              <h3>Profile & Billing</h3>
+              <p>
+                Update your profile — first and last name, email, street, city, province, postal code, phone.
+                Manage your plan, start trials, and use the Stripe customer portal for subscriptions.
+              </p>
+            </div>
+
+            <div className="feature-card">
+              <div className="feature-icon">🔒</div>
+              <h3>Plans & Data</h3>
+              <p>
+                Free: 1 warehouse. Starter: more warehouses, invoices, exports. Pro: more warehouses,
+                team members, granular permissions, trials. Your data is isolated per team.
               </p>
             </div>
           </div>
@@ -252,7 +270,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="cta-title">Ready to Get Started?</h2>
           <p className="cta-subtitle">
-            Join businesses managing their inventory with Stock Stay at stockstay.com
+            Manage inventory, warehouses, clients, invoices, and sales in one place. Start free at stockstay.com
           </p>
           <button onClick={handleGetStarted} className="cta-button large">
             Start Your Free Trial

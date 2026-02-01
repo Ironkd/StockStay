@@ -1602,28 +1602,33 @@ app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
 
 // Build invoice payload from a single sale (for one active invoice per sale)
 function buildInvoiceFromSale(sale, saleId = null) {
+  const saleNumber = sale.saleNumber != null && String(sale.saleNumber).trim() !== "" ? String(sale.saleNumber) : "0";
   const invoiceItems = (sale.items || []).map((item) => ({
     id: item.id || crypto.randomUUID(),
     name: item.inventoryItemName || item.name || "Item",
-    quantity: item.quantity,
-    unitPrice: item.unitPrice,
-    total: item.total ?? item.quantity * item.unitPrice,
+    quantity: Number(item.quantity) || 0,
+    unitPrice: Number(item.unitPrice) || 0,
+    total: Number(item.total) ?? Number(item.quantity) * Number(item.unitPrice) || 0,
     inventoryItemId: item.inventoryItemId,
     sku: item.sku,
   }));
   const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+  const dateStr = sale.date && String(sale.date).trim() ? String(sale.date).trim() : new Date().toISOString().split("T")[0];
+  const subtotal = Number(sale.subtotal) ?? 0;
+  const tax = Number(sale.tax) ?? 0;
+  const total = Number(sale.total) ?? 0;
   return {
-    invoiceNumber: `INV-SALE-${sale.saleNumber}`,
-    clientId: sale.clientId,
-    clientName: sale.clientName || "",
-    date: sale.date,
+    invoiceNumber: `INV-SALE-${saleNumber}`,
+    clientId: sale.clientId || null,
+    clientName: (sale.clientName && String(sale.clientName).trim()) ? String(sale.clientName).trim() : "",
+    date: dateStr,
     dueDate,
     items: invoiceItems,
-    subtotal: sale.subtotal ?? 0,
-    tax: sale.tax ?? 0,
-    total: sale.total ?? 0,
+    subtotal,
+    tax,
+    total,
     status: "draft",
-    notes: sale.notes ? `From Sale #${sale.saleNumber}. ${sale.notes}` : `From Sale #${sale.saleNumber}`,
+    notes: sale.notes ? `From Sale #${saleNumber}. ${sale.notes}` : `From Sale #${saleNumber}`,
     saleId: saleId || null,
   };
 }
@@ -1814,17 +1819,32 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
 
     // Create one active (draft) invoice for this sale so it shows in Invoices immediately
     let newInvoice = null;
+    const mergedSale = { ...saleData, ...newSale };
+    const invoicePayload = buildInvoiceFromSale(mergedSale, newSale.id);
+    const invoiceData = {
+      teamId: currentUser.teamId,
+      invoiceNumber: invoicePayload.invoiceNumber,
+      clientId: invoicePayload.clientId,
+      clientName: invoicePayload.clientName,
+      date: invoicePayload.date,
+      dueDate: invoicePayload.dueDate,
+      items: invoicePayload.items,
+      subtotal: invoicePayload.subtotal,
+      tax: invoicePayload.tax,
+      total: invoicePayload.total,
+      status: invoicePayload.status,
+      notes: invoicePayload.notes,
+      saleId: invoicePayload.saleId,
+    };
     try {
-      const invoicePayload = buildInvoiceFromSale({ ...saleData, ...newSale }, newSale.id);
-      newInvoice = await invoiceOps.create({ ...invoicePayload, teamId: currentUser.teamId });
+      newInvoice = await invoiceOps.create(invoiceData);
     } catch (invoiceError) {
-      // If DB doesn't have saleId column yet, create invoice without it so the invoice still exists
-      console.error("Error creating invoice from sale (sale was saved):", invoiceError);
+      console.error("Error creating invoice from sale (sale was saved):", invoiceError.message || invoiceError);
       try {
-        const { saleId: _s, ...payloadWithoutSaleId } = buildInvoiceFromSale({ ...saleData, ...newSale }, newSale.id);
-        newInvoice = await invoiceOps.create({ ...payloadWithoutSaleId, teamId: currentUser.teamId });
+        const { saleId: _s, ...dataWithoutSaleId } = invoiceData;
+        newInvoice = await invoiceOps.create(dataWithoutSaleId);
       } catch (retryError) {
-        console.error("Retry creating invoice without saleId failed:", retryError);
+        console.error("Retry creating invoice without saleId failed:", retryError.message || retryError);
       }
     }
 
