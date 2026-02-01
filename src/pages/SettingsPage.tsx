@@ -866,78 +866,74 @@ export const SettingsPage: React.FC = () => {
 
       {team && (
         <>
-          <section className="panel" style={{ marginBottom: "24px" }}>
-            <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Team</h3>
-            {isOwner ? (
-              <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                <input
-                  type="text"
-                  value={teamNameEdit}
-                  onChange={(e) => setTeamNameEdit(e.target.value)}
-                  placeholder="Team name"
-                  style={{ maxWidth: "280px" }}
-                />
-                <button
-                  type="button"
-                  className="nav-button primary"
-                  onClick={handleSaveTeamName}
-                  disabled={savingName || teamNameEdit.trim() === team.name}
-                >
-                  {savingName ? "Saving..." : "Save name"}
-                </button>
-              </div>
-            ) : (
-              <p style={{ color: "#64748b", margin: 0 }}>{team.name}</p>
-            )}
-            {isOwner && (
-              <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
-                <button
-                  type="button"
-                  className="nav-button secondary"
-                  onClick={() => setShowInvoiceStyleModal(true)}
-                >
-                  Edit invoice style
-                </button>
-                <p style={{ fontSize: "13px", color: "#64748b", margin: "8px 0 0 0" }}>
-                  Customize how emailed invoices look: company name, colors, logo, footer.
-                </p>
-              </div>
-            )}
-          </section>
+          {isOwner && (
+            <>
+              <section className="panel" style={{ marginBottom: "24px" }}>
+                <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Team</h3>
+                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                  <input
+                    type="text"
+                    value={teamNameEdit}
+                    onChange={(e) => setTeamNameEdit(e.target.value)}
+                    placeholder="Team name"
+                    style={{ maxWidth: "280px" }}
+                  />
+                  <button
+                    type="button"
+                    className="nav-button primary"
+                    onClick={handleSaveTeamName}
+                    disabled={savingName || teamNameEdit.trim() === team.name}
+                  >
+                    {savingName ? "Saving..." : "Save name"}
+                  </button>
+                </div>
+                <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
+                  <button
+                    type="button"
+                    className="nav-button secondary"
+                    onClick={() => setShowInvoiceStyleModal(true)}
+                  >
+                    Edit invoice style
+                  </button>
+                  <p style={{ fontSize: "13px", color: "#64748b", margin: "8px 0 0 0" }}>
+                    Customize how emailed invoices look: company name, colors, logo, footer.
+                  </p>
+                </div>
+              </section>
 
-          <section className="panel" style={{ marginBottom: "24px" }}>
-            <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Plan & Billing</h3>
-            <p style={{ color: "#64748b", margin: "0 0 12px 0" }}>
-              Plan: <strong>{team.effectivePlan}</strong>
-              {team.isOnTrial && team.trialEndsAt && (
-                <> · Trial ends {new Date(team.trialEndsAt).toLocaleDateString()}</>
-              )}
-            </p>
-            {isOwner && (
-              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                {team.billingPortalAvailable && (
-                  <button
-                    type="button"
-                    className="nav-button primary"
-                    onClick={handleManageSubscription}
-                    disabled={billingLoading}
-                  >
-                    {billingLoading ? "Opening..." : "Manage subscription"}
-                  </button>
-                )}
-                {(team.effectivePlan === "free" || team.effectivePlan === "starter") && (
-                  <button
-                    type="button"
-                    className="nav-button primary"
-                    onClick={handleUpgrade}
-                    disabled={checkoutLoading}
-                  >
-                    {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
-                  </button>
-                )}
-              </div>
-            )}
-          </section>
+              <section className="panel" style={{ marginBottom: "24px" }}>
+                <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Plan & Billing</h3>
+                <p style={{ color: "#64748b", margin: "0 0 12px 0" }}>
+                  Plan: <strong>{team.effectivePlan}</strong>
+                  {team.isOnTrial && team.trialEndsAt && (
+                    <> · Trial ends {new Date(team.trialEndsAt).toLocaleDateString()}</>
+                  )}
+                </p>
+                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                  {team.billingPortalAvailable && (
+                    <button
+                      type="button"
+                      className="nav-button primary"
+                      onClick={handleManageSubscription}
+                      disabled={billingLoading}
+                    >
+                      {billingLoading ? "Opening..." : "Manage subscription"}
+                    </button>
+                  )}
+                  {(team.effectivePlan === "free" || team.effectivePlan === "starter") && (
+                    <button
+                      type="button"
+                      className="nav-button primary"
+                      onClick={handleUpgrade}
+                      disabled={checkoutLoading}
+                    >
+                      {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
+                    </button>
+                  )}
+                </div>
+              </section>
+            </>
+          )}
 
           {isOwner && (
             <section className="panel" style={{ marginBottom: "24px" }}>

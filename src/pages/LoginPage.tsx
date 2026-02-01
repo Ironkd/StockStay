@@ -90,17 +90,36 @@ export const LoginPage: React.FC = () => {
   const inviteTokenFromRedirect = (() => {
     const r = params.get("redirect");
     if (!r) return null;
-    try {
-      const decoded = decodeURIComponent(r);
-      if (!decoded.startsWith("/accept-invite?")) return null;
-      const q = decoded.split("?")[1] ?? "";
-      return new URLSearchParams(q).get("token");
-    } catch {
-      return null;
-    }
+    const tryDecode = (str: string, times = 1): string => {
+      let s = str;
+      for (let i = 0; i < times; i++) {
+        try {
+          s = decodeURIComponent(s);
+        } catch {
+          break;
+        }
+      }
+      return s;
+    };
+    const decoded = tryDecode(r, 2);
+    if (!decoded.includes("/accept-invite")) return null;
+    const match = decoded.match(/\?([^#]*)$/);
+    const q = match ? match[1] : decoded.split("?")[1] ?? "";
+    return new URLSearchParams(q).get("token");
   })();
   const inviteToken = inviteTokenFromParam || inviteTokenFromRedirect || null;
-  const isInviteSignup = isSignUpMode && !!inviteToken;
+  const isRedirectToAcceptInvite = (() => {
+    const r = params.get("redirect");
+    if (!r) return false;
+    try {
+      const decoded = decodeURIComponent(r);
+      const decodedTwice = decodeURIComponent(decoded);
+      return decoded.includes("/accept-invite") || decodedTwice.includes("/accept-invite");
+    } catch {
+      return false;
+    }
+  })();
+  const isInviteSignup = isSignUpMode && (!!inviteToken || isRedirectToAcceptInvite);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -131,6 +150,11 @@ export const LoginPage: React.FC = () => {
         setLoading(false);
         return;
       }
+      if (isInviteSignup && !inviteToken) {
+        setError("The invitation link is incomplete. Please use the full link from your invitation email to join the team.");
+        setLoading(false);
+        return;
+      }
       const fullName = `${firstName.trim()} ${lastName.trim()}`;
       const addressParts = [street.trim(), city.trim(), province.trim(), postalCode.trim()].filter(Boolean);
       const addressStr = addressParts.length > 0 ? addressParts.join(", ") : undefined;
@@ -144,10 +168,11 @@ export const LoginPage: React.FC = () => {
           address: addressStr,
           phoneNumber: phoneStr,
           startProTrial: isInviteSignup ? false : startProTrial,
-          ...(inviteToken ? { inviteToken } : {}),
+          ...(inviteToken ? { inviteToken: inviteToken.trim() } : {}),
         });
         if (response.joinedTeam) {
-          setSignupSuccess(response.message);
+          navigate("/verify-email?pending=1");
+          return;
         } else {
           const trialMessage = startProTrial
             ? " Your 14-day Pro trial has been activated!"

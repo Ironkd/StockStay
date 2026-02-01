@@ -5,11 +5,18 @@ import { authApi } from "../services/authApi";
 export const VerifyEmailPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const token = searchParams.get("token");
-  const [status, setStatus] = useState<"loading" | "success" | "error">("loading");
+  const pending = searchParams.get("pending") === "1";
+  const [status, setStatus] = useState<"loading" | "success" | "error" | "pending">(
+    !token && pending ? "pending" : "loading"
+  );
   const [message, setMessage] = useState("");
 
   useEffect(() => {
     if (!token) {
+      if (pending) {
+        setStatus("pending");
+        return;
+      }
       setStatus("error");
       setMessage("Verification link is missing or invalid.");
       return;
@@ -25,7 +32,7 @@ export const VerifyEmailPage: React.FC = () => {
         setStatus("error");
         setMessage(err instanceof Error ? err.message : "Verification failed. The link may have expired.");
       });
-  }, [token]);
+  }, [token, pending]);
 
   return (
     <div className="login-container">
@@ -44,6 +51,19 @@ export const VerifyEmailPage: React.FC = () => {
         </h1>
         <p className="login-subtitle">Verify your email</p>
 
+        {status === "pending" && (
+          <>
+            <div className="success-message" role="alert" style={{ marginTop: 16 }}>
+              We&apos;ve sent you a verification email. Check your inbox and click the link to verify your address.
+            </div>
+            <p className="login-hint" style={{ marginTop: 12 }}>
+              After you verify, you can sign in to join your team.
+            </p>
+            <Link to="/login" className="login-button" style={{ display: "inline-block", marginTop: 20, textDecoration: "none", textAlign: "center" }}>
+              Sign in
+            </Link>
+          </>
+        )}
         {status === "loading" && (
           <p className="login-hint" style={{ marginTop: 16 }}>
             Verifying your email…
