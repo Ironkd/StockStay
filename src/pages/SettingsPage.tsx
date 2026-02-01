@@ -312,35 +312,120 @@ export const SettingsPage: React.FC = () => {
       </div>
       <div style={{ marginBottom: "12px" }}>
         <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-          Pages they can view (select multiple; leave empty for full access)
+          Pages they can view (click to add; leave Selected empty for full access)
         </span>
-        <select
-          multiple
-          size={PAGE_KEYS.length}
-          value={access.allowedPages}
-          onChange={(e) => {
-            const selected = Array.from((e.target as HTMLSelectElement).selectedOptions, (opt) => opt.value);
-            setAccess((a) => ({ ...a, allowedPages: selected }));
-          }}
-          style={{
-            width: "100%",
-            maxWidth: "320px",
-            padding: "8px",
-            borderRadius: "8px",
-            border: "1px solid rgba(148, 163, 184, 0.7)",
-            fontSize: "13px",
-            background: "rgba(248, 250, 252, 0.9)",
-          }}
-        >
-          {PAGE_KEYS.map(({ key, label }) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-        <p style={{ fontSize: "12px", color: "#64748b", margin: "4px 0 0 0" }}>
-          Hold Ctrl (Windows) or ⌘ (Mac) to select multiple pages.
-        </p>
+        <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
+            <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+              Available
+            </span>
+            <div
+              style={{
+                padding: "6px 10px",
+                borderRadius: "8px",
+                border: "1px solid rgba(148, 163, 184, 0.7)",
+                background: "rgba(248, 250, 252, 0.9)",
+                minHeight: "120px",
+                maxHeight: "180px",
+                overflowY: "auto",
+              }}
+            >
+              {PAGE_KEYS.filter(({ key }) => !access.allowedPages.includes(key)).map(({ key, label }) => (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() =>
+                    setAccess((a) => ({ ...a, allowedPages: [...a.allowedPages, key] }))
+                  }
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "6px 8px",
+                    margin: "2px 0",
+                    textAlign: "left",
+                    border: "none",
+                    borderRadius: "6px",
+                    background: "transparent",
+                    fontSize: "13px",
+                    cursor: "pointer",
+                    color: "#334155",
+                  }}
+                  onMouseOver={(e) => {
+                    e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
+                  }}
+                  onMouseOut={(e) => {
+                    e.currentTarget.style.background = "transparent";
+                  }}
+                >
+                  {label}
+                </button>
+              ))}
+              {PAGE_KEYS.filter(({ key }) => !access.allowedPages.includes(key)).length === 0 && (
+                <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
+                  All selected
+                </p>
+              )}
+            </div>
+          </div>
+          <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
+            <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+              Selected
+            </span>
+            <div
+              style={{
+                padding: "6px 10px",
+                borderRadius: "8px",
+                border: "1px solid rgba(148, 163, 184, 0.7)",
+                background: "rgba(248, 250, 252, 0.9)",
+                minHeight: "120px",
+                maxHeight: "180px",
+                overflowY: "auto",
+              }}
+            >
+              {access.allowedPages.length === 0 && (
+                <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
+                  None (full access)
+                </p>
+              )}
+              {access.allowedPages.map((key) => {
+                const label = PAGE_KEYS.find((p) => p.key === key)?.label ?? key;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() =>
+                      setAccess((a) => ({
+                        ...a,
+                        allowedPages: a.allowedPages.filter((k) => k !== key),
+                      }))
+                    }
+                    style={{
+                      display: "block",
+                      width: "100%",
+                      padding: "6px 8px",
+                      margin: "2px 0",
+                      textAlign: "left",
+                      border: "none",
+                      borderRadius: "6px",
+                      background: "transparent",
+                      fontSize: "13px",
+                      cursor: "pointer",
+                      color: "#334155",
+                    }}
+                    onMouseOver={(e) => {
+                      e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+                    }}
+                    onMouseOut={(e) => {
+                      e.currentTarget.style.background = "transparent";
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
       </div>
       {warehouses.length > 0 && (
         <div style={{ marginBottom: "12px" }}>
