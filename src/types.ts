@@ -131,6 +131,9 @@ export type SaleItem = {
 // Invoice email branding (stored per team)
 export type InvoiceStyle = {
   companyName?: string;
+  companyAddress?: string;
+  companyPhone?: string;
+  companyEmail?: string;
   primaryColor?: string;
   accentColor?: string;
   footerText?: string;

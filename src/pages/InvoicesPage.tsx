@@ -5,6 +5,7 @@ import { useSales } from "../hooks/useSales";
 import { useInventory } from "../hooks/useInventory";
 import { useWarehouses } from "../hooks/useWarehouses";
 import { invoicesApi } from "../services/invoicesApi";
+import { teamApi } from "../services/teamApi";
 import { Invoice, InvoiceItem } from "../types";
 
 export const InvoicesPage: React.FC = () => {
@@ -18,6 +19,7 @@ export const InvoicesPage: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
   const [sendingInvoice, setSendingInvoice] = useState(false);
+  const [senderBranding, setSenderBranding] = useState<{ companyName: string; companyAddress: string; companyPhone: string; companyEmail: string } | null>(null);
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -54,6 +56,23 @@ export const InvoicesPage: React.FC = () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
   }, [refreshInvoices]);
+
+  // Sender branding for invoice title and preview (company name, address, etc.)
+  useEffect(() => {
+    let cancelled = false;
+    teamApi.getTeam().then((data) => {
+      if (cancelled) return;
+      const t = data.team;
+      const style = t.invoiceStyle ?? {};
+      setSenderBranding({
+        companyName: (style.companyName ?? t.name ?? "Stock Stay").trim() || t.name || "Stock Stay",
+        companyAddress: (style.companyAddress ?? "").trim(),
+        companyPhone: (style.companyPhone ?? "").trim(),
+        companyEmail: (style.companyEmail ?? "").trim(),
+      });
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const [formData, setFormData] = useState({
     invoiceNumber: "",
@@ -320,10 +339,8 @@ export const InvoicesPage: React.FC = () => {
   };
 
   const getInvoiceTitle = (invoice: Invoice) => {
-    // Show the month and year the invoice date falls in, e.g. "January 2026"
-    const d = new Date(invoice.date);
-    if (Number.isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    // Show who the invoice is from (company/sender name), not the number
+    return senderBranding?.companyName ?? "Invoice";
   };
 
   // Separate active invoices (not sent) from sent invoices (archived)
@@ -358,7 +375,7 @@ export const InvoicesPage: React.FC = () => {
                 </span>
               )}
             </h4>
-            <p>{invoice.clientName}</p>
+            <p>{invoice.clientName} · #{invoice.invoiceNumber}</p>
           </div>
           <div className="invoice-meta">
             <span
@@ -457,7 +474,7 @@ export const InvoicesPage: React.FC = () => {
           >
             <div style={{ padding: "24px" }}>
               <h3 style={{ margin: "0 0 8px", fontSize: "1.25rem" }}>
-                Preview – Invoice #{sendPreviewInvoice.invoiceNumber}
+                Preview – Invoice from {senderBranding?.companyName ?? "you"}
               </h3>
               <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: "0.9rem" }}>
                 This is how the invoice will look when sent by email.
@@ -473,11 +490,28 @@ export const InvoicesPage: React.FC = () => {
                   backgroundColor: "#f8fafc",
                 }}
               >
-                <p style={{ margin: "0 0 4px", fontWeight: 600 }}>
+                {senderBranding && (senderBranding.companyName || senderBranding.companyAddress || senderBranding.companyPhone || senderBranding.companyEmail) && (
+                  <div style={{ marginBottom: "16px" }}>
+                    <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>From</p>
+                    <p style={{ margin: "0", fontSize: "14px", lineHeight: 1.5, color: "#334155" }}>
+                      {senderBranding.companyName}
+                      {senderBranding.companyAddress && (
+                        <>
+                          <br />
+                          {senderBranding.companyAddress.split(/\n/).filter((l) => l.trim()).map((line, i) => (
+                            <span key={i}>{line}<br /></span>
+                          ))}
+                        </>
+                      )}
+                      {senderBranding.companyPhone && <><br />Tel: {senderBranding.companyPhone}</>}
+                      {senderBranding.companyEmail && <><br />{senderBranding.companyEmail}</>}
+                    </p>
+                  </div>
+                )}
+                <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bill to</p>
+                <p style={{ margin: "0 0 12px", fontSize: "14px", color: "#334155" }}>{sendPreviewInvoice.clientName}</p>
+                <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: "1rem" }}>
                   Invoice {sendPreviewInvoice.invoiceNumber}
-                </p>
-                <p style={{ margin: "0 0 12px", color: "#64748b", fontSize: "0.9rem" }}>
-                  {sendPreviewInvoice.clientName}
                 </p>
                 <p style={{ margin: "0 0 4px", fontSize: "0.9rem" }}>
                   <strong>Date:</strong> {new Date(sendPreviewInvoice.date).toLocaleDateString()}

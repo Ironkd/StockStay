@@ -98,7 +98,7 @@ export async function sendVerificationEmail(to, token, name = "there") {
 /**
  * Parse team invoice style (JSON string or object).
  * @param {object|null} team - Team with optional invoiceStyle (string) and invoiceLogoUrl
- * @returns {{ companyName?: string, primaryColor?: string, accentColor?: string, footerText?: string, logoUrl?: string }}
+ * @returns {{ companyName?: string, companyAddress?: string, companyPhone?: string, companyEmail?: string, primaryColor?: string, accentColor?: string, footerText?: string, logoUrl?: string }}
  */
 function getInvoiceBranding(team) {
   if (!team) return {};
@@ -110,6 +110,9 @@ function getInvoiceBranding(team) {
   }
   return {
     companyName: style.companyName || team.name || "Stock Stay",
+    companyAddress: style.companyAddress != null ? String(style.companyAddress).trim() : "",
+    companyPhone: style.companyPhone != null ? String(style.companyPhone).trim() : "",
+    companyEmail: style.companyEmail != null ? String(style.companyEmail).trim() : "",
     primaryColor: style.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(style.primaryColor) ? style.primaryColor : "#2563eb",
     accentColor: style.accentColor && /^#[0-9A-Fa-f]{6}$/.test(style.accentColor) ? style.accentColor : "#1e40af",
     footerText: style.footerText != null ? String(style.footerText) : "— Stock Stay",
@@ -141,17 +144,28 @@ function buildInvoiceEmailHtml(invoice, team = null) {
   const logoBlock = branding.logoUrl
     ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.companyName)}" style="max-height:48px;max-width:200px;display:block;margin-bottom:20px;" />`
     : "";
+  const addressLines = branding.companyAddress ? branding.companyAddress.split(/\n/).filter((l) => l.trim()).map((l) => escapeHtml(l.trim())) : [];
+  const fromBlockLines = [
+    escapeHtml(branding.companyName),
+    ...addressLines,
+    ...(branding.companyPhone ? [`Tel: ${escapeHtml(branding.companyPhone)}`] : []),
+    ...(branding.companyEmail ? [`${escapeHtml(branding.companyEmail)}`] : []),
+  ].filter(Boolean);
+  const fromBlock = fromBlockLines.length
+    ? `<div style="margin-bottom:20px;"><p style="margin:0 0 4px;font-size:13px;font-weight:600;color:#334155;">From</p><p style="margin:0;font-size:14px;color:#475569;line-height:1.5;">${fromBlockLines.join("<br/>")}</p></div>`
+    : "";
   return `
 <!DOCTYPE html>
 <html>
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${escapeHtml(invoice.invoiceNumber)}</title></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Invoice ${escapeHtml(invoice.invoiceNumber)} from ${escapeHtml(branding.companyName)}</title></head>
 <body style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,sans-serif;background:#f1f5f9;padding:32px 16px;">
   <div style="max-width:600px;margin:0 auto;background:#ffffff;border-radius:12px;box-shadow:0 4px 6px rgba(0,0,0,0.07);overflow:hidden;">
     <div style="padding:32px 28px;border-bottom:1px solid #e2e8f0;">
       ${logoBlock}
-      <h1 style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#64748b;">${escapeHtml(branding.companyName)}</h1>
-      <h2 style="margin:16px 0 8px;font-size:1.75rem;font-weight:700;color:${branding.primaryColor};">Invoice ${escapeHtml(invoice.invoiceNumber)}</h2>
-      <p style="margin:0 0 8px;font-size:15px;color:#334155;">${escapeHtml(invoice.clientName)}</p>
+      ${fromBlock}
+      <p style="margin:0 0 4px;font-size:11px;font-weight:600;letter-spacing:0.05em;text-transform:uppercase;color:#64748b;">Bill to</p>
+      <p style="margin:0 0 16px;font-size:15px;color:#334155;">${escapeHtml(invoice.clientName)}</p>
+      <h2 style="margin:0 0 8px;font-size:1.75rem;font-weight:700;color:${branding.primaryColor};">Invoice ${escapeHtml(invoice.invoiceNumber)}</h2>
       <p style="margin:0;font-size:13px;color:#64748b;">Date: ${dateStr} &nbsp;·&nbsp; Due: ${dueStr}</p>
     </div>
     <div style="padding:28px;">

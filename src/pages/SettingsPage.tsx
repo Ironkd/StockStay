@@ -75,12 +75,18 @@ export const SettingsPage: React.FC = () => {
   const [invoiceStyleSaving, setInvoiceStyleSaving] = useState(false);
   const [invoiceStyleForm, setInvoiceStyleForm] = useState<{
     companyName: string;
+    companyAddress: string;
+    companyPhone: string;
+    companyEmail: string;
     primaryColor: string;
     accentColor: string;
     footerText: string;
     logoUrl: string;
   }>({
     companyName: "",
+    companyAddress: "",
+    companyPhone: "",
+    companyEmail: "",
     primaryColor: "#2563eb",
     accentColor: "#1e40af",
     footerText: "— Stock Stay",
@@ -160,6 +166,9 @@ export const SettingsPage: React.FC = () => {
     const style = t.invoiceStyle ?? {};
     setInvoiceStyleForm({
       companyName: (style.companyName ?? t.name ?? "").trim(),
+      companyAddress: (style.companyAddress ?? "").trim(),
+      companyPhone: (style.companyPhone ?? "").trim(),
+      companyEmail: (style.companyEmail ?? "").trim(),
       primaryColor: (style.primaryColor && /^#[0-9A-Fa-f]{6}$/.test(style.primaryColor)) ? style.primaryColor : "#2563eb",
       accentColor: (style.accentColor && /^#[0-9A-Fa-f]{6}$/.test(style.accentColor)) ? style.accentColor : "#1e40af",
       footerText: (style.footerText ?? "— Stock Stay").trim(),
@@ -275,6 +284,9 @@ export const SettingsPage: React.FC = () => {
         invoiceLogoUrl: invoiceStyleForm.logoUrl.trim() || null,
         invoiceStyle: {
           companyName: invoiceStyleForm.companyName.trim() || undefined,
+          companyAddress: invoiceStyleForm.companyAddress.trim() || undefined,
+          companyPhone: invoiceStyleForm.companyPhone.trim() || undefined,
+          companyEmail: invoiceStyleForm.companyEmail.trim() || undefined,
           primaryColor: invoiceStyleForm.primaryColor.trim() || undefined,
           accentColor: invoiceStyleForm.accentColor.trim() || undefined,
           footerText: invoiceStyleForm.footerText.trim() || undefined,
@@ -1026,6 +1038,36 @@ export const SettingsPage: React.FC = () => {
                   value={invoiceStyleForm.companyName}
                   onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyName: e.target.value }))}
                   placeholder={team?.name ?? "Stock Stay"}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender address (appears on invoice)</span>
+                <textarea
+                  value={invoiceStyleForm.companyAddress}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyAddress: e.target.value }))}
+                  placeholder="123 Main St&#10;City, Province A1B 2C3"
+                  rows={3}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", resize: "vertical" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender phone</span>
+                <input
+                  type="text"
+                  value={invoiceStyleForm.companyPhone}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyPhone: e.target.value }))}
+                  placeholder="(555) 123-4567"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender email</span>
+                <input
+                  type="email"
+                  value={invoiceStyleForm.companyEmail}
+                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyEmail: e.target.value }))}
+                  placeholder="billing@yourcompany.com"
                   style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
                 />
               </label>
