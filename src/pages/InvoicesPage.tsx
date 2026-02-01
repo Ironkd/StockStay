@@ -38,6 +38,20 @@ export const InvoicesPage: React.FC = () => {
     refreshInvoices();
   }, [sales.length]);
 
+  // Refetch when tab becomes visible or when a sale creates an invoice (so invoice shows immediately)
+  useEffect(() => {
+    const onRefresh = () => refreshInvoices();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") onRefresh();
+    };
+    window.addEventListener("invoices-refresh", onRefresh);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      window.removeEventListener("invoices-refresh", onRefresh);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refreshInvoices]);
+
   const [formData, setFormData] = useState({
     invoiceNumber: "",
     clientId: "",

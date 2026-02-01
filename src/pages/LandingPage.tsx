@@ -40,22 +40,20 @@ export const LandingPage: React.FC = () => {
 
           <div className="hero-content">
             <h1 className="hero-title">
-              Stock Stay. Why Pick Us?
+              Inventory, Invoices & Sales — All in One Place
             </h1>
             <p className="hero-domain">stockstay.com</p>
             <p className="hero-subtitle hero-lead">
-              Stock Stay is an inventory management platform that helps you track stock levels,
-              manage multiple warehouses, create and send invoices, and collaborate with your team, all in one place. Built for small teams and growing businesses.
-            </p>
-            <p className="hero-subtitle">
-              Streamline operations, get low stock alerts, and keep your inventory under control at <strong>stockstay.com</strong>.
+              Stock Stay is a full inventory and business management app. Track products across multiple warehouses,
+              move stock between locations, get low-stock alerts and a shopping list, manage clients, create invoices,
+              record sales, and collaborate with your team with roles and permissions. Upgrade when you need more warehouses or features — start free, no credit card required.
             </p>
             <div className="hero-cta">
               <button onClick={handleGetStarted} className="cta-button primary">
                 Start Free Trial
               </button>
-              <button onClick={handleGetStarted} className="cta-button secondary">
-                Watch Demo
+              <button onClick={() => document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })} className="cta-button secondary">
+                See What It Does
               </button>
             </div>
             <p className="hero-note">No credit card required. Free plan available</p>

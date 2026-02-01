@@ -1,5 +1,10 @@
 import { apiRequest } from "../config/api";
-import { Sale } from "../types";
+import { Invoice, Sale } from "../types";
+
+export type CreateSaleResponse = {
+  sale: Sale;
+  invoice: Invoice | null;
+};
 
 export const salesApi = {
   getAll: async (): Promise<Sale[]> => {
@@ -10,8 +15,8 @@ export const salesApi = {
     return apiRequest<Sale>(`/sales/${id}`);
   },
 
-  create: async (sale: Omit<Sale, "id" | "createdAt" | "updatedAt">): Promise<Sale> => {
-    return apiRequest<Sale>("/sales", {
+  create: async (sale: Omit<Sale, "id" | "createdAt" | "updatedAt">): Promise<CreateSaleResponse> => {
+    return apiRequest<CreateSaleResponse>("/sales", {
       method: "POST",
       body: JSON.stringify(sale),
     });

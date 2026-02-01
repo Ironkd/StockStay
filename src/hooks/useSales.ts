@@ -28,9 +28,9 @@ export const useSales = () => {
   const addSale = async (sale: Omit<Sale, "id" | "createdAt" | "updatedAt">) => {
     try {
       setError(null);
-      const newSale = await salesApi.create(sale);
-      setSales((prev) => [...prev, newSale]);
-      return newSale;
+      const response = await salesApi.create(sale);
+      setSales((prev) => [...prev, response.sale]);
+      return response;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to create sale");
       throw err;

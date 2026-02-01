@@ -1812,22 +1812,23 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
       }
     }
 
-    // Create one active (draft) invoice for this sale (best-effort; sale still succeeds if this fails)
+    // Create one active (draft) invoice for this sale so it shows in Invoices immediately
+    let newInvoice = null;
     try {
       const invoicePayload = buildInvoiceFromSale({ ...saleData, ...newSale }, newSale.id);
-      await invoiceOps.create({ ...invoicePayload, teamId: currentUser.teamId });
+      newInvoice = await invoiceOps.create({ ...invoicePayload, teamId: currentUser.teamId });
     } catch (invoiceError) {
       // If DB doesn't have saleId column yet, create invoice without it so the invoice still exists
       console.error("Error creating invoice from sale (sale was saved):", invoiceError);
       try {
         const { saleId: _s, ...payloadWithoutSaleId } = buildInvoiceFromSale({ ...saleData, ...newSale }, newSale.id);
-        await invoiceOps.create(payloadWithoutSaleId);
+        newInvoice = await invoiceOps.create({ ...payloadWithoutSaleId, teamId: currentUser.teamId });
       } catch (retryError) {
         console.error("Retry creating invoice without saleId failed:", retryError);
       }
     }
 
-    res.status(201).json(newSale);
+    res.status(201).json({ sale: newSale, invoice: newInvoice });
   } catch (error) {
     console.error("Error creating sale:", error);
     res.status(500).json({ message: "Error creating sale" });

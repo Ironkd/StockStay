@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { Link } from "react-router-dom";
 import { useSales } from "../hooks/useSales";
 import { useClients } from "../hooks/useClients";
 import { useInventory } from "../hooks/useInventory";
@@ -48,6 +49,7 @@ export const SalesPage: React.FC = () => {
   const { getWarehouseById } = useWarehouses();
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
   const [showForm, setShowForm] = useState(false);
+  const [createdInvoiceId, setCreatedInvoiceId] = useState<string | null>(null);
 
   const getNextSaleNumber = () => {
     const numericSaleNumbers = sales
@@ -207,10 +209,18 @@ export const SalesPage: React.FC = () => {
     try {
       if (editingSale) {
         await updateSale(editingSale.id, saleData);
+        setCreatedInvoiceId(null);
       } else {
-        await addSale(saleData);
+        const response = await addSale(saleData);
         // Refresh inventory to reflect updated quantities
         await refreshInventory();
+        // Invoice is created on the server; notify so Invoices page shows it immediately
+        if (response.invoice) {
+          setCreatedInvoiceId(response.invoice.id);
+          window.dispatchEvent(new CustomEvent("invoices-refresh"));
+        } else {
+          setCreatedInvoiceId(null);
+        }
       }
       resetForm();
     } catch (err) {
@@ -278,6 +288,23 @@ export const SalesPage: React.FC = () => {
           {showForm ? "Cancel" : "Create Sale"}
         </button>
       </div>
+
+      {createdInvoiceId && (
+        <div className="sale-created-invoice-banner" role="status">
+          Sale created. Invoice created —{" "}
+          <Link to="/invoices" className="sale-created-invoice-link">
+            View invoice
+          </Link>
+          <button
+            type="button"
+            className="banner-dismiss"
+            onClick={() => setCreatedInvoiceId(null)}
+            aria-label="Dismiss"
+          >
+            ×
+          </button>
+        </div>
+      )}
 
       {showForm && (
         <section className="panel">
