@@ -251,6 +251,7 @@ export const LandingPage: React.FC = () => {
                 <li>✓ Up to 10 warehouses</li>
                 <li>✓ Team members</li>
                 <li>✓ Warehouse permissions</li>
+                <li>✓ Shopping list from low stock</li>
                 <li>✓ Advanced reports</li>
                 <li>✓ Inventory value tracking</li>
                 <li>✓ Everything in Starter</li>

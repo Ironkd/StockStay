@@ -170,7 +170,15 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     const { email, password } = req.body;
 
     console.log(`[LOGIN] Attempting login for: ${email}`);
-    let user = await userOps.findByEmail(email);
+    let user;
+    try {
+      user = await userOps.findByEmail(email);
+    } catch (findErr) {
+      console.error("Login: findByEmail failed:", findErr.message, findErr.stack);
+      return res.status(503).json({
+        message: "Database error during login. Please try again.",
+      });
+    }
     console.log(`[LOGIN] User found:`, user ? `Yes (${user.email})` : "No");
 
     if (!user) {
@@ -188,7 +196,16 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     }
 
     const rawPassword = typeof password === "string" ? password.trim() : "";
-    const isPasswordValid = rawPassword && (await bcrypt.compare(rawPassword, user.password));
+    let isPasswordValid = false;
+    try {
+      isPasswordValid = !!(
+        rawPassword &&
+        user.password &&
+        (await bcrypt.compare(rawPassword, user.password))
+      );
+    } catch (bcryptErr) {
+      console.warn("Login: bcrypt.compare failed:", bcryptErr.message);
+    }
     if (!isPasswordValid) {
       return res.status(401).json({
         message: "Invalid credentials. If you've forgotten your password, use Forgot password below.",
@@ -220,23 +237,39 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       }
     }
 
-    const token = jwt.sign(
-      { id: user.id, email: user.email },
-      JWT_SECRET,
-      { expiresIn: "7d" }
-    );
+    if (!JWT_SECRET || typeof JWT_SECRET !== "string") {
+      console.error("Login: JWT_SECRET is not set or invalid");
+      return res.status(500).json({ message: "Server configuration error. Please try again later." });
+    }
+
+    let token;
+    try {
+      token = jwt.sign(
+        { id: user.id, email: user.email },
+        JWT_SECRET,
+        { expiresIn: "7d" }
+      );
+    } catch (jwtErr) {
+      console.error("Login: jwt.sign failed:", jwtErr.message);
+      return res.status(500).json({ message: "Server configuration error. Please try again later." });
+    }
 
     let teamName = null;
     if (user.teamId) {
-      const team = await teamOps.findById(user.teamId);
-      teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+      try {
+        const team = await teamOps.findById(user.teamId);
+        teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+      } catch (teamErr) {
+        console.warn("Login: team lookup failed:", teamErr.message);
+        teamName = `${user.name || user.email.split("@")[0]}'s Team`;
+      }
     }
 
-    res.json({
+    const payload = {
       user: {
         id: user.id,
-        email: user.email,
-        name: user.name,
+        email: user.email || "",
+        name: user.name || "",
         firstName: user.firstName ?? "",
         lastName: user.lastName ?? "",
         address: user.address ?? "",
@@ -245,15 +278,17 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         province: user.province ?? "",
         postalCode: user.postalCode ?? "",
         phone: user.phone ?? "",
-        teamId: user.teamId,
+        teamId: user.teamId ?? null,
         teamName: teamName ?? null,
-        teamRole: user.teamRole,
+        teamRole: user.teamRole ?? null,
         maxInventoryItems: user.maxInventoryItems ?? null,
         allowedPages: user.allowedPages ?? null,
         allowedWarehouseIds: user.allowedWarehouseIds ?? null,
       },
       token,
-    });
+    };
+
+    res.json(payload);
   } catch (error) {
     console.error("Login error:", error);
     console.error("Login error stack:", error.stack);

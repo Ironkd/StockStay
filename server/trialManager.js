@@ -126,37 +126,39 @@ export function canCreateWarehouse(team, currentWarehouseCount) {
  * @returns {Promise<number>} Number of teams downgraded
  */
 export async function downgradeExpiredTrials() {
-  const now = new Date();
-  
-  // Find all teams with expired trials
-  const expiredTrials = await prisma.team.findMany({
-    where: {
-      isOnTrial: true,
-      trialEndsAt: {
-        lt: now, // Trial end date is in the past
-      },
-    },
-  });
-  
-  console.log(`[TRIAL] Found ${expiredTrials.length} expired trials to downgrade`);
-  
-  // Downgrade each team to free plan
-  for (const team of expiredTrials) {
-    await prisma.team.update({
-      where: { id: team.id },
-      data: {
-        plan: 'free',
-        isOnTrial: false,
-        trialEndsAt: null,
-        trialPlan: null,
-        maxWarehouses: 1, // Free plan limit
+  try {
+    const now = new Date();
+
+    const expiredTrials = await prisma.team.findMany({
+      where: {
+        isOnTrial: true,
+        trialEndsAt: {
+          lt: now,
+        },
       },
     });
-    
-    console.log(`[TRIAL] Downgraded team ${team.id} (${team.name}) from trial to free`);
+
+    console.log(`[TRIAL] Found ${expiredTrials.length} expired trials to downgrade`);
+
+    for (const team of expiredTrials) {
+      await prisma.team.update({
+        where: { id: team.id },
+        data: {
+          plan: "free",
+          isOnTrial: false,
+          trialEndsAt: null,
+          trialPlan: null,
+          maxWarehouses: 1,
+        },
+      });
+      console.log(`[TRIAL] Downgraded team ${team.id} (${team.name}) from trial to free`);
+    }
+
+    return expiredTrials.length;
+  } catch (err) {
+    console.warn("[TRIAL] downgradeExpiredTrials failed (Team table may be missing columns):", err.message);
+    return 0;
   }
-  
-  return expiredTrials.length;
 }
 
 /**
