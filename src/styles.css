@@ -533,6 +533,11 @@ button.secondary:hover {
   color: #64748b;
 }
 
+.shopping-list-warehouse {
+  font-weight: 600;
+  color: #475569;
+}
+
 .shopping-list-need {
   color: #b45309;
   font-weight: 500;
