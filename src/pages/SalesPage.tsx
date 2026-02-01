@@ -225,7 +225,8 @@ export const SalesPage: React.FC = () => {
       resetForm();
     } catch (err) {
       console.error("Error saving sale:", err);
-      alert("Failed to save sale. Please try again.");
+      const message = err instanceof Error ? err.message : "Failed to save sale. Please try again.";
+      alert(message);
     }
   };
 

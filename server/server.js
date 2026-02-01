@@ -1795,8 +1795,14 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
     }
     const saleData = { ...req.body, teamId: currentUser.teamId };
 
+    if (!Array.isArray(saleData.items) || saleData.items.length === 0) {
+      return res.status(400).json({
+        message: "Please add at least one item to the sale.",
+      });
+    }
+
     // Validate that all items have sufficient inventory
-    for (const saleItem of saleData.items || []) {
+    for (const saleItem of saleData.items) {
       const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
       if (!inventoryItem) {
         return res.status(400).json({
