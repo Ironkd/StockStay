@@ -22,8 +22,8 @@ Use this guide to deploy the **backend** and **frontend** to the cloud. You alre
    - In the service → **Settings** → **Root Directory** → `server`.
 
 4. **Build & start** (Railway usually detects Node; if not, set manually):
-   - **Build Command:** `npm install && npm run build`  
-     (this runs `prisma generate` so the DB client is ready)
+   - **Build Command:** `npm install --omit=dev && npm run build`  
+     (uses `--omit=dev` to avoid the deprecated production config warning; runs `prisma generate` so the DB client is ready)
    - **Start Command:** `npm start`  
      (runs `node server.js`)
 
@@ -92,7 +92,7 @@ If your Supabase database schema is already up to date (you ran migrations local
    - In `server/`: `npx prisma migrate deploy`
 
 2. **Option B – Railway build:**  
-   You can add `npx prisma migrate deploy` to the Railway build command (e.g. `npm install && npm run build && npx prisma migrate deploy`). Only do this if you want every deploy to apply pending migrations.
+   You can add `npx prisma migrate deploy` to the Railway build command (e.g. `npm install --omit=dev && npm run build && npx prisma migrate deploy`). Only do this if you want every deploy to apply pending migrations.
 
 ---
 
@@ -120,7 +120,7 @@ After this, your app is live: frontend on Vercel, API on Railway, database on Su
 1. Go to [render.com](https://render.com) → **New** → **Web Service**.
 2. Connect the same GitHub repo.
 3. **Root Directory:** `server`.
-4. **Build Command:** `npm install && npm run build`
+4. **Build Command:** `npm install --omit=dev && npm run build`
 5. **Start Command:** `npm start`
 6. Add the same **Environment Variables** as in Part 1 (including `DATABASE_URL` from Supabase).
 7. After frontend is on Vercel, add **CORS_ORIGIN** and redeploy.

@@ -58,7 +58,7 @@ Copy the output (e.g. `K7x9mN2pQ...`). You’ll paste this as `JWT_SECRET` in Ra
    - Do **not** add `CORS_ORIGIN` yet. You’ll add it after the frontend is deployed.
 
 6. **Build & start** (often under **Settings**):
-   - **Build Command:** `npm install && npm run build`
+   - **Build Command:** `npm install --omit=dev && npm run build`
    - **Start Command:** `npm start`  
    Save if needed.
 
