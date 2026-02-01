@@ -1853,27 +1853,36 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
     }
     const sale = await saleOps.findById(req.params.id);
 
-    if (!sale || sale.teamId !== currentUser?.teamId) {
+    if (!sale) {
+      return res.status(404).json({ message: "Sale not found" });
+    }
+    if (sale.teamId != null && sale.teamId !== currentUser?.teamId) {
       return res.status(404).json({ message: "Sale not found" });
     }
 
     // Restore inventory quantities when sale is deleted
     for (const saleItem of sale.items || []) {
+      if (!saleItem.inventoryItemId) continue;
       const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
       if (inventoryItem) {
         await inventoryOps.update(saleItem.inventoryItemId, {
-          quantity: inventoryItem.quantity + saleItem.quantity,
+          quantity: inventoryItem.quantity + (saleItem.quantity ?? 0),
         });
       }
     }
 
-    // Delete the linked invoice for this sale
-    const linkedInvoice = await invoiceOps.findBySaleId(sale.id);
-    if (linkedInvoice) {
-      await invoiceOps.delete(linkedInvoice.id);
-    }
-
+    // Delete the sale first so we don't fail on invoice delete (e.g. RLS or FK)
     await saleOps.delete(req.params.id);
+
+    // Then remove the linked invoice if any (best-effort; sale is already deleted)
+    try {
+      const linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
+      if (linkedInvoice) {
+        await invoiceOps.delete(linkedInvoice.id);
+      }
+    } catch (invoiceErr) {
+      console.warn("Could not delete linked invoice for sale (sale was deleted):", invoiceErr.message);
+    }
 
     res.json({ message: "Sale deleted successfully" });
   } catch (error) {
