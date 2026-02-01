@@ -546,37 +546,122 @@ export const SettingsPage: React.FC = () => {
       {warehouses.length > 0 && (
         <div style={{ marginBottom: "12px" }}>
           <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-            Warehouses they can access (leave all unchecked for all)
+            Warehouses they can access (click to add; leave Selected empty for all)
           </span>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", alignItems: "center" }}>
-            {warehouses.map((w) => (
-              <label
-                key={w.id}
+          <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+                Available
+              </span>
+              <div
                 style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  gap: "8px",
-                  cursor: "pointer",
-                  flexShrink: 0,
-                  whiteSpace: "nowrap",
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(148, 163, 184, 0.7)",
+                  background: "rgba(248, 250, 252, 0.9)",
+                  minHeight: "120px",
+                  maxHeight: "180px",
+                  overflowY: "auto",
                 }}
               >
-                <input
-                  type="checkbox"
-                  checked={access.allowedWarehouseIds.includes(w.id)}
-                  onChange={() =>
-                    setAccess((a) => ({
-                      ...a,
-                      allowedWarehouseIds: a.allowedWarehouseIds.includes(w.id)
-                        ? a.allowedWarehouseIds.filter((id) => id !== w.id)
-                        : [...a.allowedWarehouseIds, w.id],
-                    }))
-                  }
-                  style={{ flexShrink: 0, margin: 0, verticalAlign: "middle" }}
-                />
-                <span style={{ fontSize: "13px" }}>{w.name}</span>
-              </label>
-            ))}
+                {warehouses
+                  .filter((w) => !access.allowedWarehouseIds.includes(w.id))
+                  .map((w) => (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() =>
+                        setAccess((a) => ({ ...a, allowedWarehouseIds: [...a.allowedWarehouseIds, w.id] }))
+                      }
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "6px 8px",
+                        margin: "2px 0",
+                        textAlign: "left",
+                        border: "none",
+                        borderRadius: "6px",
+                        background: "transparent",
+                        fontSize: "13px",
+                        cursor: "pointer",
+                        color: "#334155",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      {w.name}
+                    </button>
+                  ))}
+                {warehouses.filter((w) => !access.allowedWarehouseIds.includes(w.id)).length === 0 && (
+                  <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
+                    All selected
+                  </p>
+                )}
+              </div>
+            </div>
+            <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
+              <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+                Selected
+              </span>
+              <div
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: "8px",
+                  border: "1px solid rgba(148, 163, 184, 0.7)",
+                  background: "rgba(248, 250, 252, 0.9)",
+                  minHeight: "120px",
+                  maxHeight: "180px",
+                  overflowY: "auto",
+                }}
+              >
+                {access.allowedWarehouseIds.length === 0 && (
+                  <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
+                    None (all warehouses)
+                  </p>
+                )}
+                {access.allowedWarehouseIds.map((id) => {
+                  const w = warehouses.find((x) => x.id === id);
+                  if (!w) return null;
+                  return (
+                    <button
+                      key={w.id}
+                      type="button"
+                      onClick={() =>
+                        setAccess((a) => ({
+                          ...a,
+                          allowedWarehouseIds: a.allowedWarehouseIds.filter((i) => i !== w.id),
+                        }))
+                      }
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "6px 8px",
+                        margin: "2px 0",
+                        textAlign: "left",
+                        border: "none",
+                        borderRadius: "6px",
+                        background: "transparent",
+                        fontSize: "13px",
+                        cursor: "pointer",
+                        color: "#334155",
+                      }}
+                      onMouseOver={(e) => {
+                        e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
+                      }}
+                      onMouseOut={(e) => {
+                        e.currentTarget.style.background = "transparent";
+                      }}
+                    >
+                      {w.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
       )}

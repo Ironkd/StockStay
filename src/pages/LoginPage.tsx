@@ -164,7 +164,9 @@ export const LoginPage: React.FC = () => {
     try {
       const success = await login(emailNormalized, password);
       if (success) {
-        navigate("/dashboard");
+        const redirect = new URLSearchParams(location.search).get("redirect");
+        const path = redirect && redirect.startsWith("/") && !redirect.startsWith("//") ? redirect : "/dashboard";
+        navigate(path);
       } else {
         setError("Invalid credentials");
       }

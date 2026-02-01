@@ -258,3 +258,68 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
   console.log("  Subject:", subject);
   return true;
 }
+
+/**
+ * Send team invitation email with link to join.
+ * @param {string} to - Invitee email
+ * @param {string} token - Invitation token
+ * @param {string} teamName - Team name
+ * @param {string} inviterName - Name of person who sent the invite
+ * @returns {Promise<boolean>} - true if sent (or logged in dev), false on error
+ */
+export async function sendInvitationEmail(to, token, teamName = "the team", inviterName = "A team owner") {
+  const inviteLink = `${APP_URL}/accept-invite?token=${encodeURIComponent(token)}`;
+  const subject = `You're invited to join ${teamName} on Stock Stay`;
+  const text = `Hi,\n\n${inviterName} invited you to join ${teamName} on Stock Stay.\n\nAccept the invitation by clicking this link (you'll need to sign in or create an account first):\n\n${inviteLink}\n\nThis link expires in 14 days.\n\n— Stock Stay`;
+  const html = `
+    <p>Hi,</p>
+    <p><strong>${escapeHtml(inviterName)}</strong> invited you to join <strong>${escapeHtml(teamName)}</strong> on Stock Stay.</p>
+    <p><a href="${inviteLink}">Accept invitation</a></p>
+    <p>You'll need to sign in or create an account first. This link expires in 14 days.</p>
+    <p>— Stock Stay</p>
+  `;
+
+  if (RESEND_API_KEY) {
+    try {
+      const { Resend } = await import("resend");
+      const resend = new Resend(RESEND_API_KEY);
+      const { error } = await resend.emails.send({
+        from: RESEND_FROM_EMAIL,
+        to: [to.trim()],
+        subject,
+        html,
+        text,
+      });
+      if (error) {
+        console.error("[EMAIL] Resend invitation error:", error.message);
+        return false;
+      }
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Resend invitation error:", err?.message || err);
+      return false;
+    }
+  }
+
+  const transporter = getTransporter();
+  if (transporter) {
+    try {
+      await transporter.sendMail({
+        from: SMTP_FROM,
+        to: to.trim(),
+        subject,
+        text,
+        html,
+      });
+      return true;
+    } catch (err) {
+      console.error("[EMAIL] Failed to send invitation email:", err);
+      return false;
+    }
+  }
+
+  console.log("[EMAIL] Invitation email (no Resend/SMTP configured):");
+  console.log("  To:", to);
+  console.log("  Link:", inviteLink);
+  return true;
+}

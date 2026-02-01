@@ -19,7 +19,7 @@ import {
   passwordResetTokenOps,
   prisma,
 } from "./db.js";
-import { sendVerificationEmail, sendInvoiceEmail } from "./email.js";
+import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail } from "./email.js";
 import {
   startProTrial,
   isTrialExpired,
@@ -2353,6 +2353,12 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
       token: crypto.randomUUID(),
       expiresAt,
       invitedByUserId: currentUser.id,
+    });
+
+    const teamName = team.name?.trim() || "the team";
+    const inviterName = currentUser.name?.trim() || "A team owner";
+    sendInvitationEmail(invitation.email, invitation.token, teamName, inviterName).catch((err) => {
+      console.error("Failed to send invitation email:", err?.message || err);
     });
 
     res.status(201).json({

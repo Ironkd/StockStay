@@ -26,8 +26,8 @@ export const AcceptInvitePage: React.FC = () => {
         return;
       }
       if (!isAuthenticated) {
-        // Redirect unauthenticated users to login, then they can come back via the link
-        navigate("/login");
+        const returnPath = `/accept-invite?token=${encodeURIComponent(token)}`;
+        navigate(`/login?redirect=${encodeURIComponent(returnPath)}`);
         return;
       }
 
