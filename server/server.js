@@ -698,6 +698,48 @@ app.post("/api/warehouses", authenticateToken, async (req, res) => {
   }
 });
 
+app.put("/api/warehouses/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You do not belong to a team." });
+    }
+    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
+    const warehouse = teamWarehouses.find((w) => w.id === req.params.id);
+    if (!warehouse) {
+      return res.status(404).json({ message: "Warehouse not found." });
+    }
+    const { name, location } = req.body;
+    const updated = await warehouseOps.update(req.params.id, {
+      name: typeof name === "string" ? name : warehouse.name,
+      location: typeof location === "string" ? location : warehouse.location ?? "",
+    });
+    res.json(updated);
+  } catch (error) {
+    console.error("Error updating warehouse:", error);
+    res.status(500).json({ message: "Error updating warehouse" });
+  }
+});
+
+app.delete("/api/warehouses/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You do not belong to a team." });
+    }
+    const teamWarehouses = await warehouseOps.findAllByTeam(currentUser.teamId);
+    const warehouse = teamWarehouses.find((w) => w.id === req.params.id);
+    if (!warehouse) {
+      return res.status(404).json({ message: "Warehouse not found." });
+    }
+    await warehouseOps.delete(req.params.id);
+    res.json({ message: "Warehouse deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting warehouse:", error);
+    res.status(500).json({ message: "Error deleting warehouse" });
+  }
+});
+
 // ==================== BILLING (STRIPE) ROUTES ====================
 
 const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173";

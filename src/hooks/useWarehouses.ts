@@ -1,90 +1,67 @@
 import { useEffect, useState } from "react";
 import { Warehouse, WarehouseFormValues } from "../types";
+import { warehousesApi } from "../services/warehousesApi";
 
-const STORAGE_KEY = "inventory-organizer-warehouses-v1";
-
-const createWarehouse = (values: WarehouseFormValues): Warehouse => {
-  const now = new Date().toISOString();
-  return {
-    id: crypto.randomUUID(),
-    createdAt: now,
-    updatedAt: now,
-    ...values
-  };
-};
-
-const parseStoredWarehouses = (raw: unknown): Warehouse[] => {
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .map((warehouse) => {
-      try {
-        const parsed = warehouse as Warehouse;
-        if (
-          typeof parsed.id === "string" &&
-          typeof parsed.name === "string" &&
-          typeof parsed.location === "string"
-        ) {
-          return parsed;
-        }
-        return null;
-      } catch {
-        return null;
-      }
-    })
-    .filter((x): x is Warehouse => x !== null);
-};
+const normalizeWarehouse = (w: Warehouse): Warehouse => ({
+  ...w,
+  location: w.location ?? "",
+});
 
 export const useWarehouses = () => {
   const [warehouses, setWarehouses] = useState<Warehouse[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadWarehouses = async () => {
     try {
-      const raw = window.localStorage.getItem(STORAGE_KEY);
-      if (!raw) {
-        setIsLoaded(true);
-        return;
-      }
-      const parsed = JSON.parse(raw);
-      setWarehouses(parseStoredWarehouses(parsed));
-      setIsLoaded(true);
-    } catch {
-      // ignore corrupted storage
+      setError(null);
+      const data = await warehousesApi.getAll();
+      setWarehouses(data.map(normalizeWarehouse));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load warehouses");
+      setWarehouses([]);
+    } finally {
       setIsLoaded(true);
     }
+  };
+
+  useEffect(() => {
+    loadWarehouses();
   }, []);
 
-  useEffect(() => {
-    // Only save to localStorage after initial load to prevent overwriting existing data
-    if (isLoaded) {
-      try {
-        window.localStorage.setItem(STORAGE_KEY, JSON.stringify(warehouses));
-      } catch {
-        // ignore quota errors
-      }
+  const addWarehouse = async (values: WarehouseFormValues) => {
+    try {
+      setError(null);
+      const created = await warehousesApi.create(values);
+      setWarehouses((prev) => [...prev, normalizeWarehouse(created)]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add warehouse");
+      throw err;
     }
-  }, [warehouses, isLoaded]);
-
-  const addWarehouse = (values: WarehouseFormValues) => {
-    setWarehouses((prev) => [...prev, createWarehouse(values)]);
   };
 
-  const updateWarehouse = (id: string, values: WarehouseFormValues) => {
-    setWarehouses((prev) =>
-      prev.map((warehouse) =>
-        warehouse.id === id
-          ? {
-              ...warehouse,
-              ...values,
-              updatedAt: new Date().toISOString()
-            }
-          : warehouse
-      )
-    );
+  const updateWarehouse = async (id: string, values: WarehouseFormValues) => {
+    try {
+      setError(null);
+      const updated = await warehousesApi.update(id, values);
+      setWarehouses((prev) =>
+        prev.map((w) => (w.id === id ? normalizeWarehouse(updated) : w))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update warehouse");
+      throw err;
+    }
   };
 
-  const removeWarehouse = (id: string) => {
-    setWarehouses((prev) => prev.filter((warehouse) => warehouse.id !== id));
+  const removeWarehouse = async (id: string) => {
+    try {
+      setError(null);
+      await warehousesApi.delete(id);
+      setWarehouses((prev) => prev.filter((w) => w.id !== id));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete warehouse");
+      throw err;
+    }
   };
 
   const getWarehouseById = (id: string | undefined): Warehouse | undefined => {
@@ -94,9 +71,12 @@ export const useWarehouses = () => {
 
   return {
     warehouses,
+    isLoaded,
+    error,
     addWarehouse,
     updateWarehouse,
     removeWarehouse,
-    getWarehouseById
+    getWarehouseById,
+    refresh: loadWarehouses,
   };
 };

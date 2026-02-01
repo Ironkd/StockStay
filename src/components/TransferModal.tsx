@@ -259,10 +259,10 @@ export const TransferModal: React.FC<TransferModalProps> = ({
                   </label>
                   <button
                     type="button"
-                    className="icon-button"
+                    className="icon-button transfer-remove-line"
                     onClick={() => removeLine(line.id)}
                     disabled={lines.length === 1}
-                    aria-label="Remove line"
+                    aria-label="Remove product"
                     style={{ padding: "8px", opacity: lines.length === 1 ? 0.4 : 1, marginBottom: "2px" }}
                   >
                     ✕

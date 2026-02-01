@@ -233,14 +233,18 @@ export const InventoryPage: React.FC = () => {
     setShowInventoryModal(true);
   };
 
-  const handleWarehouseSubmit = (values: WarehouseFormValues) => {
-    if (editingWarehouse) {
-      updateWarehouse(editingWarehouse.id, values);
-      setEditingWarehouse(null);
-    } else {
-      addWarehouse(values);
+  const handleWarehouseSubmit = async (values: WarehouseFormValues) => {
+    try {
+      if (editingWarehouse) {
+        await updateWarehouse(editingWarehouse.id, values);
+        setEditingWarehouse(null);
+      } else {
+        await addWarehouse(values);
+      }
+      setShowWarehouseModal(false);
+    } catch {
+      // Error already set in useWarehouses; keep modal open
     }
-    setShowWarehouseModal(false);
   };
 
   const handleEditWarehouse = (warehouse: Warehouse) => {
@@ -263,7 +267,7 @@ export const InventoryPage: React.FC = () => {
     setShowWarehouseModal(true);
   };
 
-  const handleDeleteWarehouse = (id: string) => {
+  const handleDeleteWarehouse = async (id: string) => {
     const warehouse = warehouses.find((w) => w.id === id);
     if (!warehouse) return;
     
@@ -280,7 +284,11 @@ export const InventoryPage: React.FC = () => {
       return;
     }
     
-    removeWarehouse(id);
+    try {
+      await removeWarehouse(id);
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to delete warehouse");
+    }
   };
 
 

@@ -423,6 +423,16 @@ button.secondary:hover {
   color: #b91c1c;
 }
 
+/* Transfer modal: blue X to remove a product line */
+.icon-button.transfer-remove-line {
+  background: #2563eb;
+  color: #fff;
+}
+.icon-button.transfer-remove-line:hover:not(:disabled) {
+  background: #1d4ed8;
+  filter: brightness(1.05);
+}
+
 .empty-state {
   padding: 24px 16px;
   text-align: center;
