@@ -446,10 +446,16 @@ export const SettingsPage: React.FC = () => {
   }
 
   if (error && !teamData) {
+    const isLikelyBackend = /not found|404|failed to fetch|network error/i.test(error);
     return (
       <div className="settings-page">
         <h2>Settings</h2>
         <p style={{ color: "#dc2626" }}>{error}</p>
+        {isLikelyBackend && (
+          <p style={{ color: "#64748b", fontSize: "14px", marginTop: "12px" }}>
+            If you&apos;re on production, the backend may need to be redeployed so that <code>/api/team</code> is available. Check that your API URL is correct and that the latest server is deployed.
+          </p>
+        )}
       </div>
     );
   }
