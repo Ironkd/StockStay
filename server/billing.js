@@ -76,6 +76,11 @@ export async function createCheckoutSession(opts) {
     await teamOps.update(teamId, { stripeCustomerId: customerId });
   }
 
+  const subscriptionData = { metadata: { teamId, plan } };
+  if (typeof stripeTrialDays === "number" && stripeTrialDays > 0) {
+    subscriptionData.trial_period_days = stripeTrialDays;
+  }
+
   const session = await stripe.checkout.sessions.create({
     customer: customerId,
     mode: "subscription",
@@ -88,10 +93,7 @@ export async function createCheckoutSession(opts) {
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: { teamId, plan },
-    subscription_data: {
-      metadata: { teamId, plan },
-      trial_period_days: typeof stripeTrialDays === "number" && stripeTrialDays > 0 ? stripeTrialDays : 0,
-    },
+    subscription_data: subscriptionData,
     allow_promotion_codes: true,
   });
 
@@ -123,7 +125,10 @@ export async function createCheckoutSessionForNewSignup(opts) {
   }
 
   const subscriptionMetadata = { ...metadata, plan };
-  const trialDays = plan === "starter" ? 0 : 14;
+  const subscriptionData = { metadata: subscriptionMetadata };
+  if (plan !== "starter") {
+    subscriptionData.trial_period_days = 14;
+  }
 
   const session = await stripe.checkout.sessions.create({
     customer_email: customerEmail,
@@ -132,10 +137,7 @@ export async function createCheckoutSessionForNewSignup(opts) {
     success_url: successUrl,
     cancel_url: cancelUrl,
     metadata: subscriptionMetadata,
-    subscription_data: {
-      metadata: subscriptionMetadata,
-      trial_period_days: trialDays,
-    },
+    subscription_data: subscriptionData,
     allow_promotion_codes: true,
   });
 
