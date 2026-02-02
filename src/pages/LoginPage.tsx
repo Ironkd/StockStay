@@ -29,24 +29,6 @@ function getPasswordError(value: string): string | null {
   return null;
 }
 
-const PROVINCES = [
-  { value: "", label: "Select province" },
-  { value: "AB", label: "Alberta" },
-  { value: "BC", label: "British Columbia" },
-  { value: "MB", label: "Manitoba" },
-  { value: "NB", label: "New Brunswick" },
-  { value: "NL", label: "Newfoundland and Labrador" },
-  { value: "NS", label: "Nova Scotia" },
-  { value: "NT", label: "Northwest Territories" },
-  { value: "NU", label: "Nunavut" },
-  { value: "ON", label: "Ontario" },
-  { value: "PE", label: "Prince Edward Island" },
-  { value: "QC", label: "Quebec" },
-  { value: "SK", label: "Saskatchewan" },
-  { value: "YT", label: "Yukon" },
-  { value: "Other", label: "Other" },
-];
-
 export const LoginPage: React.FC = () => {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -133,8 +115,17 @@ export const LoginPage: React.FC = () => {
 
     if (isSignUpMode) {
       if (signupStep === 1) {
-        if (!email?.trim() || !firstName.trim() || !lastName.trim()) {
-          setError("Please enter first name, last name, and email");
+        if (
+          !email?.trim() ||
+          !firstName.trim() ||
+          !lastName.trim() ||
+          !street.trim() ||
+          !city.trim() ||
+          !province.trim() ||
+          !postalCode.trim() ||
+          !phoneNumber.trim()
+        ) {
+          setError("Please fill in all fields.");
           setLoading(false);
           return;
         }
@@ -420,6 +411,7 @@ export const LoginPage: React.FC = () => {
                   onChange={setStreet}
                   placeholder="123 Main St or start typing to search"
                   componentRestrictions={{ country: ["ca", "us"] }}
+                  required
                   onSelect={(addr) => {
                     setStreet(addr.streetAddress);
                     setCity(addr.city);
@@ -435,22 +427,19 @@ export const LoginPage: React.FC = () => {
                       value={city}
                       onChange={(e) => setCity(e.target.value)}
                       placeholder="City"
+                      required
                     />
                   </label>
                   <label>
                     <span>Province</span>
-                    <select
+                    <input
+                      type="text"
                       value={province}
                       onChange={(e) => setProvince(e.target.value)}
-                      className="province-select"
+                      placeholder="Province or state"
                       aria-label="Province"
-                    >
-                      {PROVINCES.map((p) => (
-                        <option key={p.value || "empty"} value={p.value}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
+                      required
+                    />
                   </label>
                 </div>
                 <label>
@@ -460,6 +449,7 @@ export const LoginPage: React.FC = () => {
                     value={postalCode}
                     onChange={(e) => setPostalCode(e.target.value)}
                     placeholder="A1A 1A1 or 12345"
+                    required
                   />
                 </label>
                 <label>
@@ -480,6 +470,7 @@ export const LoginPage: React.FC = () => {
                       onChange={(e) => setPhoneNumber(e.target.value)}
                       placeholder={phoneCountry === "CA" ? "234 567 8900" : "234 567 8900"}
                       className="phone-number-input"
+                      required
                     />
                   </div>
                 </label>

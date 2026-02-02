@@ -25,6 +25,8 @@ type AddressAutocompleteProps = {
   componentRestrictions?: { country: string | string[] };
   /** Inline styles for the wrapper label. */
   style?: React.CSSProperties;
+  /** Whether the field is required (HTML required attribute). */
+  required?: boolean;
 };
 
 /** Minimal types for Google Place result (loaded at runtime). */
@@ -78,6 +80,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   label = "Street address",
   componentRestrictions,
   style,
+  required,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<unknown>(null);
@@ -159,6 +162,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}
+          required={required}
           style={{
             width: "100%",
             padding: "8px 12px",
@@ -183,6 +187,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
+        required={required}
         style={{
           width: "100%",
           padding: "8px 12px",
