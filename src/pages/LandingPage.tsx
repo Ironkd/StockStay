@@ -182,7 +182,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Simple, Transparent Pricing</h2>
           <p className="section-subtitle">
-            Free: 1 property, 1 user, 30 items. Starter and Pro add properties, users, and extra seats at $5/mo each.
+            Free: 1 property, 1 user, 30 items. Starter and Pro add more properties and user seats.
           </p>
 
           {/* Billing Toggle */}
@@ -248,7 +248,8 @@ export const LandingPage: React.FC = () => {
               </div>
               <ul className="pricing-features">
                 <li>✓ 3 properties</li>
-                <li>✓ 3 users included; add up to 2 extra at $5/mo each</li>
+                <li>✓ 3 users included</li>
+                <li>✓ Up to 2 extra users</li>
                 <li>✓ Current inventory by property report</li>
                 <li>✓ Low stock alerts</li>
                 <li>✓ Usage summary & value per property</li>
@@ -287,9 +288,9 @@ export const LandingPage: React.FC = () => {
               </div>
               <ul className="pricing-features">
                 <li>✓ 10 properties</li>
-                <li>✓ 5 users included; add up to 3 extra at $5/mo each</li>
+                <li>✓ 5 users included</li>
+                <li>✓ Up to 3 extra users</li>
                 <li>✓ Unlimited reports, shopping list & invoicing</li>
-                <li>✓ No limits except users & properties</li>
                 <li>✓ Cleaners & co-host access</li>
                 <li>✓ Per-property permissions</li>
                 <li>✓ Everything in Starter</li>
