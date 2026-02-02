@@ -121,26 +121,60 @@ export const useInventory = () => {
     }
   };
 
-  const exportToJson = () => {
-    const blob = new Blob([JSON.stringify(items, null, 2)], {
-      type: "application/json"
-    });
+  /** Escape a value for CSV (quote if needed, double internal quotes). */
+  const csvEscape = (v: string | number | undefined | null): string => {
+    const s = v === undefined || v === null ? "" : String(v);
+    if (/[",\r\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+
+  /** Convert inventory items to CSV string with header row. */
+  const itemsToCsv = (list: InventoryItem[]): string => {
+    const headers = [
+      "Name", "SKU", "Category", "Location", "Property ID",
+      "Quantity", "Unit", "Reorder Point", "Reorder Quantity",
+      "Price Bought For", "Markup %", "Final Price",
+      "Tags", "Notes", "Created At", "Updated At"
+    ];
+    const rows = list.map((item) => [
+      csvEscape(item.name),
+      csvEscape(item.sku),
+      csvEscape(item.category),
+      csvEscape(item.location),
+      csvEscape(item.propertyId ?? ""),
+      csvEscape(item.quantity),
+      csvEscape(item.unit),
+      csvEscape(item.reorderPoint),
+      csvEscape(item.reorderQuantity ?? ""),
+      csvEscape(item.priceBoughtFor),
+      csvEscape(item.markupPercentage),
+      csvEscape(item.finalPrice),
+      csvEscape(Array.isArray(item.tags) ? item.tags.join(", ") : ""),
+      csvEscape(item.notes ?? ""),
+      csvEscape(item.createdAt),
+      csvEscape(item.updatedAt)
+    ].join(","));
+    return [headers.join(","), ...rows].join("\r\n");
+  };
+
+  const exportToCsv = () => {
+    const csv = itemsToCsv(items);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = "inventory-export.json";
+    a.download = "inventory-export.csv";
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const exportToJsonItems = (subset: InventoryItem[], filename: string) => {
-    const blob = new Blob([JSON.stringify(subset, null, 2)], {
-      type: "application/json"
-    });
+  const exportToCsvItems = (subset: InventoryItem[], filename: string) => {
+    const csv = itemsToCsv(subset);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = filename.replace(/[^a-zA-Z0-9._-]/g, "_") + (filename.endsWith(".json") ? "" : ".json");
+    a.download = filename.replace(/[^a-zA-Z0-9._-]/g, "_") + (filename.endsWith(".csv") ? "" : ".csv");
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -155,8 +189,8 @@ export const useInventory = () => {
     clearAll,
     transfer,
     importFromJson,
-    exportToJson,
-    exportToJsonItems,
+    exportToCsv,
+    exportToCsvItems,
     refresh: loadItems
   };
 };

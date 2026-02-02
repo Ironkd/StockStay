@@ -41,8 +41,8 @@ export const InventoryPage: React.FC = () => {
     clearAll,
     transfer,
     importFromJson,
-    exportToJson,
-    exportToJsonItems,
+    exportToCsv,
+    exportToCsvItems,
     refresh: refreshInventory
   } = useInventory();
 
@@ -624,7 +624,7 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 className="secondary"
-                onClick={() => exportToJson()}
+                onClick={() => exportToCsv()}
               >
                 Export all inventory
               </button>
@@ -641,7 +641,7 @@ export const InventoryPage: React.FC = () => {
                     e.target.value = "";
                     if (!v) return;
                     if (v === "all") {
-                      exportToJson();
+                      exportToCsv();
                       return;
                     }
                     const subset =
@@ -652,7 +652,7 @@ export const InventoryPage: React.FC = () => {
                       v === "unassigned"
                         ? "Unassigned"
                         : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
-                    exportToJsonItems(subset, `inventory-${name}`);
+                    exportToCsvItems(subset, `inventory-${name}`);
                   }}
                 >
                   <option value="">Choose property…</option>
@@ -712,7 +712,7 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 className="secondary"
-                onClick={() => exportToJson()}
+                onClick={() => exportToCsv()}
               >
                 Export all inventory
               </button>
@@ -729,7 +729,7 @@ export const InventoryPage: React.FC = () => {
                     e.target.value = "";
                     if (!v) return;
                     if (v === "all") {
-                      exportToJson();
+                      exportToCsv();
                       return;
                     }
                     const subset =
@@ -740,7 +740,7 @@ export const InventoryPage: React.FC = () => {
                       v === "unassigned"
                         ? "Unassigned"
                         : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
-                    exportToJsonItems(subset, `inventory-${name}`);
+                    exportToCsvItems(subset, `inventory-${name}`);
                   }}
                 >
                   <option value="">Choose property…</option>
