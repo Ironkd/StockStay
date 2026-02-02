@@ -580,7 +580,19 @@ app.post("/api/auth/signup/checkout", signupRateLimiter, signupCheckoutValidatio
       return res.status(400).json({ message: firstError.msg || "Validation failed" });
     }
 
-    const { email, password, fullName, address, phoneNumber } = req.body;
+    const {
+      email,
+      password,
+      fullName,
+      address,
+      phoneNumber,
+      firstName,
+      lastName,
+      streetAddress,
+      city,
+      province,
+      postalCode,
+    } = req.body;
 
     const existing = await userOps.findByEmail(email);
     if (existing) {
@@ -599,6 +611,12 @@ app.post("/api/auth/signup/checkout", signupRateLimiter, signupCheckoutValidatio
       fullName: fullName.trim(),
       address: (address || "").trim() || null,
       phoneNumber: (phoneNumber || "").trim() || null,
+      firstName: typeof firstName === "string" ? firstName.trim() || null : null,
+      lastName: typeof lastName === "string" ? lastName.trim() || null : null,
+      streetAddress: typeof streetAddress === "string" ? streetAddress.trim() || null : null,
+      city: typeof city === "string" ? city.trim() || null : null,
+      province: typeof province === "string" ? province.trim() || null : null,
+      postalCode: typeof postalCode === "string" ? postalCode.trim() || null : null,
       expiresAt: Date.now() + PENDING_SIGNUP_TTL_MS,
     });
 
@@ -676,6 +694,12 @@ app.post("/api/auth/signup/complete", async (req, res) => {
       password: pending.hashedPassword,
       address: pending.address,
       phone: pending.phoneNumber,
+      firstName: pending.firstName ?? null,
+      lastName: pending.lastName ?? null,
+      streetAddress: pending.streetAddress ?? null,
+      city: pending.city ?? null,
+      province: pending.province ?? null,
+      postalCode: pending.postalCode ?? null,
       emailVerified: false,
       emailVerificationToken: verificationToken,
       emailVerificationExpiresAt: verificationExpiresAt,

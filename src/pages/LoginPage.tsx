@@ -243,6 +243,12 @@ export const LoginPage: React.FC = () => {
         address: addressStr,
         phoneNumber: phoneStr,
         plan: signupPlan,
+        firstName: firstName.trim() || undefined,
+        lastName: lastName.trim() || undefined,
+        streetAddress: street.trim() || undefined,
+        city: city.trim() || undefined,
+        province: province.trim() || undefined,
+        postalCode: postalCode.trim() || undefined,
       });
       window.location.href = checkoutUrl;
     } catch (err) {

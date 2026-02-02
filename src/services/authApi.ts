@@ -61,6 +61,13 @@ export interface SignupCheckoutPayload {
   phoneNumber?: string;
   /** "starter" | "pro" – which plan to start (14-day trial for that plan). Default "pro". */
   plan?: "starter" | "pro";
+  /** Profile fields to populate after signup (saved to User). */
+  firstName?: string;
+  lastName?: string;
+  streetAddress?: string;
+  city?: string;
+  province?: string;
+  postalCode?: string;
 }
 
 export interface SignupCheckoutResponse {
