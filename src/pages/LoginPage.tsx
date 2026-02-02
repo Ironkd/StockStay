@@ -71,6 +71,7 @@ export const LoginPage: React.FC = () => {
   const [forgotPasswordEmail, setForgotPasswordEmail] = useState("");
   const [forgotPasswordMessage, setForgotPasswordMessage] = useState("");
   const [showEmailAlreadyRegisteredPopup, setShowEmailAlreadyRegisteredPopup] = useState(false);
+  const [signupPlan, setSignupPlan] = useState<"starter" | "pro">("pro");
   const { login, isAuthenticated } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -249,6 +250,7 @@ export const LoginPage: React.FC = () => {
         fullName,
         address: addressStr,
         phoneNumber: phoneStr,
+        plan: signupPlan,
       });
       window.location.href = checkoutUrl;
     } catch (err) {
@@ -591,7 +593,27 @@ export const LoginPage: React.FC = () => {
               <>
                 <div className="signup-payment-copy">
                   <p><strong>Payment is required to complete signup.</strong></p>
-                  <p>Add a payment method to start your 14-day Pro trial. You won&apos;t be charged until your trial ends.</p>
+                  <p style={{ marginBottom: "12px" }}>Choose your plan. Pro includes a 14-day free trial; Starter bills immediately.</p>
+                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "14px" }}>
+                      <input
+                        type="radio"
+                        name="signup-plan"
+                        checked={signupPlan === "starter"}
+                        onChange={() => setSignupPlan("starter")}
+                      />
+                      <span><strong>Starter</strong> — 3 properties, 3 users (billed now)</span>
+                    </label>
+                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "14px" }}>
+                      <input
+                        type="radio"
+                        name="signup-plan"
+                        checked={signupPlan === "pro"}
+                        onChange={() => setSignupPlan("pro")}
+                      />
+                      <span><strong>Pro</strong> — 10 properties, 5 users, 14-day trial</span>
+                    </label>
+                  </div>
                 </div>
                 <div className="signup-step-actions">
                   <button

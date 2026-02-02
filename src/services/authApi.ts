@@ -59,6 +59,8 @@ export interface SignupCheckoutPayload {
   fullName: string;
   address?: string;
   phoneNumber?: string;
+  /** "starter" | "pro" – which plan to start (14-day trial for that plan). Default "pro". */
+  plan?: "starter" | "pro";
 }
 
 export interface SignupCheckoutResponse {

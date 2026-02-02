@@ -101,20 +101,29 @@ export async function createCheckoutSession(opts) {
 /**
  * Create a Stripe Checkout Session for new signup (no team yet). Uses customer_email.
  * After payment, call signup/complete with sessionId to create team and user.
- * @param {Object} opts - { customerEmail, successUrl, cancelUrl, metadata }
+ * @param {Object} opts - { customerEmail, successUrl, cancelUrl, plan, metadata }
  * @param {string} opts.customerEmail
  * @param {string} opts.successUrl - must include {CHECKOUT_SESSION_ID} for Stripe to substitute
  * @param {string} opts.cancelUrl
- * @param {Object} [opts.metadata] - optional metadata for the session
+ * @param {string} [opts.plan] - "starter" | "pro" (default "pro"). Starter bills immediately; Pro gets 14-day trial.
+ * @param {Object} [opts.metadata] - optional metadata for the session (plan is added for webhook/signup-complete)
  * @returns {Promise<{ url: string, sessionId: string }>}
  */
 export async function createCheckoutSessionForNewSignup(opts) {
-  if (!stripe || !stripeProPriceId) {
-    throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRO_PRICE_ID.");
+  if (!stripe) {
+    throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY.");
   }
-  const { customerEmail, successUrl, cancelUrl, metadata = {} } = opts;
-  const priceId = getPriceIdForPlan("pro", "monthly");
-  if (!priceId) throw new Error("No Stripe price configured for Pro monthly.");
+  const { customerEmail, successUrl, cancelUrl, plan: planParam, metadata = {} } = opts;
+  const plan = planParam === "starter" ? "starter" : "pro";
+  const priceId = getPriceIdForPlan(plan, "monthly");
+  if (!priceId) {
+    throw new Error(plan === "starter"
+      ? "No Stripe price configured for Starter monthly. Set STRIPE_STARTER_PRICE_ID."
+      : "No Stripe price configured for Pro monthly. Set STRIPE_PRO_PRICE_ID.");
+  }
+
+  const subscriptionMetadata = { ...metadata, plan };
+  const trialDays = plan === "starter" ? 0 : 14;
 
   const session = await stripe.checkout.sessions.create({
     customer_email: customerEmail,
@@ -122,10 +131,10 @@ export async function createCheckoutSessionForNewSignup(opts) {
     line_items: [{ price: priceId, quantity: 1 }],
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { ...metadata },
+    metadata: subscriptionMetadata,
     subscription_data: {
-      metadata: { ...metadata },
-      trial_period_days: 14,
+      metadata: subscriptionMetadata,
+      trial_period_days: trialDays,
     },
     allow_promotion_codes: true,
   });

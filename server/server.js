@@ -606,10 +606,12 @@ app.post("/api/auth/signup/checkout", signupRateLimiter, signupCheckoutValidatio
     const successUrl = `${base}/signup-complete?pending=${encodeURIComponent(pendingToken)}&session_id={CHECKOUT_SESSION_ID}`;
     const cancelUrl = `${base}/login?mode=signup&checkout=cancelled`;
 
+    const plan = req.body.plan === "starter" ? "starter" : "pro";
     const { url: checkoutUrl } = await createCheckoutSessionForNewSignup({
       customerEmail: email,
       successUrl,
       cancelUrl,
+      plan,
       metadata: { pendingToken },
     });
 
@@ -685,8 +687,9 @@ app.post("/api/auth/signup/complete", async (req, res) => {
     });
 
     if (subscriptionId && typeof subscriptionId === "string") {
+      const planFromSession = session.metadata?.plan === "starter" ? "starter" : "pro";
       try {
-        await stripe.subscriptions.update(subscriptionId, { metadata: { teamId, plan: "pro" } });
+        await stripe.subscriptions.update(subscriptionId, { metadata: { teamId, plan: planFromSession } });
       } catch (subErr) {
         console.error("Signup complete: could not update subscription metadata:", subErr?.message);
       }
