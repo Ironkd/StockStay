@@ -84,7 +84,7 @@ export const LandingPage: React.FC = () => {
                 Start Free Trial
               </button>
               <button onClick={() => document.getElementById("features")?.scrollIntoView({ behavior: "smooth" })} className="cta-button secondary">
-                See What It Does
+                Demo
               </button>
             </div>
             <p className="hero-note">No credit card required. Free plan available</p>
