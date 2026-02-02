@@ -593,26 +593,32 @@ export const LoginPage: React.FC = () => {
               <>
                 <div className="signup-payment-copy">
                   <p><strong>Payment is required to complete signup.</strong></p>
-                  <p style={{ marginBottom: "12px" }}>Choose your plan. Pro includes a 14-day free trial; Starter bills immediately.</p>
-                  <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "12px" }}>
-                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "14px" }}>
-                      <input
-                        type="radio"
-                        name="signup-plan"
-                        checked={signupPlan === "starter"}
-                        onChange={() => setSignupPlan("starter")}
-                      />
-                      <span><strong>Starter</strong> — 3 properties, 3 users (billed now)</span>
-                    </label>
-                    <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", fontSize: "14px" }}>
-                      <input
-                        type="radio"
-                        name="signup-plan"
-                        checked={signupPlan === "pro"}
-                        onChange={() => setSignupPlan("pro")}
-                      />
-                      <span><strong>Pro</strong> — 10 properties, 5 users, 14-day trial</span>
-                    </label>
+                  <p style={{ marginBottom: "16px" }}>Choose your plan. Pro includes a 14-day free trial; Starter bills immediately.</p>
+                  <div className="pricing-grid" style={{ margin: "0 0 20px", maxWidth: "100%" }}>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className={`pricing-card signup-plan-card ${signupPlan === "starter" ? "selected" : ""}`}
+                      onClick={() => setSignupPlan("starter")}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSignupPlan("starter"); } }}
+                      style={{ padding: "24px 20px" }}
+                    >
+                      <h3 className="signup-plan-title">Starter</h3>
+                      <p className="signup-plan-desc">3 properties · 3 users</p>
+                      <p className="signup-plan-trial">Billed now</p>
+                    </div>
+                    <div
+                      role="button"
+                      tabIndex={0}
+                      className={`pricing-card signup-plan-card ${signupPlan === "pro" ? "selected" : ""}`}
+                      onClick={() => setSignupPlan("pro")}
+                      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSignupPlan("pro"); } }}
+                      style={{ padding: "24px 20px" }}
+                    >
+                      <h3 className="signup-plan-title">Pro</h3>
+                      <p className="signup-plan-desc">10 properties · 5 users</p>
+                      <p className="signup-plan-trial">14-day free trial</p>
+                    </div>
                   </div>
                 </div>
                 <div className="signup-step-actions">

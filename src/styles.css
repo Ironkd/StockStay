@@ -2840,6 +2840,43 @@ button.secondary:hover {
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
 }
 
+/* Signup step 3: plan selection cards */
+.login-container .signup-payment-copy .pricing-grid {
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin: 0 0 20px;
+}
+
+.login-container .signup-plan-card.selected {
+  border-color: #3b82f6;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.login-container .signup-plan-card {
+  cursor: pointer;
+  text-align: center;
+}
+
+.login-container .signup-plan-card .signup-plan-title {
+  font-size: 22px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: #0f172a;
+}
+
+.login-container .signup-plan-card .signup-plan-desc {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 12px;
+}
+
+.login-container .signup-plan-card .signup-plan-trial {
+  font-size: 13px;
+  color: #10b981;
+  font-weight: 600;
+  margin: 0;
+}
+
 .pricing-badge {
   position: absolute;
   top: -12px;
