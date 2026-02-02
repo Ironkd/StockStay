@@ -26,6 +26,7 @@ type PlaceAddressComponent = {
 };
 
 type PlaceResult = {
+  place_id?: string;
   address_components?: PlaceAddressComponent[];
 };
 
@@ -74,29 +75,49 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   onSelectRef.current = onSelect;
 
   useEffect(() => {
-    if (!API_KEY || !inputRef.current) {
-      if (!API_KEY) setUnavailable(true);
+    if (!API_KEY) {
+      setUnavailable(true);
       return;
     }
 
     let cancelled = false;
+    const inputEl = inputRef.current;
 
     loadGoogleMapsScript(API_KEY)
       .then(() => {
-        if (cancelled || !inputRef.current) return;
-        const google = (window as Window & { google?: { maps?: { places?: { Autocomplete: new (input: HTMLInputElement, opts?: unknown) => { getPlace: () => PlaceResult; addListener: (event: string, fn: () => void) => void } } } } }).google;
+        if (cancelled) return;
+        const input = inputEl ?? inputRef.current;
+        if (!input) return;
+        const google = (window as Window & { google?: { maps?: { places?: { Autocomplete: new (input: HTMLInputElement, opts?: unknown) => { getPlace: () => PlaceResult; addListener: (event: string, fn: () => void) => void }; PlacesService: new (div: HTMLDivElement) => { getDetails: (req: { placeId: string; fields?: string[] }, cb: (place: PlaceResult | null, status: string) => void) => void } } } } }).google;
         if (!google?.maps?.places?.Autocomplete) return;
         const Autocomplete = google.maps.places.Autocomplete;
         const opts: { types?: string[]; componentRestrictions?: { country: string | string[] } } = { types: ["address"] };
         if (componentRestrictions?.country) {
           opts.componentRestrictions = { country: componentRestrictions.country };
         }
-        const autocomplete = new Autocomplete(inputRef.current, opts);
+        const autocomplete = new Autocomplete(input, opts);
         autocompleteRef.current = autocomplete;
+
+        const fillFromPlace = (place: PlaceResult) => {
+          let components = place.address_components;
+          if ((!components || !components.length) && place.place_id && google.maps.places?.PlacesService) {
+            const div = document.createElement("div");
+            const service = new google.maps.places.PlacesService(div);
+            service.getDetails({ placeId: place.place_id, fields: ["address_components"] }, (detail, status) => {
+              if (cancelled || status !== "OK" || !detail) {
+                onSelectRef.current(parseAddressComponents(place.address_components));
+                return;
+              }
+              onSelectRef.current(parseAddressComponents((detail as PlaceResult).address_components));
+            });
+          } else {
+            onSelectRef.current(parseAddressComponents(components));
+          }
+        };
+
         autocomplete.addListener("place_changed", () => {
           const place = autocomplete.getPlace() as PlaceResult;
-          const addr = parseAddressComponents(place.address_components);
-          onSelectRef.current(addr);
+          fillFromPlace(place);
         });
         setReady(true);
       })
