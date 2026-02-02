@@ -87,19 +87,46 @@ export function getPlanLimits(plan) {
   const limits = {
     free: {
       maxProperties: 1,
+      maxUsers: 1,
+      maxInventoryItems: 30,
       features: ['basic_tracking'],
     },
     starter: {
       maxProperties: 3,
-      features: ['basic_tracking', 'exports', 'invoices', 'history'],
+      baseMaxUsers: 3,
+      maxExtraUserSlots: 2, // $5/mo each, max 2 extra = 5 users total
+      maxUsers: null, // use getEffectiveMaxUsers(team) for starter
+      maxInventoryItems: null, // unlimited
+      features: ['basic_tracking', 'exports', 'invoices', 'history', 'inventory_by_property', 'low_stock_alerts', 'usage_summary', 'value_per_property', 'csv_export'],
     },
     pro: {
       maxProperties: 10,
-      features: ['basic_tracking', 'exports', 'invoices', 'history', 'team_members', 'permissions', 'advanced_reports', 'value_tracking'],
+      baseMaxUsers: 5,
+      maxExtraUserSlots: 3, // $5/mo each, max 3 extra = 8 users total
+      maxUsers: null, // use getEffectiveMaxUsers(team) for pro
+      maxInventoryItems: null, // unlimited
+      features: ['basic_tracking', 'exports', 'invoices', 'history', 'team_members', 'permissions', 'advanced_reports', 'value_tracking', 'reports', 'shopping_list', 'invoicing'],
     },
   };
   
   return limits[plan] || limits.free;
+}
+
+/**
+ * Get effective max users for a team (Free: 1; Starter: 3 + extra up to 2; Pro: 5 + extra up to 3)
+ * @param {Object} team - Team object (with plan, extraUserSlots)
+ * @returns {number | null} Max users (null = unlimited)
+ */
+export function getEffectiveMaxUsers(team) {
+  if (!team) return 1;
+  const plan = getEffectivePlan(team);
+  const limits = getPlanLimits(plan);
+  if (limits.maxUsers === 1) return 1;
+  if (limits.baseMaxUsers != null) {
+    const extra = Math.min(team.extraUserSlots ?? 0, limits.maxExtraUserSlots ?? 0);
+    return limits.baseMaxUsers + extra;
+  }
+  return null; // unlimited
 }
 
 /**

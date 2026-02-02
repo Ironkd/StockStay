@@ -26,6 +26,7 @@ import {
   isTrialExpired,
   getEffectivePlan,
   getPlanLimits,
+  getEffectiveMaxUsers,
   canCreateProperty,
   downgradeExpiredTrials,
   getTrialStatus,
@@ -39,6 +40,7 @@ import {
   handleWebhook,
   isBillingConfigured,
   stripe,
+  updateExtraUserSlots,
 } from "./billing.js";
 
 const app = express();
@@ -262,15 +264,19 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
     }
 
     let teamName = null;
+    let effectivePlan = "free";
     if (user.teamId) {
       try {
         const team = await teamOps.findById(user.teamId);
         teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+        if (team) effectivePlan = getEffectivePlan(team);
       } catch (teamErr) {
         console.warn("Login: team lookup failed:", teamErr.message);
         teamName = `${user.name || user.email.split("@")[0]}'s Team`;
       }
     }
+    const planLimits = getPlanLimits(effectivePlan);
+    const maxInventoryItems = user.maxInventoryItems ?? (planLimits.maxInventoryItems ?? null);
 
     const payload = {
       user: {
@@ -288,7 +294,7 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         teamId: user.teamId ?? null,
         teamName: teamName ?? null,
         teamRole: user.teamRole ?? null,
-        maxInventoryItems: user.maxInventoryItems ?? null,
+        maxInventoryItems,
         allowedPages: user.allowedPages ?? null,
         allowedPropertyIds: user.allowedPropertyIds ?? null,
       },
@@ -458,6 +464,10 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       console.log(`[TRIAL] Started 14-day Pro trial for new team ${teamId}`);
     }
 
+    // Free plan: 30 inventory items max; paid/trial: no limit (null)
+    const freeLimits = getPlanLimits("free");
+    const userMaxInventoryItems = wantsProTrial === true ? null : (freeLimits.maxInventoryItems ?? null);
+
     const user = await userOps.create({
       id: newUserId,
       email,
@@ -470,7 +480,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       emailVerificationExpiresAt: verificationExpiresAt,
       teamId,
       teamRole: "owner",
-      maxInventoryItems: null,
+      maxInventoryItems: userMaxInventoryItems,
       allowedPages: null,
       allowedPropertyIds: null,
     });
@@ -848,10 +858,16 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
     }
 
     let teamName = null;
+    let effectivePlan = "free";
     if (user.teamId) {
       const team = await teamOps.findById(user.teamId);
       teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+      if (team) effectivePlan = getEffectivePlan(team);
     }
+
+    const planLimits = getPlanLimits(effectivePlan);
+    const maxInventoryItems =
+      user.maxInventoryItems ?? (planLimits.maxInventoryItems ?? null);
 
     res.json({
       id: user.id,
@@ -868,7 +884,7 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
       teamId: user.teamId,
       teamName: teamName ?? null,
       teamRole: user.teamRole,
-      maxInventoryItems: user.maxInventoryItems ?? null,
+      maxInventoryItems,
       allowedPages: user.allowedPages ?? null,
       allowedPropertyIds: user.allowedPropertyIds ?? null,
     });
@@ -1156,6 +1172,33 @@ app.post("/api/billing/customer-portal", authenticateToken, async (req, res) => 
   } catch (error) {
     console.error("Customer portal error:", error);
     res.status(500).json({ message: error.message || "Failed to open billing portal." });
+  }
+});
+
+/** Set extra user slots (Starter: 0–2, Pro: 0–3). $5/mo per slot. Requires STRIPE_EXTRA_USER_PRICE_ID. */
+app.patch("/api/billing/extra-user", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await userOps.findById(req.user.id);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You must belong to a team." });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can manage extra user slots." });
+    }
+    const team = await teamOps.findById(currentUser.teamId);
+    if (!team) return res.status(404).json({ message: "Team not found." });
+    const effectivePlan = getEffectivePlan(team);
+    const limits = getPlanLimits(effectivePlan);
+    if (limits.baseMaxUsers == null) {
+      return res.status(400).json({ message: "Extra user slots are only for Starter and Pro plans." });
+    }
+    const maxExtra = limits.maxExtraUserSlots ?? 0;
+    const quantity = typeof req.body.quantity === "number" ? Math.max(0, Math.min(maxExtra, Math.floor(req.body.quantity))) : (team.extraUserSlots ?? 0);
+    const result = await updateExtraUserSlots(currentUser.teamId, quantity);
+    res.json(result);
+  } catch (error) {
+    console.error("Extra user slots error:", error);
+    res.status(500).json({ message: error.message || "Failed to update extra user slots." });
   }
 });
 
@@ -2502,8 +2545,10 @@ app.get("/api/team/limits", authenticateToken, async (req, res) => {
     }
     const effectivePlan = getEffectivePlan(team);
     const planLimits = getPlanLimits(effectivePlan);
+    const effectiveMaxUsers = getEffectiveMaxUsers(team);
     res.json({
       effectiveMaxProperties: planLimits.maxProperties,
+      effectiveMaxUsers, // null = unlimited, number = cap (Starter: 3 + extra slots)
       effectivePlan,
     });
   } catch (error) {
@@ -2585,6 +2630,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
     const effectivePlan = getEffectivePlan(team);
     const planLimits = getPlanLimits(effectivePlan);
     const effectiveMaxProperties = planLimits.maxProperties;
+    const effectiveMaxUsers = getEffectiveMaxUsers(team);
 
     // Parse invoice style JSON for frontend
     let invoiceStyle = null;
@@ -2602,6 +2648,8 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         effectivePlan, // The actual plan considering trial status
         maxProperties: team.maxProperties,
         effectiveMaxProperties, // Limit for current plan/trial (Pro trial = 10, Starter trial = 3, etc.)
+        extraUserSlots: team.extraUserSlots ?? 0, // Starter: 0–2 extra users at $5/mo each
+        effectiveMaxUsers, // null = unlimited; Starter: 3 + extraUserSlots
         propertyCount,
         billingInterval: team.billingInterval || null, // "month" | "year" from Stripe
         // Trial information
@@ -2709,6 +2757,21 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
     const team = await teamOps.findById(currentUser.teamId);
     if (!team) {
       return res.status(404).json({ message: "Team not found" });
+    }
+
+    const effectivePlan = getEffectivePlan(team);
+    const effectiveMaxUsers = getEffectiveMaxUsers(team);
+    if (effectiveMaxUsers !== null) {
+      const members = await userOps.findAllByTeam(currentUser.teamId);
+      if (members.length >= effectiveMaxUsers) {
+        const msg =
+          effectiveMaxUsers === 1
+            ? "Free plan allows only 1 user. Upgrade to Starter or Pro to add team members."
+            : effectivePlan === "starter"
+              ? `Starter plan allows ${effectiveMaxUsers} users. You can add up to 2 extra users at $5/mo each in Settings.`
+              : `Pro plan allows ${effectiveMaxUsers} users. You can add up to 3 extra users at $5/mo each in Settings.`;
+        return res.status(403).json({ message: msg });
+      }
     }
 
     const now = new Date();

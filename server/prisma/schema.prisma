@@ -61,7 +61,8 @@ model Team {
   // Billing / plan info
   plan          String   @default("free") // "free", "starter", "pro"
   maxProperties Int?     // null = unlimited, or explicit cap
-  
+  extraUserSlots Int?    @default(0) // Starter: 0–2, Pro: 0–3 extra users at $5/mo each
+
   // Trial fields
   isOnTrial     Boolean  @default(false)
   trialEndsAt   DateTime?

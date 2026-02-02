@@ -72,6 +72,8 @@ export const SettingsPage: React.FC = () => {
 
   const [billingLoading, setBillingLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [extraUserSlotsLoading, setExtraUserSlotsLoading] = useState(false);
+  const [extraUserSlotsError, setExtraUserSlotsError] = useState<string | null>(null);
 
   const [showInvoiceStyleModal, setShowInvoiceStyleModal] = useState(false);
   const [invoiceStyleSaving, setInvoiceStyleSaving] = useState(false);
@@ -911,6 +913,51 @@ export const SettingsPage: React.FC = () => {
                     <> · Trial ends {new Date(team.trialEndsAt).toLocaleDateString()}</>
                   )}
                 </p>
+                {(team.effectivePlan === "starter" || team.effectivePlan === "pro") && team.effectiveMaxUsers != null && (
+                  <div style={{ marginBottom: "16px", paddingTop: "12px", borderTop: "1px solid rgba(148, 163, 184, 0.25)" }}>
+                    <p style={{ fontSize: "14px", color: "#334155", margin: "0 0 8px 0" }}>
+                      Team size: <strong>{members.length}</strong> of <strong>{team.effectiveMaxUsers}</strong> users
+                    </p>
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
+                      <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px" }}>
+                        <span style={{ color: "#64748b" }}>Extra user slots:</span>
+                        <select
+                          value={team.extraUserSlots ?? 0}
+                          onChange={async (e) => {
+                            const quantity = parseInt(e.target.value, 10);
+                            if (isNaN(quantity)) return;
+                            setExtraUserSlotsError(null);
+                            setExtraUserSlotsLoading(true);
+                            try {
+                              await teamApi.updateExtraUserSlots(quantity);
+                              await loadTeam();
+                              await refreshUser();
+                            } catch (err) {
+                              setExtraUserSlotsError(err instanceof Error ? err.message : "Failed to update extra user slots");
+                            } finally {
+                              setExtraUserSlotsLoading(false);
+                            }
+                          }}
+                          disabled={extraUserSlotsLoading}
+                          style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontSize: "14px" }}
+                        >
+                          {Array.from(
+                            { length: (team.effectivePlan === "starter" ? 2 : 3) + 1 },
+                            (_, i) => i
+                          ).map((n) => (
+                            <option key={n} value={n}>
+                              {n}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <span style={{ fontSize: "13px", color: "#64748b" }}>$5/month per extra user</span>
+                    </div>
+                    {extraUserSlotsError && (
+                      <p style={{ color: "#dc2626", fontSize: "13px", margin: "8px 0 0 0" }}>{extraUserSlotsError}</p>
+                    )}
+                  </div>
+                )}
                 <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                   {team.billingPortalAvailable && (
                     <button

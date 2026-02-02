@@ -182,7 +182,7 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Simple, Transparent Pricing</h2>
           <p className="section-subtitle">
-            Start free with one property, upgrade as your rental portfolio grows
+            Free: 1 property, 1 user, 30 items. Starter and Pro add properties, users, and extra seats at $5/mo each.
           </p>
 
           {/* Billing Toggle */}
@@ -213,9 +213,11 @@ export const LandingPage: React.FC = () => {
                 </div>
               </div>
               <ul className="pricing-features">
-                <li>✓ 1 rental property</li>
-                <li>✓ Unlimited supplies</li>
-                <li>✓ Basic turnover tracking</li>
+                <li>✓ 1 property</li>
+                <li>✓ 1 user (just you)</li>
+                <li>✓ Inventory tracking</li>
+                <li>✓ Up to 30 inventory items</li>
+                <li>✓ No credit card required</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Get Started Free
@@ -245,10 +247,12 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 3 rental properties</li>
-                <li>✓ Owner invoicing</li>
-                <li>✓ PDF & CSV exports</li>
-                <li>✓ Supply history & reports</li>
+                <li>✓ 3 properties</li>
+                <li>✓ 3 users included; add up to 2 extra at $5/mo each</li>
+                <li>✓ Current inventory by property report</li>
+                <li>✓ Low stock alerts</li>
+                <li>✓ Usage summary & value per property</li>
+                <li>✓ CSV export</li>
                 <li>✓ Everything in Free</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button primary">
@@ -282,12 +286,12 @@ export const LandingPage: React.FC = () => {
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ Up to 10 rental properties</li>
+                <li>✓ 10 properties</li>
+                <li>✓ 5 users included; add up to 3 extra at $5/mo each</li>
+                <li>✓ Unlimited reports, shopping list & invoicing</li>
+                <li>✓ No limits except users & properties</li>
                 <li>✓ Cleaners & co-host access</li>
                 <li>✓ Per-property permissions</li>
-                <li>✓ Auto shopping lists</li>
-                <li>✓ Advanced STR reports</li>
-                <li>✓ Supply cost tracking</li>
                 <li>✓ Everything in Starter</li>
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">

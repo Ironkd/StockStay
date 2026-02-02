@@ -15,6 +15,8 @@ const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID;
 const stripeProAnnualPriceId = process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
 const stripeStarterPriceId = process.env.STRIPE_STARTER_PRICE_ID;
 const stripeStarterAnnualPriceId = process.env.STRIPE_STARTER_ANNUAL_PRICE_ID;
+/** Extra user add-on: $5/month per slot (Starter: max 2, Pro: max 3). Create in Stripe as recurring $5/month. */
+const stripeExtraUserPriceId = process.env.STRIPE_EXTRA_USER_PRICE_ID;
 
 export const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
 
@@ -152,6 +154,58 @@ export async function ensureTeamStripeCustomer(teamId, customerEmail) {
 }
 
 /**
+ * Get current extra-user slots from team (for display). Uses DB value (synced by webhook).
+ */
+export function getExtraUserSlots(team) {
+  return Math.max(0, Math.floor(Number(team.extraUserSlots ?? 0)));
+}
+
+/**
+ * Update the Stripe subscription to set extra user add-on quantity ($5/mo per slot).
+ * Caller must ensure team is on Starter or Pro and newQuantity is within plan cap (Starter: 0–2, Pro: 0–3).
+ * @param {string} teamId
+ * @param {number} newQuantity - Desired number of extra user slots (0 to remove add-on).
+ * @returns {Promise<{ extraUserSlots: number }>}
+ */
+export async function updateExtraUserSlots(teamId, newQuantity) {
+  if (!stripe || !stripeExtraUserPriceId) {
+    throw new Error("Extra user pricing is not configured. Set STRIPE_EXTRA_USER_PRICE_ID.");
+  }
+  const team = await teamOps.findById(teamId);
+  if (!team?.stripeSubscriptionId) {
+    throw new Error("No active subscription. Subscribe to Starter or Pro first.");
+  }
+  const sub = await stripe.subscriptions.retrieve(team.stripeSubscriptionId, {
+    expand: ["items.data.price"],
+  });
+  if (!["active", "trialing"].includes(sub.status)) {
+    throw new Error("Subscription is not active.");
+  }
+  const items = sub.items?.data ?? [];
+  const extraItem = items.find((it) => it.price?.id === stripeExtraUserPriceId);
+  const otherItems = items.filter((it) => it.price?.id !== stripeExtraUserPriceId);
+
+  const updates = [];
+  for (const it of otherItems) {
+    updates.push({ id: it.id, quantity: it.quantity });
+  }
+  if (newQuantity > 0) {
+    if (extraItem) {
+      updates.push({ id: extraItem.id, quantity: newQuantity });
+    } else {
+      updates.push({ price: stripeExtraUserPriceId, quantity: newQuantity });
+    }
+  } else if (extraItem) {
+    updates.push({ id: extraItem.id, deleted: true });
+  }
+
+  if (updates.length === 0) return { extraUserSlots: 0 };
+  await stripe.subscriptions.update(team.stripeSubscriptionId, { items: updates });
+  await teamOps.update(teamId, { extraUserSlots: newQuantity });
+  return { extraUserSlots: newQuantity };
+}
+
+/**
  * Create a Stripe Customer Portal session for managing subscription (cancel, update payment).
  * @param {Object} opts - { customerId, returnUrl }
  * @returns {Promise<{ url: string }>} Portal URL
@@ -195,11 +249,19 @@ export async function handleWebhook(rawBody, signature) {
       const isActive = ["active", "trialing"].includes(status);
       const plan = subscription.metadata?.plan === "starter" ? "starter" : "pro";
       const limits = getPlanLimits(plan);
-      const interval = subscription.items?.data?.[0]?.price?.recurring?.interval ?? null;
+      const items = subscription.items?.data ?? [];
+      const planItem = items.find((item) => item.price?.id && item.price.id !== stripeExtraUserPriceId);
+      const interval = planItem?.price?.recurring?.interval ?? null;
       const billingInterval = interval === "year" || interval === "month" ? interval : null;
+      let extraUserSlots = 0;
+      if (stripeExtraUserPriceId) {
+        const extraItem = items.find((item) => item.price?.id === stripeExtraUserPriceId);
+        if (extraItem?.quantity) extraUserSlots = Math.max(0, Math.floor(Number(extraItem.quantity)));
+      }
       await teamOps.update(teamId, {
         plan: isActive ? plan : "free",
         maxProperties: isActive ? limits.maxProperties : 1,
+        extraUserSlots: isActive ? extraUserSlots : 0,
         stripeSubscriptionId: subscription.id,
         stripeSubscriptionStatus: status,
         billingInterval: isActive ? billingInterval : null,
@@ -207,7 +269,7 @@ export async function handleWebhook(rawBody, signature) {
         trialEndsAt: null,
         trialPlan: null,
       });
-      console.log(`[BILLING] Subscription ${subscription.id} for team ${teamId}: ${plan} ${status}`);
+      console.log(`[BILLING] Subscription ${subscription.id} for team ${teamId}: ${plan} ${status}, extraUserSlots=${extraUserSlots}`);
       break;
     }
     case "customer.subscription.deleted": {
@@ -217,6 +279,7 @@ export async function handleWebhook(rawBody, signature) {
       await teamOps.update(teamId, {
         plan: "free",
         maxProperties: 1,
+        extraUserSlots: 0,
         stripeSubscriptionId: null,
         stripeSubscriptionStatus: "canceled",
         billingInterval: null,

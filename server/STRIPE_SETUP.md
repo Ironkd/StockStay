@@ -68,6 +68,25 @@ Stripe will call your server when a subscription is created, updated, or cancele
 
 The app uses the Pricing page toggle (Monthly/Annual) and the plan (Pro or Starter) to pick the right price. If an annual price isn’t set, it falls back to the monthly price for that plan.
 
+## 4b. Extra user add-on ($5/user/month)
+
+Starter (3 users) and Pro (5 users) can add extra user slots at **$5/month per slot** (Starter: max 2 extra, Pro: max 3 extra). To enable this:
+
+1. In Stripe: **Products** → **Add product**.
+2. Name: e.g. **StockStay Extra User**.
+3. Add a **Price**:
+   - Type: **Recurring**.
+   - Billing period: **Monthly**.
+   - Amount: **$5** (or your chosen amount).
+4. Save. Copy the **Price ID** (starts with `price_`).
+5. Add to `server/.env`:
+   ```env
+   STRIPE_EXTRA_USER_PRICE_ID=price_xxxx
+   ```
+6. The app will add this as a **subscription item** when an owner changes extra user slots (e.g. in Settings). The webhook already syncs `extraUserSlots` from the subscription’s extra-user line item.
+
+**API:** Team owners can set the number of extra slots with `PATCH /api/billing/extra-user` and body `{ "quantity": 0 }` (0, 1, or 2 for Starter; 0, 1, 2, or 3 for Pro). The server updates the Stripe subscription and the DB.
+
 ## 5. Free trial (Pro and Starter) → then auto-charge
 
 **Default behavior:** Every new subscription (Pro or Starter) gets a **14-day free trial**. The customer enters their card at checkout; Stripe does not charge until day 15, then bills monthly (or annually) as usual.
@@ -91,8 +110,9 @@ In `server/.env` you should have:
 | `STRIPE_PRO_ANNUAL_PRICE_ID` | No | Pro annual price (if you offer annual). |
 | `STRIPE_STARTER_PRICE_ID` | No | Starter monthly (if you offer Starter). |
 | `STRIPE_STARTER_ANNUAL_PRICE_ID` | No | Starter annual (if you offer Starter annual). |
+| `STRIPE_EXTRA_USER_PRICE_ID` | No | Extra user add-on ($5/mo per slot). Required for add/remove extra user slots in Settings. |
 
-Without the first three, "Upgrade to Pro" will return a "Billing is not configured" style error.
+Without the first three, "Upgrade to Pro" will return a "Billing is not configured" style error. Without `STRIPE_EXTRA_USER_PRICE_ID`, extra user slot changes will fail with a configuration error.
 
 ## 7. Database migration
 

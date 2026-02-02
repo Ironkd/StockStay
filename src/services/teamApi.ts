@@ -6,9 +6,9 @@ export const teamApi = {
     return apiRequest<TeamData>("/team");
   },
 
-  /** Team property limit (no settings access required – use from Inventory page) */
-  getTeamLimits: async (): Promise<{ effectiveMaxProperties: number; effectivePlan: string }> => {
-    return apiRequest<{ effectiveMaxProperties: number; effectivePlan: string }>("/team/limits");
+  /** Team property and user limits (no settings access required – use from Inventory page) */
+  getTeamLimits: async (): Promise<{ effectiveMaxProperties: number; effectiveMaxUsers: number | null; effectivePlan: string }> => {
+    return apiRequest<{ effectiveMaxProperties: number; effectiveMaxUsers: number | null; effectivePlan: string }>("/team/limits");
   },
 
   /** Current team name only (no settings access – use from header so name updates everywhere) */
@@ -124,6 +124,14 @@ export const teamApi = {
         billingPeriod: params?.billingPeriod ?? "monthly",
         stripeTrialDays: params?.stripeTrialDays ?? 14,
       }),
+    });
+  },
+
+  /** Set extra user slots (Starter: 0–2, Pro: 0–3). $5/mo per slot. Owner only. */
+  updateExtraUserSlots: async (quantity: number): Promise<{ extraUserSlots: number }> => {
+    return apiRequest<{ extraUserSlots: number }>("/billing/extra-user", {
+      method: "PATCH",
+      body: JSON.stringify({ quantity }),
     });
   },
 };

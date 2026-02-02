@@ -151,6 +151,10 @@ export type TeamInfo = {
   maxProperties: number | null;
   /** Effective property limit for current plan/trial (Pro trial = 10, Starter = 3, free = 1) */
   effectiveMaxProperties?: number;
+  /** Starter: 0–2 extra user slots at $5/mo each */
+  extraUserSlots?: number;
+  /** Effective user limit (null = unlimited; Starter: 3 + extraUserSlots; Free: 1) */
+  effectiveMaxUsers?: number | null;
   propertyCount: number;
   billingInterval: string | null;
   isOnTrial: boolean;
