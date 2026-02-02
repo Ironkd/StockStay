@@ -10,12 +10,21 @@ export type AddressResult = {
 };
 
 type AddressAutocompleteProps = {
+  /** Current street address value (controlled). */
+  value: string;
+  /** Called when user types in the street address field. */
+  onChange: (value: string) => void;
+  /** Called when user selects an address from the dropdown; use to fill city, province, postal, etc. */
   onSelect: (address: AddressResult) => void;
   placeholder?: string;
   id?: string;
   className?: string;
+  /** Label for the field (e.g. "Street address"). */
+  label?: string;
   /** Optional: restrict to country (e.g. "ca" for Canada). */
   componentRestrictions?: { country: string | string[] };
+  /** Inline styles for the wrapper label. */
+  style?: React.CSSProperties;
 };
 
 /** Minimal types for Google Place result (loaded at runtime). */
@@ -60,19 +69,24 @@ function parseAddressComponents(components: PlaceAddressComponent[] | undefined)
 const API_KEY = import.meta.env.VITE_GOOGLE_MAPS_API_KEY as string | undefined;
 
 export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
+  value,
+  onChange,
   onSelect,
-  placeholder = "Start typing your address...",
+  placeholder = "123 Main St or start typing to search",
   id,
   className,
+  label = "Street address",
   componentRestrictions,
+  style,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<unknown>(null);
   const onSelectRef = useRef(onSelect);
-  const [ready, setReady] = useState(false);
+  const onChangeRef = useRef(onChange);
   const [unavailable, setUnavailable] = useState(false);
 
   onSelectRef.current = onSelect;
+  onChangeRef.current = onChange;
 
   useEffect(() => {
     if (!API_KEY) {
@@ -105,13 +119,19 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
             const service = new google.maps.places.PlacesService(div);
             service.getDetails({ placeId: place.place_id, fields: ["address_components"] }, (detail, status) => {
               if (cancelled || status !== "OK" || !detail) {
-                onSelectRef.current(parseAddressComponents(place.address_components));
+                const addr = parseAddressComponents(place.address_components);
+                onChangeRef.current(addr.streetAddress);
+                onSelectRef.current(addr);
                 return;
               }
-              onSelectRef.current(parseAddressComponents((detail as PlaceResult).address_components));
+              const addr = parseAddressComponents((detail as PlaceResult).address_components);
+              onChangeRef.current(addr.streetAddress);
+              onSelectRef.current(addr);
             });
           } else {
-            onSelectRef.current(parseAddressComponents(components));
+            const addr = parseAddressComponents(components);
+            onChangeRef.current(addr.streetAddress);
+            onSelectRef.current(addr);
           }
         };
 
@@ -119,7 +139,6 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           const place = autocomplete.getPlace() as PlaceResult;
           fillFromPlace(place);
         });
-        setReady(true);
       })
       .catch(() => setUnavailable(true));
 
@@ -129,18 +148,39 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     };
   }, [componentRestrictions]);
 
-  if (unavailable) return null;
+  if (unavailable) {
+    return (
+      <label style={{ display: "block", marginBottom: "8px", ...style }}>
+        <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>{label}</span>
+        <input
+          type="text"
+          id={id}
+          className={className}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+          style={{
+            width: "100%",
+            padding: "8px 12px",
+            borderRadius: "8px",
+            border: "1px solid rgba(148, 163, 184, 0.7)",
+            fontSize: "14px",
+          }}
+        />
+      </label>
+    );
+  }
 
   return (
-    <label style={{ display: "block", marginBottom: "8px" }}>
-      <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-        Search address
-      </span>
+    <label style={{ display: "block", marginBottom: "8px", ...style }}>
+      <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>{label}</span>
       <input
         ref={inputRef}
         type="text"
         id={id}
         className={className}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete="off"
         style={{
@@ -150,13 +190,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
           border: "1px solid rgba(148, 163, 184, 0.7)",
           fontSize: "14px",
         }}
-        aria-describedby={ready ? undefined : "address-autocomplete-hint"}
       />
-      {ready && (
-        <span id="address-autocomplete-hint" style={{ fontSize: "12px", color: "#64748b", display: "block", marginTop: "4px" }}>
-          Select an address from the list to fill the fields below
-        </span>
-      )}
     </label>
   );
 };

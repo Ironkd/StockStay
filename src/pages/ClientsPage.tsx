@@ -162,7 +162,10 @@ export const ClientsPage: React.FC = () => {
               </label>
             </div>
             <AddressAutocomplete
-              placeholder="Start typing address..."
+              label="Street Address"
+              value={formData.streetAddress}
+              onChange={(v) => setFormData({ ...formData, streetAddress: v })}
+              placeholder="Street address or start typing to search"
               onSelect={(addr) => {
                 setFormData({
                   ...formData,
@@ -175,16 +178,6 @@ export const ClientsPage: React.FC = () => {
               }}
             />
             <div className="form-grid">
-              <label>
-                <span>Street Address</span>
-                <input
-                  type="text"
-                  value={formData.streetAddress}
-                  onChange={(e) =>
-                    setFormData({ ...formData, streetAddress: e.target.value })
-                  }
-                />
-              </label>
               <label>
                 <span>City</span>
                 <input

@@ -415,7 +415,10 @@ export const LoginPage: React.FC = () => {
                   />
                 </label>
                 <AddressAutocomplete
-                  placeholder="Start typing your address..."
+                  label="Street address"
+                  value={street}
+                  onChange={setStreet}
+                  placeholder="123 Main St or start typing to search"
                   componentRestrictions={{ country: ["ca", "us"] }}
                   onSelect={(addr) => {
                     setStreet(addr.streetAddress);
@@ -424,15 +427,6 @@ export const LoginPage: React.FC = () => {
                     setPostalCode(addr.postalCode);
                   }}
                 />
-                <label>
-                  <span>Street address</span>
-                  <input
-                    type="text"
-                    value={street}
-                    onChange={(e) => setStreet(e.target.value)}
-                    placeholder="123 Main St"
-                  />
-                </label>
                 <div className="form-row">
                   <label>
                     <span>Town / City</span>

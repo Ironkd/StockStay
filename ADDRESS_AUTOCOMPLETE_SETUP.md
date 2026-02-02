@@ -71,17 +71,21 @@ If the "Search address" field does **not** appear, the key is not set or not loa
 
 ---
 
-## Step 7: Production (e.g. Vercel / Railway)
+## Step 7: Production – set the key where the **frontend** is built
 
-When you deploy:
+**Important:** `VITE_*` variables are used by the **React/Vite frontend** at **build time**. They are **not** read by the backend.
 
-1. In your **hosting** dashboard (Vercel, Netlify, etc.), open **Environment variables** / **Variables**.
-2. Add:
+- If your **frontend** is on **Vercel** (or Netlify, etc.): add `VITE_GOOGLE_MAPS_API_KEY` in **Vercel** → your project → **Settings** → **Environment Variables**. Then **redeploy the frontend** (e.g. trigger a new deployment).
+- If you only add the variable in **Railway**: it applies to the **backend** (Node server). The frontend bundle is built elsewhere (e.g. Vercel), so the key never gets into the app and "Search address" will not show.
 
+**What to do:**
+
+1. Open **Vercel** (or wherever stockstay.com / your app is hosted) → your **frontend** project.
+2. Go to **Settings** → **Environment Variables**.
+3. Add:
    - **Name:** `VITE_GOOGLE_MAPS_API_KEY`
-   - **Value:** your same API key (or a separate key for production).
-
-3. Redeploy so the new variable is used.
+   - **Value:** your Google Maps API key (e.g. the same one you use locally).
+4. **Redeploy** the frontend (Deployments → … → Redeploy, or push a new commit) so the new variable is used in the build.
 
 **Optional:** In Google Cloud Console → Credentials → your API key → **Application restrictions**, add your production domain(s) (e.g. `https://stockstay.com/*`) so the key only works on your site.
 

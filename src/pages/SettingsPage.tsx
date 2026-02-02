@@ -787,24 +787,18 @@ export const SettingsPage: React.FC = () => {
             />
           </label>
           <AddressAutocomplete
-            placeholder="Start typing your address..."
+            label="Street address"
+            value={profileStreet}
+            onChange={setProfileStreet}
+            placeholder="Street address or start typing to search"
             onSelect={(addr) => {
               setProfileStreet(addr.streetAddress);
               setProfileCity(addr.city);
               setProfileProvince(addr.province);
               setProfilePostalCode(addr.postalCode);
             }}
+            style={{ width: "100%" }}
           />
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Street address</span>
-            <input
-              type="text"
-              value={profileStreet}
-              onChange={(e) => setProfileStreet(e.target.value)}
-              placeholder="Street address"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
           <label>
             <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>City</span>
             <input
