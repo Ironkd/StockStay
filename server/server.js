@@ -1239,12 +1239,16 @@ app.get("/api/inventory", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
 
-    // Only return items in this user's team's properties (not all items in the DB)
+    // Only return items in this user's team's properties (not all items in the DB).
+    // When team has no properties, return [] (never pass null — findAll(null) returns all DB items).
     const teamPropertyIds =
       currentUser?.teamId ?
         (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
       : [];
-    let items = await inventoryOps.findAll(teamPropertyIds);
+    let items =
+      teamPropertyIds.length === 0
+        ? []
+        : await inventoryOps.findAll(teamPropertyIds);
 
     // If the user has property restrictions, only return items from allowed properties
     if (
@@ -1714,7 +1718,11 @@ app.get("/api/reports/summary", authenticateToken, async (req, res) => {
       currentUser?.teamId
         ? (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
         : [];
-    const items = await inventoryOps.findAll(teamProperties.length ? teamProperties : null);
+    // When team has no properties, return zeros; never pass null (findAll(null) returns all DB items).
+    const items =
+      teamProperties.length === 0
+        ? []
+        : await inventoryOps.findAll(teamProperties);
     const lowStock = items.filter((i) => i.quantity <= (i.reorderPoint || 0) && i.reorderPoint > 0).length;
     const outOfStock = items.filter((i) => i.quantity <= 0).length;
     const totalValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.priceBoughtFor || 0), 0);
@@ -2148,16 +2156,15 @@ function buildInvoiceFromSale(sale, saleId = null) {
   };
 }
 
-// Helper function to sync invoice with all sales for a client (legacy aggregated invoice)
-const syncInvoiceForClient = async (clientId) => {
-  if (!clientId) return;
+// Helper function to sync invoice with all sales for a client (legacy aggregated invoice).
+// Must be called with teamId so we only read this team's sales/invoices (tenant isolation).
+const syncInvoiceForClient = async (teamId, clientId) => {
+  if (!clientId || !teamId) return;
 
-  // Get all sales for this client
-  const allSales = await saleOps.findAll();
+  const allSales = await saleOps.findAll(teamId);
   const clientSales = allSales.filter((sale) => sale.clientId === clientId);
 
-  // Get all invoices
-  const allInvoices = await invoiceOps.findAll();
+  const allInvoices = await invoiceOps.findAll(teamId);
   const autoInvoice = allInvoices.find(
     (inv) => inv.clientId === clientId && inv.notes === "Auto-generated from sales"
   );
