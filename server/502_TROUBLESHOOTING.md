@@ -2,6 +2,9 @@
 
 A 502 or "Application failed to respond" usually means Railway’s proxy didn’t get a valid response from your app. Do these in order.
 
+**Login shows "Load failed" / "Preflight response is not successful. Status code: 502"?**  
+Same cause: the backend isn't responding correctly to requests (including CORS preflight). Fix **Root Directory** (step 0) and **CORS_ORIGIN** (step 3), then redeploy.
+
 ## 0. Root Directory (most common fix)
 
 This repo has **two apps**: the **frontend** (root folder, Vite/React) and the **backend** (inside `server/`). Railway must run the **backend**.
@@ -45,7 +48,7 @@ In **Railway** → your service → **Variables**, ensure you have at least:
 | `DATABASE_URL` | Yes      | PostgreSQL URL (e.g. Supabase). App won’t start without it. |
 | `JWT_SECRET`   | Yes (prod) | Required when `NODE_ENV=production`. |
 | `PORT`         | Set by Railway | Don’t override unless you know why. |
-| `CORS_ORIGIN`  | Recommended | Your frontend origin(s), comma-separated. |
+| `CORS_ORIGIN`  | Recommended | Your frontend origin(s), comma-separated. If "Manage subscription" or signup fails with "Load failed" and a request URL, add your frontend URL (e.g. `https://your-app.vercel.app`) here and redeploy. |
 
 After changing variables, **redeploy** (new deployment) so the new values are used.
 

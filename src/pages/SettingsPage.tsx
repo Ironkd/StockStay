@@ -222,11 +222,19 @@ export const SettingsPage: React.FC = () => {
 
   const handleManageSubscription = async () => {
     setBillingLoading(true);
+    setError(null);
     try {
       const { url } = await teamApi.getBillingPortalUrl();
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to open billing portal");
+      const msg = err instanceof Error ? err.message : "Failed to open billing portal";
+      setError(msg);
+      // If it's a network/CORS failure, show hint (error is displayed in the panel)
+      if (/load failed|request url|cors|vite_api_base_url/i.test(msg)) {
+        setError(
+          `${msg} If your app and API are on different domains, add this site's URL (${window.location.origin}) to the backend CORS_ORIGIN env var (e.g. on Railway: Variables → CORS_ORIGIN).`
+        );
+      }
     } finally {
       setBillingLoading(false);
     }
@@ -959,6 +967,11 @@ export const SettingsPage: React.FC = () => {
                       </label>
                       <span style={{ fontSize: "13px", color: "#64748b" }}>$5/month per extra user</span>
                     </div>
+                    {team.isOnTrial && (
+                      <p style={{ fontSize: "13px", color: "#64748b", margin: "6px 0 0 0" }}>
+                        Extra user slots are available after you subscribe (use Manage subscription when your trial ends).
+                      </p>
+                    )}
                     {extraUserSlotsError && (
                       <p style={{ color: "#dc2626", fontSize: "13px", margin: "8px 0 0 0" }}>{extraUserSlotsError}</p>
                     )}

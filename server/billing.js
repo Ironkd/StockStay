@@ -173,6 +173,9 @@ export async function updateExtraUserSlots(teamId, newQuantity) {
   }
   const team = await teamOps.findById(teamId);
   if (!team?.stripeSubscriptionId) {
+    if (team?.isOnTrial) {
+      throw new Error("You're on a trial. Extra user slots are available after you subscribe. Use 'Manage subscription' to add a payment method; once your trial converts to a paid subscription, you can add extra users here.");
+    }
     throw new Error("No active subscription. Subscribe to Starter or Pro first.");
   }
   const sub = await stripe.subscriptions.retrieve(team.stripeSubscriptionId, {
