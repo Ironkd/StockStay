@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useClients } from "../hooks/useClients";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { Client } from "../types";
 
 export const ClientsPage: React.FC = () => {
@@ -160,6 +161,19 @@ export const ClientsPage: React.FC = () => {
                 />
               </label>
             </div>
+            <AddressAutocomplete
+              placeholder="Start typing address..."
+              onSelect={(addr) => {
+                setFormData({
+                  ...formData,
+                  streetAddress: addr.streetAddress,
+                  city: addr.city,
+                  province: addr.province,
+                  postalCode: addr.postalCode,
+                  country: addr.country ?? formData.country,
+                });
+              }}
+            />
             <div className="form-grid">
               <label>
                 <span>Street Address</span>

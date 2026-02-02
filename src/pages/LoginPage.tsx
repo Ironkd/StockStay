@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { authApi } from "../services/authApi";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HAS_UPPER = /[A-Z]/;
@@ -413,6 +414,16 @@ export const LoginPage: React.FC = () => {
                     required
                   />
                 </label>
+                <AddressAutocomplete
+                  placeholder="Start typing your address..."
+                  componentRestrictions={{ country: ["ca", "us"] }}
+                  onSelect={(addr) => {
+                    setStreet(addr.streetAddress);
+                    setCity(addr.city);
+                    setProvince(addr.province);
+                    setPostalCode(addr.postalCode);
+                  }}
+                />
                 <label>
                   <span>Street address</span>
                   <input

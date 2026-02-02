@@ -4,6 +4,7 @@ import { apiRequest } from "../config/api";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { propertiesApi } from "../services/propertiesApi";
+import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
 import type { Property } from "../types";
 
@@ -785,6 +786,15 @@ export const SettingsPage: React.FC = () => {
               style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
             />
           </label>
+          <AddressAutocomplete
+            placeholder="Start typing your address..."
+            onSelect={(addr) => {
+              setProfileStreet(addr.streetAddress);
+              setProfileCity(addr.city);
+              setProfileProvince(addr.province);
+              setProfilePostalCode(addr.postalCode);
+            }}
+          />
           <label>
             <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Street address</span>
             <input
