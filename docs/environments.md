@@ -122,7 +122,9 @@ Do this **once** to create a safe “practice” copy of Stock Stay that is sepa
 
 ### Step 0 — Create the `staging` Git branch
 
-On your computer (or ask a developer to do this):
+**Status:** Done on [Ironkd/StockStay](https://github.com/Ironkd/StockStay) — long-lived `staging` tracks the same commit as `main` until you start shipping staging-only work.
+
+If you ever need to recreate it from another clone:
 
 ```bash
 git checkout main
@@ -131,7 +133,9 @@ git checkout -b staging
 git push -u origin staging
 ```
 
-**Done when:** In GitHub → your repo → **Branches**, you see a branch named `staging`.
+**Done when:** In GitHub → **Branches**, you see `staging` and `main`.
+
+This workspace is pinned to **Ironkd/StockStay only** (`gh repo set-default` + Cursor rule). Do not point remotes or `gh` commands at other GitHub repos from this project.
 
 ---
 
@@ -292,13 +296,31 @@ On the **staging** website (not production):
 
 ---
 
-### Step 7 — Protect production
+### Step 7 — Protect production (GitHub admin)
 
-1. In GitHub → **Settings → Branches** → add a rule for `main` (require PR / review if your team wants that).  
-2. On Railway **production** and Vercel **Production**, confirm variables still point at the **production** Supabase URL and **live** Stripe keys.  
-3. If any secret was ever shared, committed, or reused between staging and prod, **rotate** it (new `JWT_SECRET`, new DB password, new Stripe webhook secret).
+Branch protection and GitHub Environments require **admin** on the repo (owner **Ironkd**). Collaborators with write can push `staging` / open PRs, but cannot create these settings.
 
-- [ ] `main` protected (optional but recommended)  
+**One-shot (preferred):** repo owner runs:
+
+```bash
+# Must be logged in as an admin on Ironkd/StockStay
+gh auth login   # if needed
+./scripts/github-admin-setup.sh
+```
+
+That script:
+
+1. Creates GitHub Environments **`staging`** (deploys from `staging` only) and **`production`** (deploys from `main` only).  
+2. Adds rulesets so `main` and `staging` cannot be force-pushed or deleted; `main` also requires a pull request (0 approvals — enough to stop accidental direct pushes while a solo owner can still merge).
+
+**Manual alternative:** GitHub → **Settings → Environments** and **Settings → Rules → Rulesets** with the same branch mapping.
+
+Then:
+
+1. On Railway **production** and Vercel **Production**, confirm variables still point at the **production** Supabase URL and **live** Stripe keys.  
+2. If any secret was ever shared, committed, or reused between staging and prod, **rotate** it (new `JWT_SECRET`, new DB password, new Stripe webhook secret).
+
+- [ ] `./scripts/github-admin-setup.sh` run by Ironkd (or equivalent UI settings)  
 - [ ] Production secrets are production-only  
 - [ ] Any leaked/shared secrets rotated  
 

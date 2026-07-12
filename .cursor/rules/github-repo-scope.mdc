@@ -1,0 +1,13 @@
+---
+description: Restrict all GitHub interactions to Ironkd/StockStay only
+alwaysApply: true
+---
+
+# GitHub repo scope
+
+This workspace may only interact with **https://github.com/Ironkd/StockStay**.
+
+- Prefer explicit repo args (`gh … -R Ironkd/StockStay`, or `gh repo view Ironkd/StockStay`). The repo-local `gh repo set-default` is already set to this repo.
+- Git remotes must stay pointed at `https://github.com/Ironkd/StockStay.git` (or the SSH equivalent). Do not add remotes for other repos.
+- Never clone, push, open PRs, create issues, or change settings on any other GitHub repository from this workspace.
+- If a task seems to require another repo, stop and ask the user instead of proceeding.
