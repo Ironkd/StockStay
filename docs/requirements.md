@@ -1,7 +1,7 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 0.3 (all validation questions resolved)  
-**Status:** Ready for implementation planning  
+**Version:** 0.4 (pre-alpha gaps from assessment/strategy incorporated)  
+**Status:** Ready for implementation planning (timezone for billing periods still open)  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-07-12
 
@@ -16,7 +16,7 @@ This document is the **source of truth** for Stock Stay's functional requirement
 3. **Product strategy call notes** (stock locations, supply catalogue, monthly client billing)
 4. **Validation sessions** with Neil (Probable) and David
 
-Future implementation work — schema changes, API refactors, UI flows — should trace back to sections in this document. Validated decisions are recorded in [Section 11](#11-resolved-decisions--remaining-open-questions).
+Future implementation work — schema changes, API refactors, UI flows — should trace back to sections in this document. Validated decisions are recorded in [Section 11](#11-resolved-decisions). One item remains open: **billing timezone** (Q1b).
 
 ---
 
@@ -40,7 +40,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | Layer | Who pays whom | Mechanism | Status |
 |-------|---------------|-----------|--------|
 | **SaaS billing** | PM company → Stock Stay | Stripe subscription (Free / Starter / Pro) | Existing; largely unchanged |
-| **Client billing** | PM company → Client | Monthly invoices for replenished stock | Major redesign; simple in v1 |
+| **Client billing** | PM company → Client | Scheduled invoices for replenished stock | Major redesign; simple in v1 |
 
 **Client billing (v1 scope):**
 
@@ -56,7 +56,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 |-------|----------|
 | Client ↔ Property | One client can be billed for **multiple properties**. Each property has **one billing client**. |
 | Client identity | **Client** is a billing contact — not assumed to be the property owner. The PM's relationship may be with an owner, manager, or other party. |
-| Billing schedule | Per client: **weekly**, **biweekly**, or **monthly (end of month)**. Editable per client. Period boundaries use the **team owner's timezone** (set at signup). |
+| Billing schedule | Per client: **weekly**, **biweekly**, or **monthly (end of month)**. Editable per client. **Timezone for period boundaries: open** — see Q1b. |
 | Bill-back pricing | Unit rate × base qty, plus **markup**. Markup is set **per property**, with a **default markup per client**. |
 | Invoice grouping | **One invoice per client** per billing period, with line items **broken down by property**. |
 | Ad-hoc invoice at replenishment | **Out of scope** for now. |
@@ -324,14 +324,8 @@ Operational unit within an Organization. Today Team is the de facto tenant; targ
 |--------------------|-------|
 | organizationId | FK to Organization |
 | name | Team display name |
-| timezone | IANA timezone from team owner signup (e.g. `America/Toronto`). Used for client billing period boundaries. |
+| timezone | **TBD** — billing-period timezone policy is open (Q1b). Do not implement signup timezone capture until decided. |
 | invoiceLogoUrl, invoiceStyle | Client invoice branding (may move to org level) |
-
-#### User / Team Owner (timezone at signup)
-
-| Field (conceptual) | Notes |
-|--------------------|-------|
-| timezone | Collected at signup for the team owner; becomes the team's billing timezone |
 
 #### UserMembership
 
@@ -461,7 +455,7 @@ Client invoice. Target model normalizes line items (today lines are JSON blobs).
 | Field (conceptual) | Notes |
 |--------------------|-------|
 | clientId | Billed client |
-| billingPeriodStart, billingPeriodEnd | Period covered (in team timezone) |
+| billingPeriodStart, billingPeriodEnd | Period covered (timezone policy TBD — Q1b) |
 | status | draft / sent / paid / overdue |
 | lines | FK to InvoiceLine rows |
 | InvoiceLine.propertyId | Property breakdown within the client invoice |
@@ -703,7 +697,7 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | | |
 |---|---|
 | **Actor** | System (scheduled job) or Team Owner / Member with invoices access (manual trigger) |
-| **Preconditions** | Unbilled replenishment lines (and reverse credits) exist for clients whose billing period has ended (per `Client.billingFrequency`, evaluated in team timezone) |
+| **Preconditions** | Unbilled replenishment lines (and reverse credits) exist for clients whose billing period has ended (per `Client.billingFrequency`; timezone per Q1b) |
 | **Steps** | For each due client: aggregate unbilled lines → create **one draft Invoice** with lines **grouped/broken down by property** |
 | **Postconditions** | Invoice in draft status; lines linked to replenishment lines; replenishment lines marked invoiced |
 | **Audit** | Invoice created timestamp |
@@ -765,10 +759,11 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 
 | Operation | Status | Notes |
 |-----------|--------|-------|
-| Signup / login / email verification | Existing | Unchanged |
+| Signup / login / email verification | Existing | Streamline: ask for less data; **do not require payment to sign up** (Strategy Phase 2) |
 | Invite team members | Existing | Extend for viewer enforcement |
 | Stripe SaaS checkout / portal | Existing | Move to Organization level |
 | Start trial (Starter / Pro) | Existing | 14-day trials |
+| Plan upgrade / downgrade | **Modify** | Define behaviour when limits shrink (excess properties/users/locations) — see BR-20 |
 | Invoice branding (logo, colors) | Existing | May move to org level |
 | Create organization | **New** | On signup or first login |
 | Manage teams under org | **New** | Schema + UI in v1 |
@@ -807,7 +802,7 @@ This section is the canonical example for validation. All implementation of cata
 
 ### Phase 3: Scheduled client billing
 
-1. When the client's billing period ends (weekly / biweekly / monthly EOM, in the **team owner's timezone**), the billing engine aggregates all unbilled replenishment lines (and reverse credits) for that client.
+1. When the client's billing period ends (weekly / biweekly / monthly EOM; **timezone TBD — Q1b**), the billing engine aggregates all unbilled replenishment lines (and reverse credits) for that client.
 2. System creates **one draft Invoice** for the client, with line items **broken down by property** (including the $9.60 Coffee Pod line under Property A, with markup applied if configured).
 3. PM reviews, optionally edits, then **sends by email** (HTML + **PDF attachment**) and/or **exports CSV**.
 4. PM marks invoice **paid** when client pays offline.
@@ -872,8 +867,11 @@ flowchart LR
 | Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | Replace with Replenishment + Invoice |
 | Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields |
 | User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
-| Timezone | Not captured | Team owner timezone at signup | New field |
+| Timezone | Not captured | Billing-period timezone policy **open (Q1b)** | Decide before scheduled billing engine |
 | Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | Extend plan config |
+| Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | See BR-20 |
+| Demo accounts | Present in codebase | **Remove** demo login path; onboard real users; no shared prod demo | Strategy Phase 2 |
+| Signup | May require payment / heavy form | Streamlined; payment not required to start | Strategy Phase 2 |
 | Client payment | N/A | Explicitly out of scope v1 | — |
 | Viewer role | UI label only | Enforced read-only on API | Add middleware checks |
 | Super admin | None | Platform support interface | New feature |
@@ -893,7 +891,7 @@ Rules that implementation must not guess:
 | **BR-4 Property stock increment** | Always in base units of the Supply Item. |
 | **BR-5 Unit rate snapshot** | ReplenishmentLine / credit lines store unit rate and effective markup at time of transaction (later price/markup changes do not alter past lines). |
 | **BR-6 Unbilled carry-forward** | Unbilled replenishment charges and return credits carry forward until included in an invoice. No double-billing. |
-| **BR-7 Billing schedule** | Per client: `weekly`, `biweekly`, or `monthly_eom`. Period boundaries use the **team owner's timezone**. |
+| **BR-7 Billing schedule** | Per client: `weekly`, `biweekly`, or `monthly_eom`. Timezone for period boundaries is **open (Q1b)** — do not hard-code team-owner-at-signup until decided. |
 | **BR-8 Invoice grouping** | One invoice per client per billing period; line items broken down by property. |
 | **BR-9 Ledger-only mutations** | No API route or UI action may update stock balances without creating a StockTransaction. |
 | **BR-10 No delete with history** | Entities referenced by StockTransaction or InvoiceLine are archived, not hard-deleted. |
@@ -906,6 +904,10 @@ Rules that implementation must not guess:
 | **BR-17 Live plan limits** | Cap values (including stock locations, supply items, SKUs) are configurable; product UI and marketing pages read the same live configuration. |
 | **BR-18 Invoice artifacts** | Sending an invoice requires PDF + email HTML; CSV export is available separately. |
 | **BR-19 Multi-team** | Users may belong to multiple teams; v1 ships membership schema and team-switching UI. |
+| **BR-20 Plan downgrade** | When an org/team moves to a lower plan (or trial ends) and current usage exceeds new limits: block creating *new* over-limit resources; existing excess resources remain readable/editable but creation is gated until usage is within limits (or user upgrades). Exact UX copy TBD; never silently delete customer data. |
+| **BR-21 Concurrent stock posts** | Ledger posts that change StockOnHand or PropertyStock must use row-level locking (or equivalent serializable transaction) so two concurrent replenishments cannot both pass the sufficiency check. |
+| **BR-22 Schema integrity** | Prefer DB enums for fixed vocabularies; unique constraints where business identity requires them (e.g. `@@unique([teamId, invoiceNumber])`); formal Prisma relations + explicit `onDelete` for all FKs. |
+| **BR-23 Signup** | New users can sign up and start without completing payment. Collect minimal required fields only. |
 
 ---
 
@@ -919,7 +921,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 
 | ID | Story | Tag |
 |----|-------|-----|
-| E1-1 | As a new user, I want to sign up and create an organization, so that my company has a Stock Stay account. | `[modify]` |
+| E1-1 | As a new user, I want to sign up with minimal data and without paying first, so that I can try Stock Stay quickly. | `[modify]` |
 | E1-2 | As an org owner, I want to manage my Stock Stay subscription, so that I can upgrade/downgrade plans. | `[existing]` |
 | E1-3 | As a team owner, I want to invite members with specific page and property access, so that staff see only what they need. | `[existing]` |
 | E1-4 | As a team owner, I want to assign viewer role that is read-only, so that auditors can see data without changing it. | `[modify]` |
@@ -927,6 +929,8 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | E1-6 | As a user, I want to belong to multiple teams and switch between them in the UI, so that larger companies can structure access correctly. | `[new]` |
 | E1-7 | As a super admin, I want to view and fix customer data, so that I can provide support. | `[new]` |
 | E1-8 | As a user, I want email verification and password reset, so that my account is secure. | `[existing]` |
+| E1-9 | As an org owner who downgrades, I want existing data preserved while new creates are blocked when over limit, so that I don't lose work. | `[new]` |
+| E1-10 | As a user, I want an easy way to send feedback or report a bug from the app, so that the team can improve Stock Stay. | `[new]` |
 
 ### E2: Stock locations and supply catalogue
 
@@ -999,7 +1003,6 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | E6-8 | As a PM, I want invoice lines traced to replenishments, so that clients can verify charges. | `[new]` |
 | E6-9 | As a PM, I want unbilled replenishments and reverse credits to carry forward, so that nothing is lost between periods. | `[new]` |
 | E6-10 | As a PM, I want to manage client contact records and default markup, so that invoices and pricing are correct. | `[modify]` |
-| E6-11 | As a new team owner, I want to pick my timezone at signup, so that billing periods follow my local calendar. | `[new]` |
 
 ### E7: Reporting and shopping list
 
@@ -1029,6 +1032,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | R-1 | As a PM, I want to create a sale and auto-generate an invoice, so that I track stock-out transactions. | `[remove]` |
 | R-2 | As a PM, I want to bill a client when I subtract inventory directly, so that stock reduction triggers billing. | `[remove]` |
 | R-3 | As a PM, I want to optionally create an invoice immediately at replenishment, so that I can bill ad-hoc. | `[remove]` (deferred) |
+| R-4 | As a visitor, I want to log into a shared demo account, so that I can try the product without signing up. | `[remove]` (Strategy: remove demo; onboard real users) |
 
 ---
 
@@ -1045,13 +1049,21 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-7 | Decimal types for financial and quantity fields | Must | Assessment |
 | NFR-8 | Database migrations reliable across dev/staging/production | Must | Assessment |
 | NFR-9 | PITR backups configured and recovery tested | Should | Assessment |
-| NFR-10 | Rate limiting and security middleware on API | Must | Existing |
+| NFR-10 | Rate limiting, Helmet, and input sanitization / validation on API write paths | Must | Existing + Strategy |
 | NFR-11 | Automated test harness derived from user stories in Section 8 | Should | Product strategy |
-| NFR-12 | Demo accounts isolated from production | Must | Assessment |
-| NFR-13 | Redirect unauthenticated users to /login | Must | Existing |
-| NFR-14 | Server-side event logging for critical operations | Should | Assessment |
+| NFR-12 | **Remove** shared demo-account functionality; onboard real users. Demo/test data only in non-prod environments | Must | Strategy |
+| NFR-13 | Redirect unauthenticated users to /login for protected routes | Must | Existing |
+| NFR-14 | Server-side event logs for auth, billing/webhooks, and stock ledger posts | Should | Assessment + Strategy |
 | NFR-15 | Plan limit config is single source of truth for API enforcement and marketing UI | Must | Validation |
 | NFR-16 | Invoice send produces PDF attachment and branded HTML email | Must | Validation |
+| NFR-17 | Row-level locking (or equivalent) on concurrent stock balance updates | Must | Strategy |
+| NFR-18 | Schema uses enums, unique constraints, and explicit FK `onDelete` where required (BR-22) | Must | Assessment |
+| NFR-19 | Basic product analytics (Umami or GA4) with page views and signup/activation events | Should | Strategy |
+| NFR-20 | In-app feedback / bug report path (link or widget) | Should | Strategy |
+| NFR-21 | Terms of Service and Privacy Policy reachable from app and marketing site | Must | Strategy |
+| NFR-22 | Cookie disclosure if cookies are used; prefer LocalStorage for auth tokens | Should | Strategy |
+| NFR-23 | User data deletion supported via customer support for alpha (self-serve optional later) | Should | Strategy |
+| NFR-24 | Lightweight dependency hygiene: keep Vite/Prisma (and critical deps) on patched versions | Should | Assessment |
 
 ---
 
@@ -1063,7 +1075,7 @@ The following are **explicitly deferred**. Implementation agents must not scope-
 |---------|-------|
 | Client portal | Login for clients to view invoices online |
 | In-app client payment | Stripe Connect, ACH, card on invoice |
-| Consumption / guest usage tracking | Billing inferred from replenishment rate only in v1 |
+| Consumption / guest usage tracking | Billing driven by location↔property movements only in v1 |
 | PMS integrations | Guesty, Hostaway, etc. |
 | Fixed-asset checklist | Cleaner verification of owner-owned items |
 | Barcode / QR scanning | Mobile scan workflows |
@@ -1073,16 +1085,17 @@ The following are **explicitly deferred**. Implementation agents must not scope-
 | QuickBooks / Xero native export | CSV only in v1 |
 | Separate credit-note documents | Credits roll onto next invoice |
 | Production data migration | Not needed — service has not launched |
+| Full event sourcing | Immutable StockTransaction ledger is sufficient; no event-store rewrite |
+| Forensic RLS / deep IDOR pen-test | Strategy Phase 4 |
+| Self-serve account deletion UI | Support-handled for alpha (NFR-23) |
 
 ---
 
 ## 11. Resolved decisions
 
-All previously open validation questions are resolved.
-
 | ID | Topic | Decision |
 |----|-------|----------|
-| Q1 | Billing schedule | Per client: **weekly**, **biweekly**, or **monthly end-of-month**. Editable per client. Timezone = **team owner's timezone** from signup. |
+| Q1 | Billing schedule cadence | Per client: **weekly**, **biweekly**, or **monthly end-of-month**. Editable per client. |
 | Q2 | Bill-back pricing | Markup **per property**, with a **default markup per client**. Applied on top of SKU unit rate. |
 | Q3 | Invoice grouping | **One invoice per client** per period, with line items **broken down by property**. |
 | Q4 | Ad-hoc invoice at replenishment | **Out of scope** for now (UX complexity). |
@@ -1096,6 +1109,10 @@ All previously open validation questions are resolved.
 | Q12 | Multi-team users | **Schema and UI in v1** so multi-team can be tested end-to-end. |
 | Q13 | Accounting export | **CSV** sufficient for v1. |
 | Q14 | Invoice artifacts | **PDF**, **email HTML**, and **CSV** all required. |
+
+### Still open
+
+- [ ] **Q1b — Billing timezone:** Which timezone defines period boundaries (weekly / biweekly / monthly EOM)? Candidates include: team owner timezone at signup, org/team setting (editable), property timezone, UTC, or browser-local at invoice generation. **Defer decision until scheduled billing work (Appendix A step for billing engine).** Do not implement timezone capture at signup until this is decided.
 
 ### Design note: why inter-property is always billable/refundable
 
@@ -1111,17 +1128,22 @@ Uniform rule: every stock-location ↔ property movement bills or refunds. Pass-
 
 ## Appendix A: Recommended implementation sequence
 
-1. Organization + UserMembership schema (+ team timezone at signup) **and team-switching UI**
-2. Stock Location + SupplyItem + SKU + UnitOfMeasure models
-3. StockTransaction ledger engine (including break-pack math and negative-stock guards)
-4. Replenishment + return workflows (API + UI), including next-invoice credits
-5. Inter-property transfer as linked return + replenish (both billable)
-6. Scheduled client billing engine (per-client frequency) + PDF/email/CSV
-7. Configurable plan limits (live-read by UI and marketing)
-8. Replace Sale / Inventory / deprecated billing paths
-9. Super-admin interface
-10. Viewer role enforcement
-11. Environment separation (dev / staging / prod)
+Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work.
+
+1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment
+2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
+3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start
+4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates
+5. **Replenishment + return** workflows (API + UI), including next-invoice credits
+6. **Inter-property transfer** as linked return + replenish (both billable)
+7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
+8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20)
+9. **Streamlined signup** (minimal fields; no payment required to start)
+10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code
+11. **Super-admin interface** + **viewer role enforcement** on write APIs
+12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion
+13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out)
+14. PITR recovery check + dependency hygiene (Prisma/Vite patches) as capacity allows
 
 ---
 
@@ -1149,3 +1171,4 @@ Uniform rule: every stock-location ↔ property movement bills or refunds. Pass-
 | 0.1 | 2026-02-23 | Probable | Initial draft for David validation |
 | 0.2 | 2026-07-12 | Probable | Incorporated validated answers Q1–Q11, Q13–Q14 |
 | 0.3 | 2026-07-12 | Probable | Q12: multi-team schema+UI in v1; inter-property legs always bill/refund |
+| 0.4 | 2026-07-12 | Probable | Pre-alpha gaps from assessment/strategy; timezone reopened as Q1b; Appendix A reordered |
