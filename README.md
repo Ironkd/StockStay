@@ -19,50 +19,60 @@ A full-featured inventory management web app built with React and TypeScript. Th
 
 #### Quick Start
 
-1. **Install Frontend Dependencies:**
+1. **Start local Postgres** (Docker):
+
    ```bash
-   npm install
+   docker compose up -d
    ```
 
-2. **Install Backend Dependencies:**
+2. **Install Frontend Dependencies:**
+   ```bash
+   npm install
+   cp .env.example .env
+   ```
+
+3. **Install Backend Dependencies:**
    ```bash
    cd server
    npm install
+   cp .env.example .env
+   npx prisma generate
+   npx prisma migrate deploy
+   # If migrate fails on a brand-new DB (no baseline), use: npx prisma db push
    cd ..
    ```
 
-3. **Start Backend Server** (Terminal 1):
+4. **Start Backend Server** (Terminal 1):
    ```bash
    cd server
    npm run dev
    ```
-   Server runs on `http://localhost:3000`
+   Server runs on `http://localhost:3000` (or `PORT` from `server/.env`)
 
-4. **Start Frontend** (Terminal 2 - new terminal):
+5. **Start Frontend** (Terminal 2 - new terminal):
    ```bash
    npm run dev
    ```
    Frontend runs on `http://localhost:5173`
 
-5. **Login:**
-   - Open `http://localhost:5173`
-   - Email: `demo@example.com`
-   - Password: `demo123`
-   - Or use any email/password (demo mode)
+6. **Sign up** at `http://localhost:5173` (there is no shared demo account).
 
-The `.env` file is already configured to point to `http://localhost:3000/api`.
+See **[docs/environments.md](docs/environments.md)** for local / staging / production separation.
+
+The `.env` file should point the frontend at your local API (default `http://localhost:3000/api`).
 
 ### Environment variables
 
 **Frontend** (root `.env`):
-- `VITE_API_BASE_URL` – Backend API URL (e.g. `http://localhost:3000/api` for dev).
+- `VITE_API_BASE_URL` – Backend API URL (e.g. `http://localhost:3000/api` for local).
 
 **Backend** (`server/.env`): copy from `server/.env.example`.
+- `APP_ENV` – `local`, `staging`, or `production`.
 - `PORT` – Server port (default 3000).
 - `NODE_ENV` – `development` or `production`.
-- `JWT_SECRET` – **Required in production.** Set a long random string; the server will not start in production without it.
-- `DATABASE_URL` – PostgreSQL connection string (e.g. Supabase).
-- `CORS_ORIGIN` – In production, set to your frontend origin (e.g. `https://app.stockstay.com`) for secure CORS.
+- `JWT_SECRET` – **Required when `APP_ENV` is staging or production.**
+- `DATABASE_URL` – PostgreSQL connection string (Docker local or Supabase).
+- `CORS_ORIGIN` – Frontend origin(s) for CORS.
 
 ### Backend API Requirements
 

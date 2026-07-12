@@ -787,12 +787,6 @@ export const LoginPage: React.FC = () => {
             </div>
           </form>
         ) }
-
-        {!showForgotPassword && !isSignUpMode && (
-          <p className="login-hint">
-            Demo: Use <strong>demo@example.com</strong> / <strong>demo123</strong>
-          </p>
-        )}
       </div>
     </div>
   );

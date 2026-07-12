@@ -106,13 +106,11 @@ Open your browser and go to:
 http://localhost:5173
 ```
 
-### Step 6: Login
+### Step 6: Sign up
 
-Use these credentials to login:
-- **Email**: `demo@example.com`
-- **Password**: `demo123`
+Open `http://localhost:5173` and create an account via **Sign up**. There is no shared demo login.
 
-Or use any email/password combination (for demo purposes).
+For Docker Postgres and staging/production setup, see [docs/environments.md](docs/environments.md).
 
 ## Troubleshooting (macOS)
 

@@ -6,8 +6,8 @@ import { body, validationResult } from "express-validator";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import "dotenv/config";
 import {
-  initDemoUser,
   userOps,
   teamOps,
   propertyOps,
@@ -46,13 +46,17 @@ import {
 const app = express();
 const PORT = process.env.PORT || 3000;
 const isProduction = process.env.NODE_ENV === "production";
+const appEnv = (process.env.APP_ENV || (isProduction ? "production" : "local")).toLowerCase();
+const requiresJwtSecret = appEnv === "staging" || appEnv === "production";
 
 // Trust proxy so rate limiting works behind Railway/load balancers (fixes ERR_ERL_UNEXPECTED_X_FORWARDED_FOR)
 app.set("trust proxy", 1);
 
-// Require JWT_SECRET in production – never use default secret when deployed
-if (isProduction && !process.env.JWT_SECRET) {
-  console.error("FATAL: JWT_SECRET must be set in production. Set it in your environment.");
+// Require JWT_SECRET in staging/production – never use default secret when deployed
+if (requiresJwtSecret && !process.env.JWT_SECRET) {
+  console.error(
+    `FATAL: JWT_SECRET must be set when APP_ENV=${appEnv}. Set it in your environment.`
+  );
   process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
@@ -84,7 +88,7 @@ app.options("*", (req, res) => {
 
 // Root path – respond first so "Cannot GET /" never appears
 app.get("/", (req, res) => {
-  res.status(200).json({ status: "ok", service: "StockStay API", docs: "/api/health" });
+  res.status(200).json({ status: "ok", service: "StockStay API", docs: "/api/health", appEnv });
 });
 
 // Security: secure headers
@@ -155,11 +159,6 @@ const authenticateToken = (req, res, next) => {
     next();
   });
 };
-
-// Initialize demo user and team if no users exist
-initDemoUser().catch((err) => {
-  console.error("Error initializing demo user:", err);
-});
 
 // ==================== AUTH ROUTES ====================
 
@@ -3065,7 +3064,7 @@ app.delete("/api/team/invitations/:invitationId", authenticateToken, async (req,
 
 // Health check
 app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Server is running" });
+  res.json({ status: "ok", message: "Server is running", appEnv });
 });
 
 // CORS debug: call this from the same origin as your app to see what origin the server received.
@@ -3175,8 +3174,5 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
   console.log(`📝 API available at http://localhost:${PORT}/api`);
-  console.log(`\nDemo credentials:`);
-  console.log(`  Email: demo@example.com`);
-  console.log(`  Password: demo123`);
-  console.log(`\n(Or use any email/password for demo)`);
+  console.log(`🌍 APP_ENV=${appEnv}`);
 });

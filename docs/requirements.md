@@ -1130,7 +1130,7 @@ Uniform rule: every stock-location ↔ property movement bills or refunds. Pass-
 
 Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work.
 
-1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment
+1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
 2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates

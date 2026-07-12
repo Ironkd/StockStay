@@ -2,6 +2,8 @@
 
 Use this guide to deploy the **backend** and **frontend** to the cloud. You already use **Supabase** for the database, so we only deploy the API server and the React app.
 
+For **local / staging / production** separation (Docker Postgres locally, separate Supabase + Railway + Vercel per env), see **[docs/environments.md](docs/environments.md)**.
+
 ---
 
 ## Prerequisites
@@ -25,18 +27,21 @@ Use this guide to deploy the **backend** and **frontend** to the cloud. You alre
    - **Build Command:** `npm install --omit=dev && npm run build`  
      (uses `--omit=dev` to avoid the deprecated production config warning; runs `prisma generate` so the DB client is ready)
    - **Start Command:** `npm start`  
-     (runs `node server.js`)
+     (runs `prisma migrate deploy && node server.js`)
 
 5. **Variables** (Railway → your service → **Variables**):
 
    | Variable        | Value |
    |-----------------|--------|
+   | `APP_ENV`       | `production` (or `staging` for the staging service) |
    | `NODE_ENV`      | `production` |
    | `PORT`          | `3000` (Railway may set this automatically) |
    | `JWT_SECRET`    | A long random string (e.g. from `openssl rand -base64 32`) |
-   | `DATABASE_URL`  | Your **Supabase** connection string (Settings → Database → Connection string → URI). Use the **connection pooling** URL if Supabase shows one (e.g. port 6543). |
+   | `DATABASE_URL`  | Your **Supabase** connection string for **this** environment only (Settings → Database → Connection string → URI). Use the **connection pooling** URL if Supabase shows one (e.g. port 6543). |
 
    Leave **CORS_ORIGIN** empty for now; you’ll set it after the frontend is deployed.
+
+   For separate local / staging / production stacks, see **[docs/environments.md](docs/environments.md)**.
 
 6. **Deploy** – Railway will build and start the server. Open the generated URL (e.g. `https://your-app.up.railway.app`) and check:
    - `https://your-app.up.railway.app/api` – you may see 404 or a simple response; that’s fine as long as the server is up.

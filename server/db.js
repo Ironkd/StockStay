@@ -45,11 +45,11 @@ if (isPostgres) {
   const pool = new pg.Pool(poolConfig);
   const adapter = new PrismaPg(pool);
   prisma = new PrismaClient({ adapter });
-  console.log('🔌 Using Supabase (PostgreSQL)');
+  console.log('🔌 Using PostgreSQL');
 } else {
   throw new Error(
-    'DATABASE_URL must be a PostgreSQL URL (e.g. Supabase). ' +
-    'Example: postgresql://postgres:PASSWORD@db.xxxxx.supabase.co:5432/postgres'
+    'DATABASE_URL must be a PostgreSQL URL (Docker local or Supabase). ' +
+    'Example: postgresql://stockstay:stockstay@localhost:5432/stockstay'
   );
 }
 
@@ -68,51 +68,6 @@ const stringifyJson = (value) => {
   if (value === null || value === undefined) return null;
   return JSON.stringify(value);
 };
-
-// Initialize demo user and team if no users exist
-export async function initDemoUser() {
-  try {
-    const userCount = await prisma.user.count();
-    if (userCount === 0) {
-    const now = new Date();
-    const teamId = crypto.randomUUID();
-
-    // Create demo team
-    await prisma.team.create({
-      data: {
-        id: teamId,
-        name: 'Demo Team',
-        ownerId: '1',
-      },
-    });
-
-    // Create demo user (password: demo123)
-    const bcrypt = await import('bcryptjs');
-    const hashedPassword = bcrypt.hashSync('demo123', 10);
-
-    await prisma.user.create({
-      data: {
-        id: '1',
-        email: 'demo@example.com',
-        name: 'Demo User',
-        password: hashedPassword,
-        teamId: teamId,
-        teamRole: 'owner',
-        maxInventoryItems: null,
-        allowedPages: null,
-        allowedPropertyIds: null,
-        emailVerified: true,
-      },
-    });
-      console.log('✅ Demo user initialized');
-    }
-  } catch (error) {
-    // Don't crash if database isn't available yet
-    // Connection will be retried on first API call
-    console.warn('⚠️  Could not initialize demo user (database may not be ready):', error.message);
-    console.warn('   This is OK - demo user will be created on first login');
-  }
-}
 
 // User operations
 export const userOps = {
