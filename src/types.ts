@@ -164,6 +164,9 @@ export type TeamInfo = {
   /** Invoice email branding */
   invoiceLogoUrl?: string | null;
   invoiceStyle?: InvoiceStyle | null;
+  organizationId?: string;
+  organizationName?: string;
+  isOrgOwner?: boolean;
 };
 
 export type TeamMemberInfo = {
@@ -190,8 +193,33 @@ export type TeamInvitationInfo = {
   allowedPropertyIds: string[] | null;
 };
 
+export type OrganizationOwnerInfo = {
+  id: string;
+  name: string | null;
+  email: string;
+  firstName?: string | null;
+  lastName?: string | null;
+};
+
+export type OrganizationInfo = {
+  id: string;
+  name: string;
+  owners: OrganizationOwnerInfo[];
+};
+
+export type OrganizationTeamSummary = {
+  id: string;
+  name: string;
+  memberCount?: number;
+  isActive?: boolean;
+  isMember?: boolean;
+  myTeamRole?: string | null;
+};
+
 export type TeamData = {
   team: TeamInfo;
   members: TeamMemberInfo[];
   invitations: TeamInvitationInfo[];
+  organization?: OrganizationInfo;
+  organizationTeams?: OrganizationTeamSummary[];
 };

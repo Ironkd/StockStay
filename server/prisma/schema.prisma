@@ -22,18 +22,16 @@ model User {
   emailVerified              Boolean   @default(false)
   emailVerificationToken     String?
   emailVerificationExpiresAt DateTime?
-  teamId                     String?
-  teamRole                   String?   @default("member") // "owner" or "member"
-  maxInventoryItems          Int?
-  allowedPages               String?   // JSON array of allowed page keys
-  allowedPropertyIds         String?   // JSON array of allowed property IDs
+  activeTeamId               String?
   createdAt                  DateTime  @default(now())
   updatedAt                  DateTime  @updatedAt
 
-  team                Team?                 @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  activeTeam          Team?                 @relation("UserActiveTeam", fields: [activeTeamId], references: [id], onDelete: SetNull)
+  memberships         UserMembership[]
   passwordResetTokens PasswordResetToken[]
+  ownedOrganizations  Organization[]        @relation("OrganizationOwner")
 
-  @@index([teamId])
+  @@index([activeTeamId])
   @@index([email])
   @@index([emailVerificationToken])
 }
@@ -51,43 +49,79 @@ model PasswordResetToken {
   @@index([userId])
 }
 
-model Team {
-  id            String   @id @default(uuid())
-  name          String
-  ownerId       String
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+model Organization {
+  id                         String    @id @default(uuid())
+  name                       String
+  ownerId                    String
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
 
-  // Billing / plan info
-  plan          String   @default("free") // "free", "starter", "pro"
-  maxProperties Int?     // null = unlimited, or explicit cap
-  extraUserSlots Int?    @default(0) // Starter: 0–2, Pro: 0–3 extra users at $5/mo each
+  // Billing / plan info (moved from Team)
+  plan                       String    @default("free") // "free", "starter", "pro"
+  maxProperties              Int?
+  extraUserSlots             Int?      @default(0)
 
   // Trial fields
-  isOnTrial     Boolean  @default(false)
-  trialEndsAt   DateTime?
-  trialPlan     String?  // The plan they're trialing (e.g., "pro")
+  isOnTrial                  Boolean   @default(false)
+  trialEndsAt                DateTime?
+  trialPlan                  String?
 
   // Stripe billing
-  stripeCustomerId    String?  // Stripe Customer ID for billing
-  stripeSubscriptionId String? // Active subscription ID (when set, plan is paid)
-  stripeSubscriptionStatus String? // active, canceled, past_due, etc.
-  billingInterval    String?  // "month" | "year" from Stripe subscription
+  stripeCustomerId           String?
+  stripeSubscriptionId       String?
+  stripeSubscriptionStatus   String?
+  billingInterval            String? // "month" | "year"
 
-  // Invoice email branding (emailed invoices use this style + logo)
-  invoiceLogoUrl     String?  // URL to team logo image
-  invoiceStyle       String?  // JSON: { companyName?, primaryColor?, accentColor?, footerText? }
+  // Invoice branding (one brand per org)
+  invoiceLogoUrl             String?
+  invoiceStyle               String? // JSON
 
-  members User[]
-  properties   Property[]
-  clients     Client[]
-  invoices    Invoice[]
-  sales       Sale[]
+  owner User   @relation("OrganizationOwner", fields: [ownerId], references: [id], onDelete: Restrict)
+  teams Team[]
 
   @@index([ownerId])
   @@index([isOnTrial])
   @@index([trialEndsAt])
   @@index([stripeCustomerId])
+}
+
+model Team {
+  id             String   @id @default(uuid())
+  organizationId String
+  name           String
+  ownerId        String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships  UserMembership[]
+  activeUsers  User[]           @relation("UserActiveTeam")
+  properties   Property[]
+  clients      Client[]
+  invoices     Invoice[]
+  sales        Sale[]
+
+  @@index([organizationId])
+  @@index([ownerId])
+}
+
+model UserMembership {
+  id                 String   @id @default(uuid())
+  userId             String
+  teamId             String
+  teamRole           String   @default("member") // "owner" | "member" | "viewer"
+  maxInventoryItems  Int?
+  allowedPages       String? // JSON array
+  allowedPropertyIds String? // JSON array
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, teamId])
+  @@index([userId])
+  @@index([teamId])
 }
 
 model Property {
@@ -98,8 +132,8 @@ model Property {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  team      Team     @relation(fields: [teamId], references: [id])
-  items     Inventory[]
+  team  Team        @relation(fields: [teamId], references: [id])
+  items Inventory[]
 
   @@index([teamId])
 }
@@ -123,22 +157,22 @@ model Inventory {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  property         Property? @relation(fields: [propertyId], references: [id])
+  property Property? @relation(fields: [propertyId], references: [id])
 
   @@index([propertyId])
   @@index([category])
 }
 
 model InventoryMovement {
-  id               String   @id @default(uuid())
-  teamId           String?
-  inventoryItemId  String
-  quantityDelta    Float    // positive = in, negative = out
-  movementType     String   // adjustment, invoice, sale, transfer_in, transfer_out
-  referenceType    String?  // invoice, sale, transfer
-  referenceId      String?
-  referenceLabel   String?
-  createdAt        DateTime @default(now())
+  id              String   @id @default(uuid())
+  teamId          String?
+  inventoryItemId String
+  quantityDelta   Float // positive = in, negative = out
+  movementType    String // adjustment, invoice, sale, transfer_in, transfer_out
+  referenceType   String? // invoice, sale, transfer
+  referenceId     String?
+  referenceLabel  String?
+  createdAt       DateTime @default(now())
 
   @@index([teamId])
   @@index([inventoryItemId])
@@ -146,23 +180,24 @@ model InventoryMovement {
 }
 
 model Client {
-  id          String   @id @default(uuid())
-  teamId      String?
-  name        String
-  email       String   @default("")
-  phone       String   @default("")
-  address     String   @default("") // Legacy field
-  streetAddress String? @default("")
-  city        String?  @default("")
-  province    String?  @default("")
-  postalCode  String?  @default("")
-  country     String?  @default("")
-  company     String   @default("")
-  notes       String   @default("")
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id            String   @id @default(uuid())
+  teamId        String?
+  name          String
+  email         String   @default("")
+  phone         String   @default("")
+  address       String   @default("") // Legacy field
+  streetAddress String?  @default("")
+  city          String?  @default("")
+  province      String?  @default("")
+  postalCode    String?  @default("")
+  country       String?  @default("")
+  company       String   @default("")
+  notes         String   @default("")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
-  team        Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
   @@index([email])
   @@index([teamId])
 }
@@ -173,9 +208,9 @@ model Invoice {
   invoiceNumber String
   clientId      String?
   clientName    String   @default("")
-  date          String   // ISO date string
-  dueDate       String?  // ISO date string
-  items         String   // JSON array of invoice items
+  date          String // ISO date string
+  dueDate       String? // ISO date string
+  items         String // JSON array of invoice items
   subtotal      Float    @default(0)
   tax           Float    @default(0)
   total         Float    @default(0)
@@ -185,7 +220,8 @@ model Invoice {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  team          Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
   @@index([clientId])
   @@index([invoiceNumber])
   @@index([saleId])
@@ -193,41 +229,42 @@ model Invoice {
 }
 
 model Sale {
-  id        String   @id @default(uuid())
-  teamId    String?
-  saleNumber String  @default("")
-  clientId  String?
-  clientName String @default("")
-  date      String   // ISO date string
-  items     String   // JSON array of sale items
-  subtotal  Float    @default(0)
-  tax       Float    @default(0)
-  total     Float    @default(0)
-  notes     String   @default("")
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(uuid())
+  teamId     String?
+  saleNumber String   @default("")
+  clientId   String?
+  clientName String   @default("")
+  date       String // ISO date string
+  items      String // JSON array of sale items
+  subtotal   Float    @default(0)
+  tax        Float    @default(0)
+  total      Float    @default(0)
+  notes      String   @default("")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
-  team      Team?    @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+
   @@index([clientId])
   @@index([date])
   @@index([teamId])
 }
 
 model Invitation {
-  id                String    @id @default(uuid())
-  teamId            String
-  email             String
-  teamRole          String    @default("member")
-  maxInventoryItems Int?
-  allowedPages      String?   // JSON array
-  allowedPropertyIds  String? // JSON array
-  status            String    @default("pending") // pending, accepted, expired
-  token             String    @unique
-  createdAt         DateTime  @default(now())
-  expiresAt         DateTime?
-  invitedByUserId   String?
-  acceptedAt        DateTime?
-  acceptedByUserId  String?
+  id                 String    @id @default(uuid())
+  teamId             String
+  email              String
+  teamRole           String    @default("member")
+  maxInventoryItems  Int?
+  allowedPages       String? // JSON array
+  allowedPropertyIds String? // JSON array
+  status             String    @default("pending") // pending, accepted, expired
+  token              String    @unique
+  createdAt          DateTime  @default(now())
+  expiresAt          DateTime?
+  invitedByUserId    String?
+  acceptedAt         DateTime?
+  acceptedByUserId   String?
 
   @@index([teamId])
   @@index([token])

@@ -1,88 +1,77 @@
 /**
  * Trial Management Module
- * Handles free trial logic for Pro plan (14 days)
+ * Handles free trial logic for Pro plan (14 days) at Organization level
  */
 
 import { prisma } from './db.js';
 
 /**
- * Start a 14-day Pro trial for a team (10 properties during trial)
- * @param {string} teamId - The team ID to start trial for
- * @returns {Promise<Object>} Updated team object
+ * Start a 14-day Pro trial for an organization (10 properties during trial)
+ * @param {string} organizationId
+ * @returns {Promise<Object>} Updated organization
  */
-export async function startProTrial(teamId) {
+export async function startProTrial(organizationId) {
   const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14 days from now
+  trialEndsAt.setDate(trialEndsAt.getDate() + 14);
   const limits = getPlanLimits('pro');
 
-  return await prisma.team.update({
-    where: { id: teamId },
+  return await prisma.organization.update({
+    where: { id: organizationId },
     data: {
       plan: 'pro',
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
       trialPlan: 'pro',
-      maxProperties: limits.maxProperties, // 10 for Pro
+      maxProperties: limits.maxProperties,
     },
   });
 }
 
 /**
- * Start a 14-day Starter trial for a team (3 properties during trial)
- * @param {string} teamId - The team ID to start trial for
- * @returns {Promise<Object>} Updated team object
+ * Start a 14-day Starter trial for an organization (3 properties during trial)
+ * @param {string} organizationId
+ * @returns {Promise<Object>} Updated organization
  */
-export async function startStarterTrial(teamId) {
+export async function startStarterTrial(organizationId) {
   const trialEndsAt = new Date();
-  trialEndsAt.setDate(trialEndsAt.getDate() + 14); // 14 days from now
+  trialEndsAt.setDate(trialEndsAt.getDate() + 14);
   const limits = getPlanLimits('starter');
 
-  return await prisma.team.update({
-    where: { id: teamId },
+  return await prisma.organization.update({
+    where: { id: organizationId },
     data: {
       plan: 'starter',
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
       trialPlan: 'starter',
-      maxProperties: limits.maxProperties, // 3 for Starter
+      maxProperties: limits.maxProperties,
     },
   });
 }
 
 /**
- * Check if a team's trial has expired
- * @param {Object} team - Team object with trial fields
- * @returns {boolean} True if trial has expired
+ * @param {Object} org - Organization with trial fields
  */
-export function isTrialExpired(team) {
-  if (!team.isOnTrial || !team.trialEndsAt) {
+export function isTrialExpired(org) {
+  if (!org?.isOnTrial || !org.trialEndsAt) {
     return false;
   }
-  return new Date() > new Date(team.trialEndsAt);
+  return new Date() > new Date(org.trialEndsAt);
 }
 
 /**
- * Get the effective plan for a team (considering trial status)
- * @param {Object} team - Team object
- * @returns {string} The effective plan name
+ * @param {Object} org - Organization
  */
-export function getEffectivePlan(team) {
-  if (!team) return 'free';
-  
-  // If on trial and not expired, use the trial plan
-  if (team.isOnTrial && team.trialPlan && !isTrialExpired(team)) {
-    return team.trialPlan;
+export function getEffectivePlan(org) {
+  if (!org) return 'free';
+
+  if (org.isOnTrial && org.trialPlan && !isTrialExpired(org)) {
+    return org.trialPlan;
   }
-  
-  // Otherwise use the regular plan
-  return team.plan || 'free';
+
+  return org.plan || 'free';
 }
 
-/**
- * Get plan limits based on plan name
- * @param {string} plan - Plan name (free, starter, pro)
- * @returns {Object} Plan limits
- */
 export function getPlanLimits(plan) {
   const limits = {
     free: {
@@ -94,51 +83,47 @@ export function getPlanLimits(plan) {
     starter: {
       maxProperties: 3,
       baseMaxUsers: 3,
-      maxExtraUserSlots: 2, // $5/mo each, max 2 extra = 5 users total
-      maxUsers: null, // use getEffectiveMaxUsers(team) for starter
-      maxInventoryItems: null, // unlimited
+      maxExtraUserSlots: 2,
+      maxUsers: null,
+      maxInventoryItems: null,
       features: ['basic_tracking', 'exports', 'invoices', 'history', 'inventory_by_property', 'low_stock_alerts', 'usage_summary', 'value_per_property', 'csv_export'],
     },
     pro: {
       maxProperties: 10,
       baseMaxUsers: 5,
-      maxExtraUserSlots: 3, // $5/mo each, max 3 extra = 8 users total
-      maxUsers: null, // use getEffectiveMaxUsers(team) for pro
-      maxInventoryItems: null, // unlimited
+      maxExtraUserSlots: 3,
+      maxUsers: null,
+      maxInventoryItems: null,
       features: ['basic_tracking', 'exports', 'invoices', 'history', 'team_members', 'permissions', 'advanced_reports', 'value_tracking', 'reports', 'shopping_list', 'invoicing'],
     },
   };
-  
+
   return limits[plan] || limits.free;
 }
 
 /**
- * Get effective max users for a team (Free: 1; Starter: 3 + extra up to 2; Pro: 5 + extra up to 3)
- * @param {Object} team - Team object (with plan, extraUserSlots)
- * @returns {number | null} Max users (null = unlimited)
+ * @param {Object} org - Organization (plan, extraUserSlots)
  */
-export function getEffectiveMaxUsers(team) {
-  if (!team) return 1;
-  const plan = getEffectivePlan(team);
+export function getEffectiveMaxUsers(org) {
+  if (!org) return 1;
+  const plan = getEffectivePlan(org);
   const limits = getPlanLimits(plan);
   if (limits.maxUsers === 1) return 1;
   if (limits.baseMaxUsers != null) {
-    const extra = Math.min(team.extraUserSlots ?? 0, limits.maxExtraUserSlots ?? 0);
+    const extra = Math.min(org.extraUserSlots ?? 0, limits.maxExtraUserSlots ?? 0);
     return limits.baseMaxUsers + extra;
   }
-  return null; // unlimited
+  return null;
 }
 
 /**
- * Check if a team can create more properties based on their plan
- * @param {Object} team - Team object
- * @param {number} currentPropertyCount - Current number of properties
- * @returns {Object} { canCreate: boolean, limit: number, current: number }
+ * @param {Object} org - Organization
+ * @param {number} currentPropertyCount - Properties on the active team
  */
-export function canCreateProperty(team, currentPropertyCount) {
-  const effectivePlan = getEffectivePlan(team);
+export function canCreateProperty(org, currentPropertyCount) {
+  const effectivePlan = getEffectivePlan(org);
   const limits = getPlanLimits(effectivePlan);
-  
+
   return {
     canCreate: currentPropertyCount < limits.maxProperties,
     limit: limits.maxProperties,
@@ -149,14 +134,12 @@ export function canCreateProperty(team, currentPropertyCount) {
 
 /**
  * Downgrade expired trials to free plan
- * This should be run as a scheduled job (cron)
- * @returns {Promise<number>} Number of teams downgraded
  */
 export async function downgradeExpiredTrials() {
   try {
     const now = new Date();
 
-    const expiredTrials = await prisma.team.findMany({
+    const expiredTrials = await prisma.organization.findMany({
       where: {
         isOnTrial: true,
         trialEndsAt: {
@@ -167,9 +150,9 @@ export async function downgradeExpiredTrials() {
 
     console.log(`[TRIAL] Found ${expiredTrials.length} expired trials to downgrade`);
 
-    for (const team of expiredTrials) {
-      await prisma.team.update({
-        where: { id: team.id },
+    for (const org of expiredTrials) {
+      await prisma.organization.update({
+        where: { id: org.id },
         data: {
           plan: "free",
           isOnTrial: false,
@@ -178,39 +161,37 @@ export async function downgradeExpiredTrials() {
           maxProperties: 1,
         },
       });
-      console.log(`[TRIAL] Downgraded team ${team.id} (${team.name}) from trial to free`);
+      console.log(`[TRIAL] Downgraded organization ${org.id} (${org.name}) from trial to free`);
     }
 
     return expiredTrials.length;
   } catch (err) {
-    console.warn("[TRIAL] downgradeExpiredTrials failed (Team table may be missing columns):", err.message);
+    console.warn("[TRIAL] downgradeExpiredTrials failed:", err.message);
     return 0;
   }
 }
 
 /**
- * Get trial status for a team
- * @param {Object} team - Team object
- * @returns {Object} Trial status information
+ * @param {Object} org - Organization
  */
-export function getTrialStatus(team) {
-  if (!team.isOnTrial || !team.trialEndsAt) {
+export function getTrialStatus(org) {
+  if (!org?.isOnTrial || !org.trialEndsAt) {
     return {
       isOnTrial: false,
       daysRemaining: 0,
       expired: false,
     };
   }
-  
+
   const now = new Date();
-  const endsAt = new Date(team.trialEndsAt);
+  const endsAt = new Date(org.trialEndsAt);
   const daysRemaining = Math.max(0, Math.ceil((endsAt - now) / (1000 * 60 * 60 * 24)));
   const expired = now > endsAt;
-  
+
   return {
     isOnTrial: true,
-    trialPlan: team.trialPlan,
-    endsAt: team.trialEndsAt,
+    trialPlan: org.trialPlan,
+    endsAt: org.trialEndsAt,
     daysRemaining,
     expired,
   };

@@ -1,5 +1,5 @@
 /**
- * Create a new team owner user via CLI.
+ * Create a new organization owner user via CLI.
  * Usage: node create-user.js <email> <password> [name]
  * Example: node create-user.js admin@example.com mysecret123 "Admin User"
  */
@@ -8,13 +8,13 @@ import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import bcrypt from 'bcryptjs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env (override: true ensures .env wins over shell env vars)
 dotenv.config({ path: join(__dirname, '.env'), override: true });
 const databaseUrl = process.env.DATABASE_URL;
 
@@ -23,7 +23,6 @@ if (!databaseUrl) {
   process.exit(1);
 }
 
-// Pass connectionString directly to PrismaPg
 const adapterConfig = databaseUrl.includes('supabase')
   ? { connectionString: databaseUrl, ssl: { rejectUnauthorized: false } }
   : { connectionString: databaseUrl };
@@ -53,16 +52,9 @@ async function createUser() {
     }
 
     const userId = crypto.randomUUID();
+    const orgId = crypto.randomUUID();
     const teamId = crypto.randomUUID();
     const hashedPassword = bcrypt.hashSync(password, 10);
-
-    await prisma.team.create({
-      data: {
-        id: teamId,
-        name: `${displayName}'s Team`,
-        ownerId: userId,
-      },
-    });
 
     await prisma.user.create({
       data: {
@@ -70,19 +62,45 @@ async function createUser() {
         email: normalizedEmail,
         name: displayName,
         password: hashedPassword,
-        teamId,
-        teamRole: 'owner',
-        maxInventoryItems: null,
-        allowedPages: null,
-        allowedPropertyIds: null,
         emailVerified: true,
       },
+    });
+
+    await prisma.organization.create({
+      data: {
+        id: orgId,
+        name: `${displayName}'s Organization`,
+        ownerId: userId,
+        plan: 'free',
+      },
+    });
+
+    await prisma.team.create({
+      data: {
+        id: teamId,
+        name: `${displayName}'s Team`,
+        ownerId: userId,
+        organizationId: orgId,
+      },
+    });
+
+    await prisma.userMembership.create({
+      data: {
+        userId,
+        teamId,
+        teamRole: 'owner',
+      },
+    });
+
+    await prisma.user.update({
+      where: { id: userId },
+      data: { activeTeamId: teamId },
     });
 
     console.log('✅ User created successfully!');
     console.log(`   Email: ${normalizedEmail}`);
     console.log(`   Name: ${displayName}`);
-    console.log(`   Role: owner (team admin)`);
+    console.log(`   Role: organization + team owner`);
     console.log(`   Email verified: yes`);
   } catch (error) {
     console.error('❌ Error:', error.message);

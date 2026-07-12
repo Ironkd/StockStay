@@ -6,11 +6,15 @@ import { teamApi } from "../services/teamApi";
 export const Layout: React.FC<{ children: React.ReactNode }> = ({
   children
 }) => {
-  const { user, logout } = useAuth();
+  const { user, logout, switchTeam } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [headerTeamName, setHeaderTeamName] = useState<string | null>(null);
   const [effectivePlan, setEffectivePlan] = useState<string | null>(null);
+  const [switching, setSwitching] = useState(false);
+
+  const memberships = user?.memberships ?? [];
+  const activeTeamId = user?.activeTeamId || user?.teamId || "";
 
   useEffect(() => {
     if (!user) {
@@ -20,7 +24,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     }
     teamApi.getTeamName().then((r) => setHeaderTeamName(r.name)).catch(() => {});
     teamApi.getTeamLimits().then((r) => setEffectivePlan(r.effectivePlan)).catch(() => setEffectivePlan("free"));
-  }, [user?.id]);
+  }, [user?.id, user?.teamId, user?.activeTeamId]);
 
   useEffect(() => {
     const refetch = () =>
@@ -30,15 +34,30 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     window.addEventListener("team-name-updated", refetch);
+    window.addEventListener("active-team-changed", refetch);
     return () => {
       document.removeEventListener("visibilitychange", onVisibilityChange);
       window.removeEventListener("team-name-updated", refetch);
+      window.removeEventListener("active-team-changed", refetch);
     };
   }, []);
 
   const handleLogout = async () => {
     await logout();
     navigate("/");
+  };
+
+  const handleSwitchTeam = async (teamId: string) => {
+    if (!teamId || teamId === activeTeamId || switching) return;
+    setSwitching(true);
+    try {
+      await switchTeam(teamId);
+      navigate("/dashboard");
+    } catch (err) {
+      console.error("Failed to switch team:", err);
+    } finally {
+      setSwitching(false);
+    }
   };
 
   const displayTeamName =
@@ -60,7 +79,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     if (!user) return false;
     if (item.proOnly && effectivePlan !== "pro") return false;
     if (user.teamRole === "owner") return true;
-    // Invited members: only show pages the owner picked for them
     if (!user.allowedPages || user.allowedPages.length === 0) return false;
     return user.allowedPages.includes(item.pageKey);
   };
@@ -76,7 +94,39 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               <span className="brand-stay">Stay</span>
             </h1>
           <p className="welcome-line">Welcome back, {user?.name?.trim() ? user.name.trim().split(/\s+/)[0] : "User"}</p>
-          <p className="team-line">{displayTeamName}</p>
+          {memberships.length > 1 ? (
+            <label className="team-line" style={{ display: "block" }}>
+              <span className="sr-only">Active team</span>
+              <select
+                value={activeTeamId}
+                disabled={switching}
+                onChange={(e) => {
+                  e.preventDefault();
+                  void handleSwitchTeam(e.target.value);
+                }}
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  marginTop: "2px",
+                  maxWidth: "220px",
+                  fontSize: "inherit",
+                  fontWeight: 600,
+                  border: "1px solid rgba(148, 163, 184, 0.5)",
+                  borderRadius: "6px",
+                  padding: "2px 6px",
+                  background: "transparent",
+                  color: "inherit",
+                }}
+              >
+                {memberships.map((m) => (
+                  <option key={m.teamId} value={m.teamId}>
+                    {m.teamName || "Team"}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <p className="team-line">{displayTeamName}</p>
+          )}
           </div>
         </Link>
         <button className="clear-button" onClick={handleLogout}>
@@ -109,4 +159,3 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     </div>
   );
 };
-

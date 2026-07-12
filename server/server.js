@@ -10,6 +10,8 @@ import "dotenv/config";
 import {
   userOps,
   teamOps,
+  organizationOps,
+  membershipOps,
   propertyOps,
   inventoryOps,
   clientOps,
@@ -19,6 +21,8 @@ import {
   movementOps,
   passwordResetTokenOps,
   prisma,
+  getMembershipContext,
+  provisionOrganizationWithTeam,
 } from "./db.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
@@ -34,8 +38,8 @@ import {
 } from "./trialManager.js";
 import {
   createCheckoutSession,
-  createCheckoutSessionForNewSignup,
   createCustomerPortalSession,
+  ensureOrgStripeCustomer,
   ensureTeamStripeCustomer,
   handleWebhook,
   isBillingConfigured,
@@ -92,7 +96,12 @@ app.get("/", (req, res) => {
 });
 
 // Security: secure headers
-app.use(helmet());
+app.use(
+  helmet({
+    // Allow browser clients on another origin (Vite) to read API responses when CORS allows them
+    crossOriginResourcePolicy: { policy: "cross-origin" },
+  })
+);
 
 // Middleware – restrict origin in production for security
 app.use(
@@ -160,6 +169,64 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
+/** Ensure user has an org+team; return enriched membership context. */
+async function ensureMembershipContext(userId) {
+  let ctx = await getMembershipContext(userId);
+  if (!ctx) return null;
+  if (!ctx.user.teamId) {
+    const display = (ctx.user.name || ctx.user.email.split("@")[0] || "My").trim();
+    await provisionOrganizationWithTeam({
+      ownerUserId: ctx.user.id,
+      organizationName: `${display}'s Organization`,
+      teamName: `${display}'s Team`,
+    });
+    ctx = await getMembershipContext(userId);
+  }
+  return ctx;
+}
+
+/** Enriched user with teamId/teamRole/scopes aliases (for existing route handlers). */
+async function loadCurrentUser(req) {
+  const ctx = await ensureMembershipContext(req.user.id);
+  return ctx?.user ?? null;
+}
+
+function buildAuthUserPayload(ctx) {
+  const user = ctx.user;
+  const org = ctx.organization;
+  const team = ctx.team;
+  const effectivePlan = getEffectivePlan(org);
+  const planLimits = getPlanLimits(effectivePlan);
+  const maxInventoryItems =
+    user.maxInventoryItems ?? (planLimits.maxInventoryItems ?? null);
+  const teamName =
+    team?.name?.trim() ||
+    `${user.name || user.email.split("@")[0]}'s Team`;
+  return {
+    id: user.id,
+    email: user.email || "",
+    name: user.name || "",
+    firstName: user.firstName ?? "",
+    lastName: user.lastName ?? "",
+    address: user.address ?? "",
+    streetAddress: user.streetAddress ?? "",
+    city: user.city ?? "",
+    province: user.province ?? "",
+    postalCode: user.postalCode ?? "",
+    phone: user.phone ?? "",
+    teamId: user.teamId ?? null,
+    activeTeamId: user.teamId ?? null,
+    teamName,
+    teamRole: user.teamRole ?? null,
+    organizationId: user.organizationId ?? null,
+    isOrgOwner: Boolean(user.isOrgOwner),
+    maxInventoryItems,
+    allowedPages: user.allowedPages ?? null,
+    allowedPropertyIds: user.allowedPropertyIds ?? null,
+    memberships: ctx.memberships ?? [],
+  };
+}
+
 // ==================== AUTH ROUTES ====================
 
 const loginValidation = [
@@ -220,29 +287,19 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       });
     }
 
-    // Ensure legacy users get sensible defaults (non-blocking: login still succeeds if this fails)
-    const updates = {};
-    if (!user.teamId) {
-      updates.teamId = crypto.randomUUID();
-      updates.teamRole = "owner";
-    }
-    if (!user.teamRole) updates.teamRole = "owner";
-    if (typeof user.allowedPages === "undefined") updates.allowedPages = null;
-    if (typeof user.allowedPropertyIds === "undefined") updates.allowedPropertyIds = null;
-
-    if (Object.keys(updates).length > 0) {
-      try {
-        if (updates.teamId && !user.teamId) {
-          await teamOps.create({
-            id: updates.teamId,
-            name: `${user.name || user.email.split("@")[0]}'s Team`,
-            ownerId: user.id,
-          });
-        }
-        user = await userOps.update(user.id, updates);
-      } catch (legacyErr) {
-        console.warn("Login: legacy user update failed (continuing with existing user):", legacyErr.message);
+    // Ensure user has org/team; non-blocking if provision fails
+    try {
+      const ctxCheck = await getMembershipContext(user.id);
+      if (!ctxCheck?.user?.teamId) {
+        const display = (user.name || user.email.split("@")[0] || "My").trim();
+        await provisionOrganizationWithTeam({
+          ownerUserId: user.id,
+          organizationName: `${display}'s Organization`,
+          teamName: `${display}'s Team`,
+        });
       }
+    } catch (legacyErr) {
+      console.warn("Login: org/team provision failed (continuing):", legacyErr.message);
     }
 
     if (!JWT_SECRET || typeof JWT_SECRET !== "string") {
@@ -262,41 +319,19 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
       return res.status(500).json({ message: "Server configuration error. Please try again later." });
     }
 
-    let teamName = null;
-    let effectivePlan = "free";
-    if (user.teamId) {
-      try {
-        const team = await teamOps.findById(user.teamId);
-        teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
-        if (team) effectivePlan = getEffectivePlan(team);
-      } catch (teamErr) {
-        console.warn("Login: team lookup failed:", teamErr.message);
-        teamName = `${user.name || user.email.split("@")[0]}'s Team`;
-      }
-    }
-    const planLimits = getPlanLimits(effectivePlan);
-    const maxInventoryItems = user.maxInventoryItems ?? (planLimits.maxInventoryItems ?? null);
+    const ctx = await ensureMembershipContext(user.id);
+    const authUser = ctx ? buildAuthUserPayload(ctx) : {
+      id: user.id,
+      email: user.email || "",
+      name: user.name || "",
+      teamId: null,
+      teamName: null,
+      teamRole: null,
+      memberships: [],
+    };
 
     const payload = {
-      user: {
-        id: user.id,
-        email: user.email || "",
-        name: user.name || "",
-        firstName: user.firstName ?? "",
-        lastName: user.lastName ?? "",
-        address: user.address ?? "",
-        streetAddress: user.streetAddress ?? "",
-        city: user.city ?? "",
-        province: user.province ?? "",
-        postalCode: user.postalCode ?? "",
-        phone: user.phone ?? "",
-        teamId: user.teamId ?? null,
-        teamName: teamName ?? null,
-        teamRole: user.teamRole ?? null,
-        maxInventoryItems,
-        allowedPages: user.allowedPages ?? null,
-        allowedPropertyIds: user.allowedPropertyIds ?? null,
-      },
+      user: authUser,
       token,
     };
 
@@ -360,6 +395,8 @@ const signupValidation = [
       return true;
     }),
   body("fullName").trim().notEmpty().withMessage("Full name is required"),
+  body("firstName").optional().trim(),
+  body("lastName").optional().trim(),
   body("address").optional().trim(),
   body("phoneNumber").optional().trim(),
   body("startProTrial").optional().toBoolean(),
@@ -374,7 +411,9 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       return res.status(400).json({ message: firstError.msg || "Validation failed" });
     }
 
-    const { email, password, fullName, address, phoneNumber, startProTrial: wantsProTrial, inviteToken } = req.body;
+    const { email, password, fullName, firstName, lastName, address, phoneNumber, inviteToken } = req.body;
+    const first = typeof firstName === "string" ? firstName.trim() || null : null;
+    const last = typeof lastName === "string" ? lastName.trim() || null : null;
 
     const existing = await userOps.findByEmail(email);
     if (existing) {
@@ -401,21 +440,17 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
           id: newUserId,
           email,
           name: fullName.trim(),
+          firstName: first,
+          lastName: last,
           password: hashedPassword,
           address: (address || "").trim() || null,
           phone: (phoneNumber || "").trim() || null,
           emailVerified: false,
           emailVerificationToken: verificationToken,
           emailVerificationExpiresAt: verificationExpiresAt,
-          teamId: null,
-          teamRole: null,
-          maxInventoryItems: null,
-          allowedPages: null,
-          allowedPropertyIds: null,
         });
 
-        await userOps.update(user.id, {
-          teamId: invitation.teamId,
+        await membershipOps.upsertForUserTeam(user.id, invitation.teamId, {
           teamRole: invitation.teamRole || "member",
           maxInventoryItems:
             typeof invitation.maxInventoryItems === "number" ? invitation.maxInventoryItems : null,
@@ -428,6 +463,7 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
               ? invitation.allowedPropertyIds
               : null,
         });
+        await userOps.update(user.id, { activeTeamId: invitation.teamId });
 
         await invitationOps.update(invitation.id, {
           status: "accepted",
@@ -448,70 +484,45 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       }
     }
 
-    // Normal signup: create new team and user as owner
-    const teamId = crypto.randomUUID();
-    const teamData = {
-      id: teamId,
-      name: `${fullName}'s Team`,
-      ownerId: newUserId,
-    };
-
-    await teamOps.create(teamData);
-
-    if (wantsProTrial === true) {
-      await startProTrial(teamId);
-      console.log(`[TRIAL] Started 14-day Pro trial for new team ${teamId}`);
-    }
-
-    // Free plan: 30 inventory items max; paid/trial: no limit (null)
+    // Normal signup: create org + team on Free plan (upgrade later from Settings)
     const freeLimits = getPlanLimits("free");
-    const userMaxInventoryItems = wantsProTrial === true ? null : (freeLimits.maxInventoryItems ?? null);
+    const userMaxInventoryItems = freeLimits.maxInventoryItems ?? null;
 
     const user = await userOps.create({
       id: newUserId,
       email,
       name: fullName.trim(),
+      firstName: first,
+      lastName: last,
       password: hashedPassword,
       address: (address || "").trim() || null,
       phone: (phoneNumber || "").trim() || null,
       emailVerified: false,
       emailVerificationToken: verificationToken,
       emailVerificationExpiresAt: verificationExpiresAt,
-      teamId,
-      teamRole: "owner",
-      maxInventoryItems: userMaxInventoryItems,
-      allowedPages: null,
-      allowedPropertyIds: null,
     });
+
+    const { organization, team } = await provisionOrganizationWithTeam({
+      ownerUserId: user.id,
+      organizationName: `${fullName.trim()}'s Organization`,
+      teamName: `${fullName.trim()}'s Team`,
+    });
+
+    // Always start on Free; upgrades happen later from Settings (BR-23).
+    if (userMaxInventoryItems != null) {
+      await membershipOps.upsertForUserTeam(user.id, team.id, {
+        teamRole: "owner",
+        maxInventoryItems: userMaxInventoryItems,
+      });
+    }
 
     await sendVerificationEmail(email, verificationToken, fullName.trim());
 
-    const responseMessage = wantsProTrial === true
-      ? "Account created with 14-day Pro trial! Please check your email to verify your address before signing in."
-      : "Account created. Please check your email to verify your address before signing in.";
-
-    let checkoutUrl = null;
-    if (wantsProTrial === true && isBillingConfigured()) {
-      try {
-        const base = (process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
-        const { url } = await createCheckoutSession({
-          teamId,
-          customerEmail: email,
-          successUrl: `${base}/login?trial_started=1`,
-          cancelUrl: `${base}/login?mode=signup&checkout=cancelled`,
-          plan: "pro",
-          billingPeriod: "monthly",
-          stripeTrialDays: 14,
-        });
-        checkoutUrl = url;
-      } catch (billingErr) {
-        console.error("Signup: could not create trial checkout session:", billingErr);
-      }
-    }
-
     res.status(201).json({
-      message: responseMessage,
-      ...(checkoutUrl && { checkoutUrl }),
+      message:
+        "Account created on the Free plan. Please check your email to verify your address before signing in.",
+      organizationId: organization.id,
+      teamId: team.id,
     });
   } catch (error) {
     console.error("Signup error:", error?.message || error);
@@ -544,191 +555,19 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
   }
 });
 
-// Pending signups: store signup data before Stripe checkout (TTL 30 min)
-const PENDING_SIGNUP_TTL_MS = 30 * 60 * 1000;
-const pendingSignups = new Map();
-
-function cleanupExpiredPendingSignups() {
-  const now = Date.now();
-  for (const [token, data] of pendingSignups.entries()) {
-    if (data.expiresAt < now) pendingSignups.delete(token);
-  }
-}
-setInterval(cleanupExpiredPendingSignups, 5 * 60 * 1000);
-
-const signupCheckoutValidation = [
-  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
-  body("password")
-    .isLength({ min: 8 })
-    .withMessage("Password must be at least 8 characters")
-    .custom((value) => {
-      const msg = passwordStrengthMessage(value);
-      if (msg) return Promise.reject(msg);
-      return true;
-    }),
-  body("fullName").trim().notEmpty().withMessage("Full name is required"),
-  body("address").optional().trim(),
-  body("phoneNumber").optional().trim(),
-];
-
-app.post("/api/auth/signup/checkout", signupRateLimiter, signupCheckoutValidation, async (req, res) => {
-  try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      const firstError = errors.array()[0];
-      return res.status(400).json({ message: firstError.msg || "Validation failed" });
-    }
-
-    const {
-      email,
-      password,
-      fullName,
-      address,
-      phoneNumber,
-      firstName,
-      lastName,
-      streetAddress,
-      city,
-      province,
-      postalCode,
-    } = req.body;
-
-    const existing = await userOps.findByEmail(email);
-    if (existing) {
-      return res.status(400).json({ message: "An account with this email already exists. Sign in or use a different email." });
-    }
-
-    if (!isBillingConfigured()) {
-      return res.status(503).json({ message: "Payment is not available right now. Please try again later." });
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 10);
-    const pendingToken = crypto.randomUUID();
-    pendingSignups.set(pendingToken, {
-      email,
-      hashedPassword,
-      fullName: fullName.trim(),
-      address: (address || "").trim() || null,
-      phoneNumber: (phoneNumber || "").trim() || null,
-      firstName: typeof firstName === "string" ? firstName.trim() || null : null,
-      lastName: typeof lastName === "string" ? lastName.trim() || null : null,
-      streetAddress: typeof streetAddress === "string" ? streetAddress.trim() || null : null,
-      city: typeof city === "string" ? city.trim() || null : null,
-      province: typeof province === "string" ? province.trim() || null : null,
-      postalCode: typeof postalCode === "string" ? postalCode.trim() || null : null,
-      expiresAt: Date.now() + PENDING_SIGNUP_TTL_MS,
-    });
-
-    const base = (process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/$/, "");
-    const successUrl = `${base}/signup-complete?pending=${encodeURIComponent(pendingToken)}&session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `${base}/login?mode=signup&checkout=cancelled`;
-
-    const plan = req.body.plan === "starter" ? "starter" : "pro";
-    const { url: checkoutUrl } = await createCheckoutSessionForNewSignup({
-      customerEmail: email,
-      successUrl,
-      cancelUrl,
-      plan,
-      metadata: { pendingToken },
-    });
-
-    res.status(200).json({ checkoutUrl });
-  } catch (error) {
-    console.error("Signup checkout error:", error?.message || error);
-    res.status(500).json({
-      message: error?.message || "Failed to start checkout. Please try again.",
-    });
-  }
+app.post("/api/auth/signup/checkout", signupRateLimiter, async (_req, res) => {
+  // Payment is no longer required at signup (BR-23). Keep endpoint for old clients.
+  return res.status(410).json({
+    message:
+      "Payment is no longer required to sign up. Create a free account, then upgrade from Settings after you sign in.",
+  });
 });
 
-app.post("/api/auth/signup/complete", async (req, res) => {
-  try {
-    const { pendingToken, sessionId } = req.body;
-    if (!pendingToken || !sessionId) {
-      return res.status(400).json({ message: "Missing pending token or session ID." });
-    }
-
-    const pending = pendingSignups.get(pendingToken);
-    if (!pending) {
-      return res.status(400).json({ message: "This signup link has expired. Please sign up again from the login page." });
-    }
-    if (pending.expiresAt < Date.now()) {
-      pendingSignups.delete(pendingToken);
-      return res.status(400).json({ message: "This signup link has expired. Please sign up again from the login page." });
-    }
-
-    if (!stripe) {
-      return res.status(503).json({ message: "Payment verification is not available. Please contact support." });
-    }
-
-    const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ["subscription"] });
-    const paymentOk = session.payment_status === "paid" || session.status === "complete";
-    if (!paymentOk) {
-      return res.status(400).json({ message: "Payment was not completed. Please complete payment to finish signup." });
-    }
-
-    const customerId = session.customer;
-    const subscriptionId =
-      typeof session.subscription === "string"
-        ? session.subscription
-        : session.subscription?.id;
-    const newUserId = crypto.randomUUID();
-    const teamId = crypto.randomUUID();
-    const verificationToken = crypto.randomUUID();
-    const verificationExpiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
-
-    await teamOps.create({
-      id: teamId,
-      name: `${pending.fullName}'s Team`,
-      ownerId: newUserId,
-      stripeCustomerId: typeof customerId === "string" ? customerId : customerId?.id ?? null,
-    });
-
-    await startProTrial(teamId);
-
-    await userOps.create({
-      id: newUserId,
-      email: pending.email,
-      name: pending.fullName,
-      password: pending.hashedPassword,
-      address: pending.address,
-      phone: pending.phoneNumber,
-      firstName: pending.firstName ?? null,
-      lastName: pending.lastName ?? null,
-      streetAddress: pending.streetAddress ?? null,
-      city: pending.city ?? null,
-      province: pending.province ?? null,
-      postalCode: pending.postalCode ?? null,
-      emailVerified: false,
-      emailVerificationToken: verificationToken,
-      emailVerificationExpiresAt: verificationExpiresAt,
-      teamId,
-      teamRole: "owner",
-      maxInventoryItems: null,
-      allowedPages: null,
-      allowedPropertyIds: null,
-    });
-
-    if (subscriptionId && typeof subscriptionId === "string") {
-      const planFromSession = session.metadata?.plan === "starter" ? "starter" : "pro";
-      try {
-        await stripe.subscriptions.update(subscriptionId, { metadata: { teamId, plan: planFromSession } });
-      } catch (subErr) {
-        console.error("Signup complete: could not update subscription metadata:", subErr?.message);
-      }
-    }
-
-    pendingSignups.delete(pendingToken);
-
-    await sendVerificationEmail(pending.email, verificationToken, pending.fullName);
-
-    res.status(200).json({ message: "Account created successfully. Check your email to verify your address, then sign in." });
-  } catch (error) {
-    console.error("Signup complete error:", error?.message || error);
-    res.status(500).json({
-      message: error?.message || "Could not complete signup. Please contact support.",
-    });
-  }
+app.post("/api/auth/signup/complete", async (_req, res) => {
+  return res.status(410).json({
+    message:
+      "Payment is no longer required to sign up. Create a free account from the login page, then upgrade from Settings.",
+  });
 });
 
 // Verify email: token from link in email
@@ -852,68 +691,11 @@ app.post("/api/auth/logout", authenticateToken, (req, res) => {
 
 app.get("/api/auth/me", authenticateToken, async (req, res) => {
   try {
-    let user = await userOps.findById(req.user.id);
-
-    if (!user) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx) {
       return res.status(404).json({ message: "User not found" });
     }
-
-    // Ensure legacy users have team/role defaults
-    const updates = {};
-    if (!user.teamId) {
-      const teamId = crypto.randomUUID();
-      await teamOps.create({
-        id: teamId,
-        name: `${user.name || user.email.split("@")[0]}'s Team`,
-        ownerId: user.id,
-      });
-      updates.teamId = teamId;
-    }
-    if (!user.teamRole) {
-      updates.teamRole = "owner";
-    }
-    if (typeof user.allowedPages === "undefined") {
-      updates.allowedPages = null;
-    }
-    if (typeof user.allowedPropertyIds === "undefined") {
-      updates.allowedPropertyIds = null;
-    }
-
-    if (Object.keys(updates).length > 0) {
-      user = await userOps.update(user.id, updates);
-    }
-
-    let teamName = null;
-    let effectivePlan = "free";
-    if (user.teamId) {
-      const team = await teamOps.findById(user.teamId);
-      teamName = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
-      if (team) effectivePlan = getEffectivePlan(team);
-    }
-
-    const planLimits = getPlanLimits(effectivePlan);
-    const maxInventoryItems =
-      user.maxInventoryItems ?? (planLimits.maxInventoryItems ?? null);
-
-    res.json({
-      id: user.id,
-      email: user.email,
-      name: user.name,
-      firstName: user.firstName ?? "",
-      lastName: user.lastName ?? "",
-      address: user.address ?? "",
-      streetAddress: user.streetAddress ?? "",
-      city: user.city ?? "",
-      province: user.province ?? "",
-      postalCode: user.postalCode ?? "",
-      phone: user.phone ?? "",
-      teamId: user.teamId,
-      teamName: teamName ?? null,
-      teamRole: user.teamRole,
-      maxInventoryItems,
-      allowedPages: user.allowedPages ?? null,
-      allowedPropertyIds: user.allowedPropertyIds ?? null,
-    });
+    res.json(buildAuthUserPayload(ctx));
   } catch (error) {
     console.error("Error fetching user:", error);
     res.status(500).json({ message: "Internal server error" });
@@ -922,7 +704,7 @@ app.get("/api/auth/me", authenticateToken, async (req, res) => {
 
 app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
   try {
-    const user = await userOps.findById(req.user.id);
+    const user = await loadCurrentUser(req);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
     }
@@ -956,37 +738,65 @@ app.patch("/api/auth/profile", authenticateToken, async (req, res) => {
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({ message: "No profile fields to update." });
     }
-    const updated = await userOps.update(user.id, updates);
-    let teamName = null;
-    if (updated.teamId) {
-      const team = await teamOps.findById(updated.teamId);
-      teamName = team?.name?.trim() || null;
-    }
-    res.json({
-      id: updated.id,
-      email: updated.email,
-      name: updated.name,
-      firstName: updated.firstName ?? "",
-      lastName: updated.lastName ?? "",
-      address: updated.address ?? "",
-      streetAddress: updated.streetAddress ?? "",
-      city: updated.city ?? "",
-      province: updated.province ?? "",
-      postalCode: updated.postalCode ?? "",
-      phone: updated.phone ?? "",
-      teamId: updated.teamId,
-      teamName: teamName ?? null,
-      teamRole: updated.teamRole,
-      maxInventoryItems: updated.maxInventoryItems ?? null,
-      allowedPages: updated.allowedPages ?? null,
-      allowedPropertyIds: updated.allowedPropertyIds ?? null,
-    });
+    await userOps.update(user.id, updates);
+    const ctx = await ensureMembershipContext(user.id);
+    res.json(buildAuthUserPayload(ctx));
   } catch (error) {
     console.error("Error updating profile:", error);
     res.status(500).json({ message: "Error updating profile" });
   }
 });
 
+app.post("/api/me/active-team", authenticateToken, async (req, res) => {
+  try {
+    const teamId = typeof req.body?.teamId === "string" ? req.body.teamId.trim() : "";
+    if (!teamId) {
+      return res.status(400).json({ message: "teamId is required" });
+    }
+    const membership = await membershipOps.findByUserAndTeam(req.user.id, teamId);
+    if (!membership) {
+      return res.status(403).json({ message: "You are not a member of that team" });
+    }
+    await userOps.update(req.user.id, { activeTeamId: teamId });
+    const ctx = await ensureMembershipContext(req.user.id);
+    res.json(buildAuthUserPayload(ctx));
+  } catch (error) {
+    console.error("Error switching active team:", error);
+    res.status(500).json({ message: "Error switching team" });
+  }
+});
+
+app.post("/api/organizations/:orgId/teams", authenticateToken, async (req, res) => {
+  try {
+    const orgId = req.params.orgId;
+    const org = await organizationOps.findById(orgId);
+    if (!org) {
+      return res.status(404).json({ message: "Organization not found" });
+    }
+    if (org.ownerId !== req.user.id) {
+      return res.status(403).json({ message: "Only the organization owner can create teams" });
+    }
+    const name =
+      typeof req.body?.name === "string" && req.body.name.trim()
+        ? req.body.name.trim()
+        : "New Team";
+    const team = await teamOps.create({
+      name,
+      ownerId: req.user.id,
+      organizationId: org.id,
+    });
+    await membershipOps.upsertForUserTeam(req.user.id, team.id, { teamRole: "owner" });
+    await userOps.update(req.user.id, { activeTeamId: team.id });
+    const ctx = await ensureMembershipContext(req.user.id);
+    res.status(201).json({
+      team: { id: team.id, name: team.name, organizationId: team.organizationId },
+      user: buildAuthUserPayload(ctx),
+    });
+  } catch (error) {
+    console.error("Error creating team:", error);
+    res.status(500).json({ message: "Error creating team" });
+  }
+});
 // Simple helper for page-level access control
 const userHasPageAccess = (user, pageKey) => {
   if (!user) return false;
@@ -1006,7 +816,7 @@ const userCanReadInventory = (user) =>
 // Get current team's properties
 app.get("/api/properties", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "User does not belong to a team." });
     }
@@ -1023,7 +833,7 @@ app.get("/api/properties", authenticateToken, async (req, res) => {
 // enforcing plan-based maxProperties limits.
 app.post("/api/properties", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "User does not belong to a team." });
@@ -1041,30 +851,30 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Team not found." });
     }
 
-    // Check if trial has expired and downgrade if needed
-    if (team.isOnTrial && isTrialExpired(team)) {
-      await prisma.team.update({
-        where: { id: team.id },
-        data: {
-          plan: 'free',
-          isOnTrial: false,
-          trialEndsAt: null,
-          trialPlan: null,
-          maxProperties: 1,
-        },
-      });
-      team.plan = 'free';
-      team.isOnTrial = false;
-      team.maxProperties = 1;
-      console.log(`[TRIAL] Auto-downgraded team ${team.id} from expired trial`);
+    let organization = await organizationOps.findById(team.organizationId);
+    if (!organization) {
+      return res.status(404).json({ message: "Organization not found." });
     }
 
-    // Use trial manager to check property limits
+    // Check if trial has expired and downgrade if needed
+    if (organization.isOnTrial && isTrialExpired(organization)) {
+      await organizationOps.update(organization.id, {
+        plan: "free",
+        isOnTrial: false,
+        trialEndsAt: null,
+        trialPlan: null,
+        maxProperties: 1,
+      });
+      organization = await organizationOps.findById(organization.id);
+      console.log(`[TRIAL] Auto-downgraded organization ${organization.id} from expired trial`);
+    }
+
+    // Use trial manager to check property limits (org plan, team property count)
     const currentCount = await propertyOps.countByTeam(team.id);
-    const propertyCheck = canCreateProperty(team, currentCount);
+    const propertyCheck = canCreateProperty(organization, currentCount);
 
     if (!propertyCheck.canCreate) {
-      const effectivePlan = getEffectivePlan(team);
+      const effectivePlan = getEffectivePlan(organization);
       return res.status(403).json({
         message:
           effectivePlan === "free"
@@ -1096,7 +906,7 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
 
 app.put("/api/properties/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser?.teamId) {
       return res.status(400).json({ message: "You do not belong to a team." });
     }
@@ -1119,7 +929,7 @@ app.put("/api/properties/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser?.teamId) {
       return res.status(400).json({ message: "You do not belong to a team." });
     }
@@ -1145,12 +955,12 @@ app.post("/api/billing/create-checkout-session", authenticateToken, async (req, 
     if (!isBillingConfigured()) {
       return res.status(503).json({ message: "Billing is not configured. Contact support." });
     }
-    const currentUser = await userOps.findById(req.user.id);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "You must belong to a team to upgrade." });
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.organizationId) {
+      return res.status(400).json({ message: "You must belong to an organization to upgrade." });
     }
-    if (currentUser.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can manage billing." });
+    if (!currentUser.isOrgOwner) {
+      return res.status(403).json({ message: "Only the organization owner can manage billing." });
     }
     const base = (APP_URL || "").replace(/\/$/, "");
     const successUrl = req.body.successUrl || `${base}/dashboard?checkout=success`;
@@ -1159,7 +969,7 @@ app.post("/api/billing/create-checkout-session", authenticateToken, async (req, 
     const billingPeriod = req.body.billingPeriod === "annual" ? "annual" : "monthly";
     const stripeTrialDays = typeof req.body.stripeTrialDays === "number" ? req.body.stripeTrialDays : 14;
     const { url } = await createCheckoutSession({
-      teamId: currentUser.teamId,
+      organizationId: currentUser.organizationId,
       customerEmail: currentUser.email,
       successUrl,
       cancelUrl,
@@ -1179,15 +989,14 @@ app.post("/api/billing/customer-portal", authenticateToken, async (req, res) => 
     if (!isBillingConfigured()) {
       return res.status(503).json({ message: "Billing is not configured. Contact support." });
     }
-    const currentUser = await userOps.findById(req.user.id);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "You must belong to a team." });
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.organizationId) {
+      return res.status(400).json({ message: "You must belong to an organization." });
     }
-    if (currentUser.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can manage billing." });
+    if (!currentUser.isOrgOwner) {
+      return res.status(403).json({ message: "Only the organization owner can manage billing." });
     }
-    const teamId = currentUser.teamId;
-    const customerId = await ensureTeamStripeCustomer(teamId, currentUser.email);
+    const customerId = await ensureOrgStripeCustomer(currentUser.organizationId, currentUser.email);
     const base = (APP_URL || "").replace(/\/$/, "");
     const returnUrl = req.body.returnUrl || `${base}/settings`;
     const { url } = await createCustomerPortalSession({
@@ -1204,23 +1013,23 @@ app.post("/api/billing/customer-portal", authenticateToken, async (req, res) => 
 /** Set extra user slots (Starter: 0–2, Pro: 0–3). $5/mo per slot. Requires STRIPE_EXTRA_USER_PRICE_ID. */
 app.patch("/api/billing/extra-user", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "You must belong to a team." });
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.organizationId) {
+      return res.status(400).json({ message: "You must belong to an organization." });
     }
-    if (currentUser.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can manage extra user slots." });
+    if (!currentUser.isOrgOwner) {
+      return res.status(403).json({ message: "Only the organization owner can manage extra user slots." });
     }
-    const team = await teamOps.findById(currentUser.teamId);
-    if (!team) return res.status(404).json({ message: "Team not found." });
-    const effectivePlan = getEffectivePlan(team);
+    const org = await organizationOps.findById(currentUser.organizationId);
+    if (!org) return res.status(404).json({ message: "Organization not found." });
+    const effectivePlan = getEffectivePlan(org);
     const limits = getPlanLimits(effectivePlan);
     if (limits.baseMaxUsers == null) {
       return res.status(400).json({ message: "Extra user slots are only for Starter and Pro plans." });
     }
     const maxExtra = limits.maxExtraUserSlots ?? 0;
-    const quantity = typeof req.body.quantity === "number" ? Math.max(0, Math.min(maxExtra, Math.floor(req.body.quantity))) : (team.extraUserSlots ?? 0);
-    const result = await updateExtraUserSlots(currentUser.teamId, quantity);
+    const quantity = typeof req.body.quantity === "number" ? Math.max(0, Math.min(maxExtra, Math.floor(req.body.quantity))) : (org.extraUserSlots ?? 0);
+    const result = await updateExtraUserSlots(currentUser.organizationId, quantity);
     res.json(result);
   } catch (error) {
     console.error("Extra user slots error:", error);
@@ -1232,7 +1041,7 @@ app.patch("/api/billing/extra-user", authenticateToken, async (req, res) => {
 
 app.get("/api/inventory", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userCanReadInventory(currentUser)) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
@@ -1296,7 +1105,7 @@ async function logMovement(teamId, inventoryItemId, quantityDelta, movementType,
 
 app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userCanReadInventory(currentUser)) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
@@ -1333,7 +1142,7 @@ app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
 
 app.post("/api/inventory", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
@@ -1406,7 +1215,7 @@ app.post("/api/inventory", authenticateToken, async (req, res) => {
 
 app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
@@ -1489,7 +1298,7 @@ app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
 
 app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
@@ -1548,7 +1357,7 @@ app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     const item = await inventoryOps.findById(req.params.id);
     if (!item) {
       return res.status(404).json({ message: "Item not found" });
@@ -1567,7 +1376,7 @@ app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/inventory", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     const teamPropertyIds =
       currentUser?.teamId ?
         (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
@@ -1584,7 +1393,7 @@ app.delete("/api/inventory", authenticateToken, async (req, res) => {
 
 app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
@@ -1674,7 +1483,7 @@ app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
 
 app.get("/api/reports/movements", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Reports." });
     }
@@ -1709,7 +1518,7 @@ app.get("/api/reports/movements", authenticateToken, async (req, res) => {
 
 app.get("/api/reports/summary", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "inventory")) {
       return res.status(403).json({ message: "You do not have access to Reports." });
     }
@@ -1743,7 +1552,7 @@ app.get("/api/reports/summary", authenticateToken, async (req, res) => {
 
 app.get("/api/clients", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     // Allow list for Clients access OR Inventory access (so inventory members can pick client when billing from +/-)
     const canListClients =
@@ -1765,7 +1574,7 @@ app.get("/api/clients", authenticateToken, async (req, res) => {
 
 app.get("/api/clients/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
@@ -1788,7 +1597,7 @@ app.get("/api/clients/:id", authenticateToken, async (req, res) => {
 
 app.post("/api/clients", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
@@ -1806,7 +1615,7 @@ app.post("/api/clients", authenticateToken, async (req, res) => {
 
 app.put("/api/clients/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
@@ -1830,7 +1639,7 @@ app.put("/api/clients/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/clients/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "clients")) {
       return res.status(403).json({ message: "You do not have access to Clients." });
@@ -1856,7 +1665,7 @@ app.delete("/api/clients/:id", authenticateToken, async (req, res) => {
 
 app.get("/api/invoices", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
@@ -1875,7 +1684,7 @@ app.get("/api/invoices", authenticateToken, async (req, res) => {
 
 app.get("/api/invoices/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
@@ -1898,7 +1707,7 @@ app.get("/api/invoices/:id", authenticateToken, async (req, res) => {
 
 app.post("/api/invoices", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     // Allow create for users with Invoices access OR Inventory access (bill-to-client from +/- on inventory)
     const canCreateInvoice =
@@ -1966,7 +1775,7 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
 
 app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
@@ -2057,7 +1866,7 @@ app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
@@ -2081,7 +1890,7 @@ app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
 
 app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
     }
@@ -2106,7 +1915,11 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
       });
     }
     const team = currentUser.teamId ? await teamOps.findById(currentUser.teamId) : null;
-    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice, team);
+    const branding =
+      team?.organizationId
+        ? await organizationOps.findById(team.organizationId)
+        : null;
+    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice, branding);
     if (!sent) {
       return res.status(500).json({
         message: "Failed to send email. Check server email configuration (Resend or SMTP).",
@@ -2258,7 +2071,7 @@ const syncInvoiceForClient = async (teamId, clientId) => {
 
 app.get("/api/sales", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
@@ -2277,7 +2090,7 @@ app.get("/api/sales", authenticateToken, async (req, res) => {
 
 app.get("/api/sales/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
@@ -2300,7 +2113,7 @@ app.get("/api/sales/:id", authenticateToken, async (req, res) => {
 
 app.post("/api/sales", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
@@ -2399,7 +2212,7 @@ app.post("/api/sales", authenticateToken, async (req, res) => {
 
 app.put("/api/sales/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
@@ -2498,7 +2311,7 @@ app.put("/api/sales/:id", authenticateToken, async (req, res) => {
 
 app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
 
     if (!userHasPageAccess(currentUser, "sales")) {
       return res.status(403).json({ message: "You do not have access to Sales." });
@@ -2568,20 +2381,16 @@ app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
 // Get team property limit (no settings access required – used by Inventory page)
 app.get("/api/team/limits", authenticateToken, async (req, res) => {
   try {
-    const user = await userOps.findById(req.user.id);
-    if (!user || !user.teamId) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx?.team || !ctx.organization) {
       return res.status(404).json({ message: "Team not found for user" });
     }
-    const team = await teamOps.findById(user.teamId);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
-    }
-    const effectivePlan = getEffectivePlan(team);
+    const effectivePlan = getEffectivePlan(ctx.organization);
     const planLimits = getPlanLimits(effectivePlan);
-    const effectiveMaxUsers = getEffectiveMaxUsers(team);
+    const effectiveMaxUsers = getEffectiveMaxUsers(ctx.organization);
     res.json({
       effectiveMaxProperties: planLimits.maxProperties,
-      effectiveMaxUsers, // null = unlimited, number = cap (Starter: 3 + extra slots)
+      effectiveMaxUsers,
       effectivePlan,
     });
   } catch (error) {
@@ -2590,15 +2399,15 @@ app.get("/api/team/limits", authenticateToken, async (req, res) => {
   }
 });
 
-// Get current team name only (no settings access – used by header so name updates everywhere)
 app.get("/api/team/name", authenticateToken, async (req, res) => {
   try {
-    const user = await userOps.findById(req.user.id);
-    if (!user || !user.teamId) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx?.user) {
       return res.status(404).json({ message: "Team not found for user" });
     }
-    const team = await teamOps.findById(user.teamId);
-    const name = team?.name?.trim() || `${user.name || user.email.split("@")[0]}'s Team`;
+    const name =
+      ctx.team?.name?.trim() ||
+      `${ctx.user.name || ctx.user.email.split("@")[0]}'s Team`;
     res.json({ name });
   } catch (error) {
     console.error("Error fetching team name:", error);
@@ -2606,42 +2415,45 @@ app.get("/api/team/name", authenticateToken, async (req, res) => {
   }
 });
 
-// Get team details, members and invitations for the current user
 app.get("/api/team", authenticateToken, async (req, res) => {
   try {
-    const user = await userOps.findById(req.user.id);
-
-    if (!user || !user.teamId) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    const user = ctx?.user;
+    if (!user?.teamId || !ctx.team || !ctx.organization) {
       return res.status(404).json({ message: "Team not found for user" });
     }
-
     if (!userHasPageAccess(user, "settings")) {
       return res.status(403).json({ message: "You do not have access to Settings." });
     }
 
-    const team = await teamOps.findById(user.teamId);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
-    }
-
-    const members = await userOps.findAllByTeam(user.teamId);
+    const team = ctx.team;
+    const org = ctx.organization;
+    const membershipRows = await membershipOps.findAllByTeam(team.id);
     const currentUserId = req.user.id;
-    // Personal data (name, email) only for the current user; teammates get role/access only
-    const membersFormatted = members.map((u) => {
+    const isOrgOwner = org.ownerId === user.id;
+    const canSeeMemberPii = user.teamRole === "owner" || isOrgOwner;
+    const membersFormatted = membershipRows.map((m) => {
+      const u = m.user;
       const base = {
         id: u.id,
-        teamRole: u.teamRole || (u.id === team.ownerId ? "owner" : "member"),
-        maxInventoryItems: u.maxInventoryItems ?? null,
-        allowedPages: u.allowedPages ?? null,
-        allowedPropertyIds: u.allowedPropertyIds ?? null,
+        teamRole: m.teamRole || (u.id === team.ownerId ? "owner" : "member"),
+        maxInventoryItems: m.maxInventoryItems ?? null,
+        allowedPages: m.allowedPages ?? null,
+        allowedPropertyIds: m.allowedPropertyIds ?? null,
       };
-      if (u.id === currentUserId) {
-        return { ...base, email: u.email, name: u.name };
+      if (u.id === currentUserId || canSeeMemberPii) {
+        return {
+          ...base,
+          email: u.email,
+          name: u.name,
+          firstName: u.firstName ?? null,
+          lastName: u.lastName ?? null,
+        };
       }
       return { ...base, isTeammate: true };
     });
 
-    const invitations = await invitationOps.findAllByTeam(user.teamId);
+    const invitations = await invitationOps.findAllByTeam(team.id);
     const invitationsFormatted = invitations.map((inv) => ({
       id: inv.id,
       email: inv.email,
@@ -2655,46 +2467,83 @@ app.get("/api/team", authenticateToken, async (req, res) => {
       allowedPropertyIds: inv.allowedPropertyIds ?? null,
     }));
 
-    // Count properties for basic plan/usage info
     const propertyCount = await propertyOps.countByTeam(team.id);
-    
-    // Get trial status
-    const trialStatus = getTrialStatus(team);
-    const effectivePlan = getEffectivePlan(team);
+    const trialStatus = getTrialStatus(org);
+    const effectivePlan = getEffectivePlan(org);
     const planLimits = getPlanLimits(effectivePlan);
     const effectiveMaxProperties = planLimits.maxProperties;
-    const effectiveMaxUsers = getEffectiveMaxUsers(team);
+    const effectiveMaxUsers = getEffectiveMaxUsers(org);
 
-    // Parse invoice style JSON for frontend
     let invoiceStyle = null;
-    if (team.invoiceStyle) {
+    if (org.invoiceStyle) {
       try {
-        invoiceStyle = typeof team.invoiceStyle === "string" ? JSON.parse(team.invoiceStyle) : team.invoiceStyle;
+        invoiceStyle =
+          typeof org.invoiceStyle === "string" ? JSON.parse(org.invoiceStyle) : org.invoiceStyle;
       } catch (_) {}
     }
+
+    const orgOwnerUser = org.ownerId ? await userOps.findById(org.ownerId) : null;
+    const orgOwners = orgOwnerUser
+      ? [
+          {
+            id: orgOwnerUser.id,
+            name:
+              orgOwnerUser.name ||
+              [orgOwnerUser.firstName, orgOwnerUser.lastName].filter(Boolean).join(" ").trim() ||
+              null,
+            email: orgOwnerUser.email,
+            firstName: orgOwnerUser.firstName ?? null,
+            lastName: orgOwnerUser.lastName ?? null,
+          },
+        ]
+      : [];
+
+    const orgTeams = await teamOps.findAllByOrganization(org.id);
+    const userMemberships = await membershipOps.findAllByUser(user.id);
+    const membershipByTeamId = new Map(userMemberships.map((m) => [m.teamId, m]));
+    const organizationTeams = [];
+    for (const t of orgTeams) {
+      const memberCount = await membershipOps.countByTeam(t.id);
+      const myMembership = membershipByTeamId.get(t.id);
+      organizationTeams.push({
+        id: t.id,
+        name: t.name,
+        memberCount,
+        isActive: t.id === team.id,
+        isMember: Boolean(myMembership),
+        myTeamRole: myMembership?.teamRole ?? null,
+      });
+    }
+
     res.json({
       team: {
         id: team.id,
         name: team.name,
         ownerId: team.ownerId,
-        plan: team.plan || "free",
-        effectivePlan, // The actual plan considering trial status
-        maxProperties: team.maxProperties,
-        effectiveMaxProperties, // Limit for current plan/trial (Pro trial = 10, Starter trial = 3, etc.)
-        extraUserSlots: team.extraUserSlots ?? 0, // Starter: 0–2 extra users at $5/mo each
-        effectiveMaxUsers, // null = unlimited; Starter: 3 + extraUserSlots
+        organizationId: org.id,
+        organizationName: org.name,
+        isOrgOwner,
+        plan: org.plan || "free",
+        effectivePlan,
+        maxProperties: org.maxProperties,
+        effectiveMaxProperties,
+        extraUserSlots: org.extraUserSlots ?? 0,
+        effectiveMaxUsers,
         propertyCount,
-        billingInterval: team.billingInterval || null, // "month" | "year" from Stripe
-        // Trial information
-        isOnTrial: team.isOnTrial || false,
-        trialEndsAt: team.trialEndsAt,
+        billingInterval: org.billingInterval || null,
+        isOnTrial: org.isOnTrial || false,
+        trialEndsAt: org.trialEndsAt,
         trialStatus,
-        // Billing: true if team has Stripe customer (can open portal to manage subscription)
-        billingPortalAvailable: Boolean(team.stripeCustomerId),
-        // Invoice email branding
-        invoiceLogoUrl: team.invoiceLogoUrl ?? null,
+        billingPortalAvailable: Boolean(org.stripeCustomerId),
+        invoiceLogoUrl: org.invoiceLogoUrl ?? null,
         invoiceStyle,
       },
+      organization: {
+        id: org.id,
+        name: org.name,
+        owners: orgOwners,
+      },
+      organizationTeams,
       members: membersFormatted,
       invitations: invitationsFormatted,
     });
@@ -2704,52 +2553,86 @@ app.get("/api/team", authenticateToken, async (req, res) => {
   }
 });
 
-// Update team (name and/or invoice style; owner only)
+// Update team name (team owner) and/or org invoice branding (org owner)
 app.patch("/api/team", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
-    if (!currentUser || !currentUser.teamId) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    const currentUser = ctx?.user;
+    if (!currentUser?.teamId || !ctx.team || !ctx.organization) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
-    if (currentUser.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can update team settings" });
-    }
-    const team = await teamOps.findById(currentUser.teamId);
-    const updates = {};
+
+    const teamUpdates = {};
+    const orgUpdates = {};
+
     if (typeof req.body.name === "string" && req.body.name.trim()) {
-      updates.name = req.body.name.trim();
+      if (currentUser.teamRole !== "owner") {
+        return res.status(403).json({ message: "Only team owners can rename the team" });
+      }
+      teamUpdates.name = req.body.name.trim();
     }
-    if (req.body.invoiceLogoUrl !== undefined) {
-      updates.invoiceLogoUrl =
-        req.body.invoiceLogoUrl == null || req.body.invoiceLogoUrl === ""
-          ? null
-          : String(req.body.invoiceLogoUrl).trim() || null;
+
+    if (typeof req.body.organizationName === "string" && req.body.organizationName.trim()) {
+      if (!currentUser.isOrgOwner) {
+        return res.status(403).json({ message: "Only the organization owner can rename the organization" });
+      }
+      orgUpdates.name = req.body.organizationName.trim();
     }
-    if (req.body.invoiceStyle !== undefined) {
-      updates.invoiceStyle =
-        req.body.invoiceStyle == null
-          ? null
-          : typeof req.body.invoiceStyle === "string"
-            ? req.body.invoiceStyle
-            : JSON.stringify(req.body.invoiceStyle);
+
+    if (req.body.invoiceLogoUrl !== undefined || req.body.invoiceStyle !== undefined) {
+      if (!currentUser.isOrgOwner) {
+        return res.status(403).json({ message: "Only the organization owner can update invoice branding" });
+      }
+      if (req.body.invoiceLogoUrl !== undefined) {
+        orgUpdates.invoiceLogoUrl =
+          req.body.invoiceLogoUrl == null || req.body.invoiceLogoUrl === ""
+            ? null
+            : String(req.body.invoiceLogoUrl).trim() || null;
+      }
+      if (req.body.invoiceStyle !== undefined) {
+        orgUpdates.invoiceStyle =
+          req.body.invoiceStyle == null
+            ? null
+            : typeof req.body.invoiceStyle === "string"
+              ? req.body.invoiceStyle
+              : JSON.stringify(req.body.invoiceStyle);
+      }
     }
-    if (Object.keys(updates).length === 0) {
+
+    if (Object.keys(teamUpdates).length === 0 && Object.keys(orgUpdates).length === 0) {
       return res.status(400).json({ message: "No valid updates provided" });
     }
-    await teamOps.update(currentUser.teamId, updates);
-    const updated = await teamOps.findById(currentUser.teamId);
+
+    if (Object.keys(teamUpdates).length > 0) {
+      await teamOps.update(currentUser.teamId, teamUpdates);
+    }
+    if (Object.keys(orgUpdates).length > 0) {
+      await organizationOps.update(ctx.organization.id, orgUpdates);
+    }
+
+    const updatedTeam = await teamOps.findById(currentUser.teamId);
+    const updatedOrg = await organizationOps.findById(ctx.organization.id);
     let invoiceStyle = null;
-    if (updated.invoiceStyle) {
+    if (updatedOrg.invoiceStyle) {
       try {
-        invoiceStyle = typeof updated.invoiceStyle === "string" ? JSON.parse(updated.invoiceStyle) : updated.invoiceStyle;
+        invoiceStyle =
+          typeof updatedOrg.invoiceStyle === "string"
+            ? JSON.parse(updatedOrg.invoiceStyle)
+            : updatedOrg.invoiceStyle;
       } catch (_) {}
     }
     res.json({
       team: {
-        id: updated.id,
-        name: updated.name,
-        invoiceLogoUrl: updated.invoiceLogoUrl ?? null,
+        id: updatedTeam.id,
+        name: updatedTeam.name,
+        organizationId: updatedOrg.id,
+        organizationName: updatedOrg.name,
+        invoiceLogoUrl: updatedOrg.invoiceLogoUrl ?? null,
         invoiceStyle,
+      },
+      organization: {
+        id: updatedOrg.id,
+        name: updatedOrg.name,
       },
     });
   } catch (error) {
@@ -2758,7 +2641,6 @@ app.patch("/api/team", authenticateToken, async (req, res) => {
   }
 });
 
-// Create an invitation for the current user's team
 app.post("/api/team/invitations", authenticateToken, async (req, res) => {
   try {
     const {
@@ -2773,30 +2655,25 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Email is required" });
     }
 
-    const currentUser = await userOps.findById(req.user.id);
-
-    if (!currentUser || !currentUser.teamId) {
+    const ctx = await ensureMembershipContext(req.user.id);
+    const currentUser = ctx?.user;
+    if (!currentUser?.teamId || !ctx.team || !ctx.organization) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
-
     if (!userHasPageAccess(currentUser, "settings")) {
       return res.status(403).json({ message: "You do not have access to Settings." });
     }
-
     if (currentUser.teamRole !== "owner") {
       return res.status(403).json({ message: "Only team owners can invite new members" });
     }
 
-    const team = await teamOps.findById(currentUser.teamId);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
-    }
-
-    const effectivePlan = getEffectivePlan(team);
-    const effectiveMaxUsers = getEffectiveMaxUsers(team);
+    const team = ctx.team;
+    const org = ctx.organization;
+    const effectivePlan = getEffectivePlan(org);
+    const effectiveMaxUsers = getEffectiveMaxUsers(org);
     if (effectiveMaxUsers !== null) {
-      const members = await userOps.findAllByTeam(currentUser.teamId);
-      if (members.length >= effectiveMaxUsers) {
+      const memberCount = await membershipOps.countByTeam(currentUser.teamId);
+      if (memberCount >= effectiveMaxUsers) {
         const msg =
           effectiveMaxUsers === 1
             ? "Free plan allows only 1 user. Upgrade to Starter or Pro to add team members."
@@ -2808,8 +2685,7 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
     }
 
     const now = new Date();
-    const expiresAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 14 days
-
+    const expiresAt = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000);
     const normalisedAllowedPages =
       Array.isArray(allowedPages) && allowedPages.length > 0 ? allowedPages : null;
     const normalisedAllowedPropertyIds =
@@ -2854,7 +2730,6 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
   }
 });
 
-// Accept an invitation using its token – the currently authenticated user is added to the team
 app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => {
   try {
     const { token } = req.body || {};
@@ -2863,11 +2738,9 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
     }
 
     const invitation = await invitationOps.findByToken(token);
-
     if (!invitation) {
       return res.status(404).json({ message: "Invitation not found" });
     }
-
     if (invitation.status !== "pending") {
       return res.status(400).json({ message: "Invitation is no longer valid" });
     }
@@ -2878,49 +2751,49 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
       return res.status(400).json({ message: "Invitation has expired" });
     }
 
-    const user = await userOps.findById(req.user.id);
-    if (!user) {
+    const rawUser = await userOps.findById(req.user.id);
+    if (!rawUser) {
       return res.status(404).json({ message: "User not found" });
     }
-
-    if (user.email.toLowerCase() !== invitation.email.toLowerCase()) {
+    if (rawUser.email.toLowerCase() !== invitation.email.toLowerCase()) {
       return res.status(403).json({
-        message: "This invitation was sent to a different email address. Sign in with the email that received the invite.",
+        message:
+          "This invitation was sent to a different email address. Sign in with the email that received the invite.",
       });
     }
 
-    // Associate user with the team and apply limits/role/access from invitation
-    const updatedUser = await userOps.update(user.id, {
-      teamId: invitation.teamId,
+    await membershipOps.upsertForUserTeam(rawUser.id, invitation.teamId, {
       teamRole: invitation.teamRole || "member",
       maxInventoryItems:
-        typeof invitation.maxInventoryItems === "number"
-          ? invitation.maxInventoryItems
-          : user.maxInventoryItems ?? null,
+        typeof invitation.maxInventoryItems === "number" ? invitation.maxInventoryItems : null,
       allowedPages:
         Array.isArray(invitation.allowedPages) && invitation.allowedPages.length > 0
           ? invitation.allowedPages
-          : user.allowedPages ?? null,
+          : null,
       allowedPropertyIds:
-        Array.isArray(invitation.allowedPropertyIds) &&
-        invitation.allowedPropertyIds.length > 0
+        Array.isArray(invitation.allowedPropertyIds) && invitation.allowedPropertyIds.length > 0
           ? invitation.allowedPropertyIds
-          : user.allowedPropertyIds ?? null,
+          : null,
     });
+
+    if (!rawUser.activeTeamId) {
+      await userOps.update(rawUser.id, { activeTeamId: invitation.teamId });
+    } else {
+      await userOps.update(rawUser.id, { activeTeamId: invitation.teamId });
+    }
 
     await invitationOps.update(invitation.id, {
       status: "accepted",
       acceptedAt: now,
-      acceptedByUserId: user.id,
+      acceptedByUserId: rawUser.id,
     });
 
+    const ctx = await ensureMembershipContext(rawUser.id);
     res.json({
       message: "Invitation accepted successfully",
-      teamId: updatedUser.teamId,
-      teamRole: updatedUser.teamRole,
-      maxInventoryItems: updatedUser.maxInventoryItems,
-      allowedPages: updatedUser.allowedPages ?? null,
-      allowedPropertyIds: updatedUser.allowedPropertyIds ?? null,
+      user: buildAuthUserPayload(ctx),
+      teamId: invitation.teamId,
+      teamRole: invitation.teamRole || "member",
     });
   } catch (error) {
     console.error("Error accepting invitation:", error);
@@ -2928,10 +2801,9 @@ app.post("/api/team/invitations/accept", authenticateToken, async (req, res) => 
   }
 });
 
-// Update a team member's role and access (owner only; cannot edit self if owner)
 app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
@@ -2942,22 +2814,24 @@ app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
     if (targetUserId === currentUser.id) {
       return res.status(400).json({ message: "You cannot edit your own role from here" });
     }
-    const targetUser = await userOps.findById(targetUserId);
-    if (!targetUser || targetUser.teamId !== currentUser.teamId) {
+    const membership = await membershipOps.findByUserAndTeam(targetUserId, currentUser.teamId);
+    if (!membership) {
       return res.status(404).json({ message: "Member not found in your team" });
     }
     const { teamRole, maxInventoryItems, allowedPages, allowedPropertyIds } = req.body || {};
     const updates = {};
     if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
-    if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
+    if (typeof maxInventoryItems === "number" || maxInventoryItems === null) {
+      updates.maxInventoryItems = maxInventoryItems;
+    }
     if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
     if (Array.isArray(allowedPropertyIds)) updates.allowedPropertyIds = allowedPropertyIds;
-    await userOps.update(targetUserId, updates);
-    const updated = await userOps.findById(targetUserId);
+    const updated = await membershipOps.update(membership.id, updates);
+    const targetUser = await userOps.findById(targetUserId);
     res.json({
-      id: updated.id,
-      email: updated.email,
-      name: updated.name,
+      id: targetUser.id,
+      email: targetUser.email,
+      name: targetUser.name,
       teamRole: updated.teamRole,
       maxInventoryItems: updated.maxInventoryItems ?? null,
       allowedPages: updated.allowedPages ?? null,
@@ -2969,10 +2843,9 @@ app.patch("/api/team/members/:userId", authenticateToken, async (req, res) => {
   }
 });
 
-// Remove a member from the team (owner only; cannot remove self)
 app.delete("/api/team/members/:userId", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
@@ -2983,11 +2856,18 @@ app.delete("/api/team/members/:userId", authenticateToken, async (req, res) => {
     if (targetUserId === currentUser.id) {
       return res.status(400).json({ message: "You cannot remove yourself from the team" });
     }
-    const targetUser = await userOps.findById(targetUserId);
-    if (!targetUser || targetUser.teamId !== currentUser.teamId) {
+    const membership = await membershipOps.findByUserAndTeam(targetUserId, currentUser.teamId);
+    if (!membership) {
       return res.status(404).json({ message: "Member not found in your team" });
     }
-    await userOps.update(targetUserId, { teamId: null, teamRole: null, maxInventoryItems: null, allowedPages: null, allowedPropertyIds: null });
+    await membershipOps.deleteByUserAndTeam(targetUserId, currentUser.teamId);
+    const target = await userOps.findById(targetUserId);
+    if (target?.activeTeamId === currentUser.teamId) {
+      const remaining = await membershipOps.findAllByUser(targetUserId);
+      await userOps.update(targetUserId, {
+        activeTeamId: remaining[0]?.teamId ?? null,
+      });
+    }
     res.json({ message: "Member removed from team" });
   } catch (error) {
     console.error("Error removing member:", error);
@@ -2995,18 +2875,16 @@ app.delete("/api/team/members/:userId", authenticateToken, async (req, res) => {
   }
 });
 
-// Update a pending invitation (owner only)
 app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
     if (currentUser.teamRole !== "owner") {
       return res.status(403).json({ message: "Only team owners can edit invitations" });
     }
-    const invitationId = req.params.invitationId;
-    const invitation = await invitationOps.findById(invitationId);
+    const invitation = await invitationOps.findById(req.params.invitationId);
     if (!invitation || invitation.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Invitation not found" });
     }
@@ -3015,21 +2893,17 @@ app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, 
     }
     const { teamRole, maxInventoryItems, allowedPages, allowedPropertyIds } = req.body || {};
     const updates = {};
-    if (teamRole === "member" || teamRole === "viewer") updates.teamRole = teamRole;
+    if (teamRole === "member" || teamRole === "viewer" || teamRole === "owner") updates.teamRole = teamRole;
     if (typeof maxInventoryItems === "number" || maxInventoryItems === null) updates.maxInventoryItems = maxInventoryItems;
     if (Array.isArray(allowedPages)) updates.allowedPages = allowedPages;
     if (Array.isArray(allowedPropertyIds)) updates.allowedPropertyIds = allowedPropertyIds;
-    await invitationOps.update(invitationId, updates);
-    const updated = await invitationOps.findById(invitationId);
+    const updated = await invitationOps.update(invitation.id, updates);
     res.json({
       id: updated.id,
       email: updated.email,
       teamRole: updated.teamRole,
       maxInventoryItems: updated.maxInventoryItems ?? null,
       status: updated.status,
-      token: updated.token,
-      createdAt: updated.createdAt,
-      expiresAt: updated.expiresAt,
       allowedPages: updated.allowedPages ?? null,
       allowedPropertyIds: updated.allowedPropertyIds ?? null,
     });
@@ -3039,129 +2913,78 @@ app.patch("/api/team/invitations/:invitationId", authenticateToken, async (req, 
   }
 });
 
-// Revoke (delete) a pending invitation (owner only)
 app.delete("/api/team/invitations/:invitationId", authenticateToken, async (req, res) => {
   try {
-    const currentUser = await userOps.findById(req.user.id);
+    const currentUser = await loadCurrentUser(req);
     if (!currentUser || !currentUser.teamId) {
       return res.status(400).json({ message: "You are not associated with a team" });
     }
     if (currentUser.teamRole !== "owner") {
       return res.status(403).json({ message: "Only team owners can revoke invitations" });
     }
-    const invitationId = req.params.invitationId;
-    const invitation = await invitationOps.findById(invitationId);
+    const invitation = await invitationOps.findById(req.params.invitationId);
     if (!invitation || invitation.teamId !== currentUser.teamId) {
       return res.status(404).json({ message: "Invitation not found" });
     }
-    await invitationOps.delete(invitationId);
+    await invitationOps.delete(invitation.id);
     res.json({ message: "Invitation revoked" });
   } catch (error) {
-    console.error("Error revoking invitation:", error);
-    res.status(500).json({ message: "Error revoking invitation" });
+    console.error("Error deleting invitation:", error);
+    res.status(500).json({ message: "Error deleting invitation" });
   }
 });
 
-// Health check
-app.get("/api/health", (req, res) => {
-  res.json({ status: "ok", message: "Server is running", appEnv });
-});
-
-// CORS debug: call this from the same origin as your app to see what origin the server received.
-// Add that exact value to CORS_ORIGIN on Railway if it's missing.
-app.get("/api/cors-check", (req, res) => {
-  res.json({
-    origin: req.headers.origin || "(no Origin header)",
-    note: "Add this exact origin to Railway CORS_ORIGIN if signup fails with 'Load failed'.",
-  });
-});
-
-// Contact/support form (no auth; landing page)
-app.post("/api/contact", async (req, res) => {
-  try {
-    const email = req.body.email != null ? String(req.body.email).trim() : "";
-    const name = req.body.name != null ? String(req.body.name).trim() : "";
-    const message = req.body.message != null ? String(req.body.message).trim() : "";
-    if (!email) {
-      return res.status(400).json({ message: "Email is required" });
-    }
-    if (!message) {
-      return res.status(400).json({ message: "Message is required" });
-    }
-    const sent = await sendSupportEmail(email, name, message);
-    if (!sent) {
-      return res.status(500).json({ message: "Failed to send message. Please try again later." });
-    }
-    return res.json({ message: "Message sent. We'll get back to you soon." });
-  } catch (err) {
-    console.error("[CONTACT]", err);
-    return res.status(500).json({ message: "Something went wrong. Please try again." });
-  }
-});
-
-// ==================== TRIAL MANAGEMENT ====================
-
-// Background job to downgrade expired trials
-// Runs every hour
-const TRIAL_CHECK_INTERVAL = 60 * 60 * 1000; // 1 hour
+const TRIAL_CHECK_INTERVAL = 60 * 60 * 1000;
 
 async function checkAndDowngradeTrials() {
   try {
-    console.log('[TRIAL] Checking for expired trials...');
+    console.log("[TRIAL] Checking for expired trials...");
     const downgraded = await downgradeExpiredTrials();
     if (downgraded > 0) {
       console.log(`[TRIAL] Successfully downgraded ${downgraded} expired trial(s)`);
     }
   } catch (error) {
-    console.error('[TRIAL] Error checking expired trials:', error);
+    console.error("[TRIAL] Error checking expired trials:", error);
   }
 }
 
-// Run trial check on startup
 checkAndDowngradeTrials();
-
-// Schedule recurring checks
 setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
 console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
 
-// Manual endpoint to start a Pro or Starter trial (in-app trial; for auto-charge at trial end use Stripe Checkout with trial)
 app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   try {
-    const user = await userOps.findById(req.user.id);
-    if (!user || !user.teamId) {
-      return res.status(404).json({ message: "Team not found for user" });
+    const user = await loadCurrentUser(req);
+    if (!user?.organizationId) {
+      return res.status(404).json({ message: "Organization not found for user" });
+    }
+    if (!user.isOrgOwner) {
+      return res.status(403).json({ message: "Only the organization owner can start trials" });
     }
 
-    if (user.teamRole !== "owner") {
-      return res.status(403).json({ message: "Only team owners can start trials" });
+    const org = await organizationOps.findById(user.organizationId);
+    if (!org) {
+      return res.status(404).json({ message: "Organization not found" });
     }
-
-    const team = await teamOps.findById(user.teamId);
-    if (!team) {
-      return res.status(404).json({ message: "Team not found" });
+    if (org.isOnTrial) {
+      return res.status(400).json({ message: "Organization is already on a trial" });
     }
-
-    if (team.isOnTrial) {
-      return res.status(400).json({ message: "Team is already on a trial" });
-    }
-
-    if (team.plan !== "free") {
-      return res.status(400).json({ message: "Trials are only available for free plan teams" });
+    if (org.plan !== "free") {
+      return res.status(400).json({ message: "Trials are only available for free plan organizations" });
     }
 
     const plan = req.body?.plan === "starter" ? "starter" : "pro";
-    const updatedTeam = plan === "starter"
-      ? await startStarterTrial(team.id)
-      : await startProTrial(team.id);
-    const trialStatus = getTrialStatus(updatedTeam);
+    const updatedOrg =
+      plan === "starter" ? await startStarterTrial(org.id) : await startProTrial(org.id);
+    const trialStatus = getTrialStatus(updatedOrg);
 
     res.json({
       message: `14-day ${plan === "starter" ? "Starter" : "Pro"} trial started successfully!`,
       trial: trialStatus,
       team: {
-        plan: updatedTeam.plan,
-        effectivePlan: getEffectivePlan(updatedTeam),
-        maxProperties: updatedTeam.maxProperties,
+        plan: updatedOrg.plan,
+        effectivePlan: getEffectivePlan(updatedOrg),
+        maxProperties: updatedOrg.maxProperties,
       },
     });
   } catch (error) {

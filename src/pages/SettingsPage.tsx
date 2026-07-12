@@ -49,13 +49,19 @@ function toMaxInventoryItems(s: string): number | null {
 }
 
 export const SettingsPage: React.FC = () => {
-  const { user, updateUser, refreshUser } = useAuth();
+  const { user, updateUser, refreshUser, switchTeam } = useAuth();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [teamNameEdit, setTeamNameEdit] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [newTeamName, setNewTeamName] = useState("");
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [createTeamError, setCreateTeamError] = useState<string | null>(null);
+  const [orgPanel, setOrgPanel] = useState<"overview" | "team">("overview");
+  const [switchingTeam, setSwitchingTeam] = useState(false);
+  const [orgNameEdit, setOrgNameEdit] = useState("");
 
   const [properties, setProperties] = useState<Property[]>([]);
   const [showInviteModal, setShowInviteModal] = useState(false);
@@ -65,7 +71,6 @@ export const SettingsPage: React.FC = () => {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [lastInviteLink, setLastInviteLink] = useState<string | null>(null);
 
-  const [showTeamList, setShowTeamList] = useState(false);
   const [editingMember, setEditingMember] = useState<TeamMemberInfo | null>(null);
   const [editingInvitation, setEditingInvitation] = useState<TeamInvitationInfo | null>(null);
   const [editAccess, setEditAccess] = useState<AccessFormState>(emptyAccessForm);
@@ -76,7 +81,7 @@ export const SettingsPage: React.FC = () => {
   const [extraUserSlotsLoading, setExtraUserSlotsLoading] = useState(false);
   const [extraUserSlotsError, setExtraUserSlotsError] = useState<string | null>(null);
 
-  const [showInvoiceStyleModal, setShowInvoiceStyleModal] = useState(false);
+  const [showOrgEditModal, setShowOrgEditModal] = useState(false);
   const [invoiceStyleSaving, setInvoiceStyleSaving] = useState(false);
   const [invoiceStyleForm, setInvoiceStyleForm] = useState<{
     companyName: string;
@@ -114,7 +119,9 @@ export const SettingsPage: React.FC = () => {
   const [supportSending, setSupportSending] = useState(false);
   const [supportResult, setSupportResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  const isOwner = user?.teamRole === "owner";
+  const isTeamOwner = user?.teamRole === "owner";
+  const isOrgOwner = Boolean(user?.isOrgOwner || teamData?.team?.isOrgOwner);
+  const isOwner = isTeamOwner; // invites / members still team-owner gated
 
   useEffect(() => {
     if (user) {
@@ -147,6 +154,7 @@ export const SettingsPage: React.FC = () => {
       const data = await teamApi.getTeam();
       setTeamData(data);
       setTeamNameEdit(data.team.name);
+      setOrgNameEdit(data.organization?.name ?? data.team.organizationName ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load team");
     }
@@ -181,11 +189,12 @@ export const SettingsPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [isOwner]);
 
-  // Sync invoice style form when team data or modal opens
+  // Sync org edit form when team data or modal opens
   useEffect(() => {
-    if (!teamData?.team || !showInvoiceStyleModal) return;
+    if (!teamData?.team || !showOrgEditModal) return;
     const t = teamData.team;
     const style = t.invoiceStyle ?? {};
+    setOrgNameEdit(teamData.organization?.name ?? t.organizationName ?? "");
     setInvoiceStyleForm({
       companyName: (style.companyName ?? t.name ?? "").trim(),
       companyAddress: (style.companyAddress ?? "").trim(),
@@ -196,7 +205,7 @@ export const SettingsPage: React.FC = () => {
       footerText: (style.footerText ?? "— Stock Stay").trim(),
       logoUrl: (t.invoiceLogoUrl ?? "").trim(),
     });
-  }, [teamData?.team?.id, teamData?.team?.name, teamData?.team?.invoiceLogoUrl, teamData?.team?.invoiceStyle, showInvoiceStyleModal]);
+  }, [teamData?.team?.id, teamData?.team?.name, teamData?.team?.invoiceLogoUrl, teamData?.team?.invoiceStyle, teamData?.organization?.name, teamData?.team?.organizationName, showOrgEditModal]);
 
   const handleSaveTeamName = async () => {
     if (!teamData || !isOwner) return;
@@ -307,9 +316,28 @@ export const SettingsPage: React.FC = () => {
   };
 
   const handleSaveInvoiceStyle = async () => {
-    if (!teamData?.team || !isOwner) return;
+    if (!teamData?.team || !isOrgOwner) return;
     setInvoiceStyleSaving(true);
     try {
+      const nextOrgName = orgNameEdit.trim();
+      const currentOrgName = (teamData.organization?.name ?? teamData.team.organizationName ?? "").trim();
+      if (nextOrgName && nextOrgName !== currentOrgName) {
+        const result = await teamApi.updateOrganizationName(nextOrgName);
+        setTeamData((prev) =>
+          prev
+            ? {
+                ...prev,
+                organization: prev.organization
+                  ? { ...prev.organization, name: result.organization.name }
+                  : { id: result.organization.id, name: result.organization.name, owners: [] },
+                team: {
+                  ...prev.team,
+                  organizationName: result.organization.name,
+                },
+              }
+            : null
+        );
+      }
       const { team } = await teamApi.updateInvoiceStyle({
         invoiceLogoUrl: invoiceStyleForm.logoUrl.trim() || null,
         invoiceStyle: {
@@ -334,11 +362,29 @@ export const SettingsPage: React.FC = () => {
             }
           : null
       );
-      setShowInvoiceStyleModal(false);
+      setShowOrgEditModal(false);
     } catch (err) {
       console.error(err);
+      setError(err instanceof Error ? err.message : "Failed to save organization");
     } finally {
       setInvoiceStyleSaving(false);
+    }
+  };
+
+  const openTeamDetail = async (teamId: string) => {
+    if (!teamData?.team) return;
+    setSwitchingTeam(true);
+    setError(null);
+    try {
+      if (teamId !== teamData.team.id) {
+        await switchTeam(teamId);
+      }
+      await loadTeam();
+      setOrgPanel("team");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to open team");
+    } finally {
+      setSwitchingTeam(false);
     }
   };
 
@@ -871,6 +917,384 @@ export const SettingsPage: React.FC = () => {
         </div>
       </section>
 
+      {team && (
+        <section className="panel" style={{ marginBottom: "24px" }} aria-label="Organization and teams">
+          {orgPanel === "overview" ? (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
+                <div>
+                  <h3 style={{ fontSize: "16px", margin: "0 0 4px 0" }}>Organization & teams</h3>
+                  <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
+                    Manage your organization and the teams under it.
+                  </p>
+                </div>
+                {isOrgOwner && (
+                  <button
+                    type="button"
+                    className="nav-button secondary"
+                    onClick={() => setShowOrgEditModal(true)}
+                  >
+                    Edit organization
+                  </button>
+                )}
+              </div>
+
+              <div
+                style={{
+                  padding: "14px 16px",
+                  borderRadius: "10px",
+                  background: "rgba(248, 250, 252, 0.9)",
+                  border: "1px solid rgba(148, 163, 184, 0.35)",
+                  marginBottom: "20px",
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "baseline" }}>
+                  <div>
+                    <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>
+                      Organization
+                    </div>
+                    <div style={{ fontSize: "18px", fontWeight: 600, color: "#0f172a" }}>
+                      {teamData?.organization?.name ?? team.organizationName ?? "Organization"}
+                    </div>
+                  </div>
+                  <div style={{ fontSize: "13px", color: "#475569" }}>
+                    Plan: <strong style={{ textTransform: "capitalize" }}>{team.effectivePlan}</strong>
+                    {team.isOnTrial && team.trialStatus ? ` · Trial (${team.trialStatus})` : ""}
+                  </div>
+                </div>
+
+                {isOrgOwner ? (
+                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
+                    <p style={{ margin: "0 0 10px 0", fontSize: "13px", color: "#64748b" }}>
+                      You are an organization admin. Billing, branding, and new teams are managed from Edit organization.
+                    </p>
+                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                      {team.billingPortalAvailable && (
+                        <button
+                          type="button"
+                          className="nav-button secondary"
+                          onClick={handleManageSubscription}
+                          disabled={billingLoading}
+                        >
+                          {billingLoading ? "Opening..." : "Manage subscription"}
+                        </button>
+                      )}
+                      {(team.effectivePlan === "free" || team.effectivePlan === "starter") && (
+                        <button
+                          type="button"
+                          className="nav-button primary"
+                          onClick={handleUpgrade}
+                          disabled={checkoutLoading}
+                        >
+                          {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
+                        </button>
+                      )}
+                    </div>
+                    {(team.effectivePlan === "starter" || team.effectivePlan === "pro") && team.effectiveMaxUsers != null && (
+                      <div style={{ marginTop: "12px", fontSize: "13px", color: "#475569" }}>
+                        Active team size: <strong>{members.length}</strong> of <strong>{team.effectiveMaxUsers}</strong> users
+                        {extraUserSlotsError && (
+                          <p style={{ color: "#b91c1c", margin: "6px 0 0 0" }}>{extraUserSlotsError}</p>
+                        )}
+                        <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                            Extra user slots
+                            <select
+                              value={team.extraUserSlots ?? 0}
+                              disabled={extraUserSlotsLoading}
+                              onChange={async (e) => {
+                                const quantity = Number(e.target.value);
+                                setExtraUserSlotsLoading(true);
+                                setExtraUserSlotsError(null);
+                                try {
+                                  await teamApi.updateExtraUserSlots(quantity);
+                                  await loadTeam();
+                                } catch (err) {
+                                  setExtraUserSlotsError(
+                                    err instanceof Error ? err.message : "Failed to update slots"
+                                  );
+                                } finally {
+                                  setExtraUserSlotsLoading(false);
+                                }
+                              }}
+                            >
+                              {Array.from(
+                                { length: (team.effectivePlan === "starter" ? 2 : 3) + 1 },
+                                (_, i) => (
+                                  <option key={i} value={i}>
+                                    {i}
+                                  </option>
+                                )
+                              )}
+                            </select>
+                          </label>
+                          {extraUserSlotsLoading && <span style={{ fontSize: "12px", color: "#64748b" }}>Saving…</span>}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
+                    <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "8px" }}>
+                      Organization admins
+                    </div>
+                    {(teamData?.organization?.owners?.length ?? 0) > 0 ? (
+                      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                        {teamData!.organization!.owners.map((owner) => (
+                          <li key={owner.id} style={{ padding: "4px 0", fontSize: "14px", color: "#334155" }}>
+                            <strong>{owner.name || "Admin"}</strong>
+                            {owner.email ? (
+                              <>
+                                {" · "}
+                                <a href={`mailto:${owner.email}`} style={{ color: "#2563eb" }}>
+                                  {owner.email}
+                                </a>
+                              </>
+                            ) : null}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
+                        Contact your organization admin for billing or organization changes.
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
+                <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 600 }}>Teams</h4>
+                {switchingTeam && <span style={{ fontSize: "12px", color: "#64748b" }}>Opening team…</span>}
+              </div>
+              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 16px 0" }}>
+                {(teamData?.organizationTeams ?? [{ id: team.id, name: team.name, memberCount: members.length, isActive: true, isMember: true, myTeamRole: user?.teamRole }]).map((t) => (
+                  <li key={t.id} style={{ marginBottom: "8px" }}>
+                    <button
+                      type="button"
+                      onClick={() => openTeamDetail(t.id)}
+                      disabled={switchingTeam || t.isMember === false}
+                      style={{
+                        width: "100%",
+                        textAlign: "left",
+                        padding: "12px 14px",
+                        borderRadius: "10px",
+                        border: t.isActive ? "1px solid rgba(37, 99, 235, 0.45)" : "1px solid rgba(148, 163, 184, 0.35)",
+                        background: t.isActive ? "rgba(239, 246, 255, 0.9)" : "#fff",
+                        cursor: switchingTeam || t.isMember === false ? "not-allowed" : "pointer",
+                        opacity: t.isMember === false ? 0.55 : 1,
+                      }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", alignItems: "baseline" }}>
+                        <span style={{ fontWeight: 600, color: "#0f172a" }}>{t.name}</span>
+                        <span style={{ fontSize: "12px", color: "#64748b" }}>
+                          {t.isActive ? "Current · " : ""}
+                          {typeof t.memberCount === "number" ? `${t.memberCount} member${t.memberCount === 1 ? "" : "s"}` : ""}
+                          {t.myTeamRole ? ` · ${t.myTeamRole}` : t.isMember === false ? " · not a member" : ""}
+                        </span>
+                      </div>
+                      <div style={{ marginTop: "4px", fontSize: "12px", color: "#2563eb" }}>
+                        {t.isMember === false ? "You need an invite to open this team" : "View / edit details →"}
+                      </div>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+
+              {isOrgOwner && team.organizationId && (
+                <div style={{ paddingTop: "12px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
+                  <p style={{ margin: "0 0 10px 0", fontSize: "13px", color: "#64748b" }}>
+                    Create another team under this organization. You can switch teams from the header anytime.
+                  </p>
+                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
+                    <input
+                      type="text"
+                      value={newTeamName}
+                      onChange={(e) => setNewTeamName(e.target.value)}
+                      placeholder="New team name"
+                      style={{ maxWidth: "260px" }}
+                    />
+                    <button
+                      type="button"
+                      className="nav-button primary"
+                      disabled={creatingTeam || !newTeamName.trim()}
+                      onClick={async () => {
+                        if (!team.organizationId || !newTeamName.trim()) return;
+                        setCreatingTeam(true);
+                        setCreateTeamError(null);
+                        try {
+                          const result = await teamApi.createOrganizationTeam(
+                            team.organizationId,
+                            newTeamName.trim()
+                          );
+                          updateUser(result.user);
+                          setNewTeamName("");
+                          await loadTeam();
+                          setOrgPanel("team");
+                          window.dispatchEvent(new Event("active-team-changed"));
+                        } catch (err) {
+                          setCreateTeamError(
+                            err instanceof Error ? err.message : "Failed to create team"
+                          );
+                        } finally {
+                          setCreatingTeam(false);
+                        }
+                      }}
+                    >
+                      {creatingTeam ? "Creating..." : "Create team"}
+                    </button>
+                  </div>
+                  {createTeamError && (
+                    <p style={{ color: "#b91c1c", fontSize: "13px", marginTop: "8px" }}>{createTeamError}</p>
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
+                <button
+                  type="button"
+                  className="nav-button secondary"
+                  onClick={() => setOrgPanel("overview")}
+                >
+                  ← Back
+                </button>
+                <div>
+                  <h3 style={{ fontSize: "16px", margin: 0 }}>Team details</h3>
+                  <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#64748b" }}>
+                    {teamData?.organization?.name ?? team.organizationName}
+                  </p>
+                </div>
+              </div>
+
+              <div style={{ marginBottom: "20px" }}>
+                <label style={{ display: "block", marginBottom: "8px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Team name</span>
+                  {isTeamOwner ? (
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                      <input
+                        type="text"
+                        value={teamNameEdit}
+                        onChange={(e) => setTeamNameEdit(e.target.value)}
+                        placeholder="Team name"
+                        style={{ maxWidth: "280px" }}
+                      />
+                      <button
+                        type="button"
+                        className="nav-button primary"
+                        onClick={handleSaveTeamName}
+                        disabled={savingName || teamNameEdit.trim() === team.name}
+                      >
+                        {savingName ? "Saving..." : "Save name"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "16px", fontWeight: 600 }}>{team.name}</div>
+                  )}
+                </label>
+                <p style={{ margin: "8px 0 0 0", fontSize: "13px", color: "#64748b" }}>
+                  Plan: <strong style={{ textTransform: "capitalize" }}>{team.effectivePlan}</strong>
+                  {typeof team.propertyCount === "number" && (
+                    <> · {team.propertyCount} propert{team.propertyCount === 1 ? "y" : "ies"}</>
+                  )}
+                </p>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
+                <h4 style={{ fontSize: "14px", margin: 0 }}>Members</h4>
+                {isOwner && (
+                  <button
+                    type="button"
+                    className="nav-button primary"
+                    onClick={() => {
+                      setShowInviteModal(true);
+                      setLastInviteLink(null);
+                      setInviteError(null);
+                      setInviteAccess(emptyAccessForm);
+                    }}
+                  >
+                    Invite member
+                  </button>
+                )}
+              </div>
+              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
+                {members.map((m) => (
+                  <li
+                    key={m.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 0",
+                      borderBottom: "1px solid rgba(148,163,184,0.25)",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                    }}
+                  >
+                    <span style={{ color: "#64748b" }}>
+                      {m.email ?? m.name ?? "Teammate"} · {m.teamRole}
+                      {m.id === user?.id && " (you)"}
+                    </span>
+                    <span style={{ fontSize: "12px", color: "#10b981", fontWeight: 500 }}>Accepted</span>
+                    {isOwner && m.id !== user?.id && (
+                      <span style={{ display: "flex", gap: "8px" }}>
+                        <button type="button" className="nav-button secondary" onClick={() => openEditMember(m)}>
+                          Edit
+                        </button>
+                        <button type="button" className="nav-button secondary" onClick={() => handleRemoveMember(m)}>
+                          Remove
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                ))}
+                {invitations.map((inv) => (
+                  <li
+                    key={inv.id}
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "10px 0",
+                      borderBottom: "1px solid rgba(148,163,184,0.25)",
+                      flexWrap: "wrap",
+                      gap: "8px",
+                    }}
+                  >
+                    <span style={{ color: "#64748b" }}>{inv.email} · {inv.teamRole}</span>
+                    <span
+                      style={{
+                        fontSize: "12px",
+                        color: inv.status === "pending" ? "#f59e0b" : "#64748b",
+                        fontWeight: 500,
+                      }}
+                    >
+                      {inv.status === "pending" ? "Pending" : inv.status}
+                    </span>
+                    {isOwner && inv.status === "pending" && (
+                      <span style={{ display: "flex", gap: "8px" }}>
+                        <button type="button" className="nav-button secondary" onClick={() => openEditInvitation(inv)}>
+                          Edit
+                        </button>
+                        <button type="button" className="nav-button secondary" onClick={() => handleRevokeInvitation(inv)}>
+                          Revoke
+                        </button>
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {members.length === 0 && invitations.length === 0 && (
+                <p style={{ color: "#64748b", fontSize: "13px", marginTop: "8px" }}>
+                  No members or pending invitations.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
       <section id="support" className="panel" style={{ marginBottom: "24px" }} aria-label="Support">
         <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Support</h3>
         <p style={{ color: "#64748b", margin: "0 0 12px 0", fontSize: "14px" }}>
@@ -885,283 +1309,6 @@ export const SettingsPage: React.FC = () => {
           Contact support
         </button>
       </section>
-
-      {team && (
-        <>
-          {isOwner && (
-            <>
-              <section className="panel" style={{ marginBottom: "24px" }}>
-                <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Team</h3>
-                <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                  <input
-                    type="text"
-                    value={teamNameEdit}
-                    onChange={(e) => setTeamNameEdit(e.target.value)}
-                    placeholder="Team name"
-                    style={{ maxWidth: "280px" }}
-                  />
-                  <button
-                    type="button"
-                    className="nav-button primary"
-                    onClick={handleSaveTeamName}
-                    disabled={savingName || teamNameEdit.trim() === team.name}
-                  >
-                    {savingName ? "Saving..." : "Save name"}
-                  </button>
-                </div>
-                <div style={{ marginTop: "16px", paddingTop: "16px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
-                  <button
-                    type="button"
-                    className="nav-button secondary"
-                    onClick={() => setShowInvoiceStyleModal(true)}
-                  >
-                    Edit invoice style
-                  </button>
-                  <p style={{ fontSize: "13px", color: "#64748b", margin: "8px 0 0 0" }}>
-                    Customize how emailed invoices look: company name, colors, logo, footer.
-                  </p>
-                </div>
-              </section>
-
-              <section className="panel" style={{ marginBottom: "24px" }}>
-                <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Plan & Billing</h3>
-                <p style={{ color: "#64748b", margin: "0 0 12px 0" }}>
-                  Plan: <strong>{team.effectivePlan}</strong>
-                  {team.isOnTrial && team.trialEndsAt && (
-                    <> · Trial ends {new Date(team.trialEndsAt).toLocaleDateString()}</>
-                  )}
-                </p>
-                {(team.effectivePlan === "starter" || team.effectivePlan === "pro") && team.effectiveMaxUsers != null && (
-                  <div style={{ marginBottom: "16px", paddingTop: "12px", borderTop: "1px solid rgba(148, 163, 184, 0.25)" }}>
-                    <p style={{ fontSize: "14px", color: "#334155", margin: "0 0 8px 0" }}>
-                      Team size: <strong>{members.length}</strong> of <strong>{team.effectiveMaxUsers}</strong> users
-                    </p>
-                    <div style={{ display: "flex", alignItems: "center", gap: "12px", flexWrap: "wrap" }}>
-                      <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "14px" }}>
-                        <span style={{ color: "#64748b" }}>Extra user slots:</span>
-                        <select
-                          value={team.extraUserSlots ?? 0}
-                          onChange={async (e) => {
-                            const quantity = parseInt(e.target.value, 10);
-                            if (isNaN(quantity)) return;
-                            setExtraUserSlotsError(null);
-                            setExtraUserSlotsLoading(true);
-                            try {
-                              await teamApi.updateExtraUserSlots(quantity);
-                              await loadTeam();
-                              await refreshUser();
-                            } catch (err) {
-                              setExtraUserSlotsError(err instanceof Error ? err.message : "Failed to update extra user slots");
-                            } finally {
-                              setExtraUserSlotsLoading(false);
-                            }
-                          }}
-                          disabled={extraUserSlotsLoading}
-                          style={{ padding: "6px 10px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontSize: "14px" }}
-                        >
-                          {Array.from(
-                            { length: (team.effectivePlan === "starter" ? 2 : 3) + 1 },
-                            (_, i) => i
-                          ).map((n) => (
-                            <option key={n} value={n}>
-                              {n}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                      <span style={{ fontSize: "13px", color: "#64748b" }}>$5/month per extra user</span>
-                    </div>
-                    {team.isOnTrial && (
-                      <p style={{ fontSize: "13px", color: "#64748b", margin: "6px 0 0 0" }}>
-                        Extra user slots are available after you subscribe (use Manage subscription when your trial ends).
-                      </p>
-                    )}
-                    {extraUserSlotsError && (
-                      <p style={{ color: "#dc2626", fontSize: "13px", margin: "8px 0 0 0" }}>{extraUserSlotsError}</p>
-                    )}
-                  </div>
-                )}
-                <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                  {team.billingPortalAvailable && (
-                    <button
-                      type="button"
-                      className="nav-button primary"
-                      onClick={handleManageSubscription}
-                      disabled={billingLoading}
-                    >
-                      {billingLoading ? "Opening..." : "Manage subscription"}
-                    </button>
-                  )}
-                  {(team.effectivePlan === "free" || team.effectivePlan === "starter") && (
-                    <button
-                      type="button"
-                      className="nav-button primary"
-                      onClick={handleUpgrade}
-                      disabled={checkoutLoading}
-                    >
-                      {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
-                    </button>
-                  )}
-                </div>
-              </section>
-            </>
-          )}
-
-          {isOwner && (
-            <section className="panel" style={{ marginBottom: "24px" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-                <h3 style={{ fontSize: "16px", margin: 0 }}>Team</h3>
-                <div style={{ display: "flex", gap: "8px" }}>
-                  <button
-                    type="button"
-                    className="nav-button primary"
-                    onClick={() => {
-                      setShowInviteModal(true);
-                      setLastInviteLink(null);
-                      setInviteError(null);
-                      setInviteAccess(emptyAccessForm);
-                    }}
-                  >
-                    Invite member
-                  </button>
-                  <button
-                    type="button"
-                    className="nav-button secondary"
-                    onClick={() => setShowTeamList((v) => !v)}
-                  >
-                    {showTeamList ? "Hide team" : "See team"}
-                  </button>
-                </div>
-              </div>
-
-              {showTeamList && (
-                <div style={{ marginTop: "16px" }}>
-                  <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "12px" }}>
-                    All members and pending invitations. You can edit access or remove/revoke.
-                  </p>
-                  <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                    {members.map((m) => (
-                      <li
-                        key={m.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "10px 0",
-                          borderBottom: "1px solid rgba(148,163,184,0.25)",
-                          flexWrap: "wrap",
-                          gap: "8px",
-                        }}
-                      >
-                        <span style={{ color: "#64748b" }}>
-                          {m.email ?? m.name ?? "Teammate"} · {m.teamRole}
-                          {m.id === user?.id && " (you)"}
-                        </span>
-                        <span style={{ fontSize: "12px", color: "#10b981", fontWeight: 500 }}>Accepted</span>
-                        {isOwner && (
-                          <span style={{ display: "flex", gap: "8px" }}>
-                            {m.id !== user?.id && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="nav-button secondary"
-                                  onClick={() => openEditMember(m)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="nav-button secondary"
-                                  onClick={() => handleRemoveMember(m)}
-                                >
-                                  Remove
-                                </button>
-                              </>
-                            )}
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                    {invitations.map((inv) => (
-                      <li
-                        key={inv.id}
-                        style={{
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          padding: "10px 0",
-                          borderBottom: "1px solid rgba(148,163,184,0.25)",
-                          flexWrap: "wrap",
-                          gap: "8px",
-                        }}
-                      >
-                        <span style={{ color: "#64748b" }}>{inv.email} · {inv.teamRole}</span>
-                        <span
-                          style={{
-                            fontSize: "12px",
-                            color: inv.status === "pending" ? "#f59e0b" : "#64748b",
-                            fontWeight: 500,
-                          }}
-                        >
-                          {inv.status === "pending" ? "Pending" : inv.status}
-                        </span>
-                        {isOwner && inv.status === "pending" && (
-                          <span style={{ display: "flex", gap: "8px" }}>
-                            <button
-                              type="button"
-                              className="nav-button secondary"
-                              onClick={() => openEditInvitation(inv)}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="nav-button secondary"
-                              onClick={() => handleRevokeInvitation(inv)}
-                            >
-                              Revoke
-                            </button>
-                          </span>
-                        )}
-                      </li>
-                    ))}
-                  </ul>
-                  {members.length === 0 && invitations.length === 0 && (
-                    <p style={{ color: "#64748b", fontSize: "13px", marginTop: "8px" }}>
-                      No members or pending invitations. Use &quot;Invite member&quot; to add someone.
-                    </p>
-                  )}
-                </div>
-              )}
-            </section>
-          )}
-
-          {!isOwner && (
-            <section className="panel" style={{ marginBottom: "24px" }}>
-              <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Team members</h3>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {members.map((m) => (
-                  <li
-                    key={m.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "8px 0",
-                      borderBottom: "1px solid rgba(148,163,184,0.25)",
-                    }}
-                  >
-                    <span style={{ color: "#64748b" }}>
-                      {m.email ?? m.name ?? "Teammate"} · {m.teamRole}
-                      {m.id === user?.id && " (you)"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
-        </>
-      )}
 
       {showInviteModal && (
         <div className="modal-overlay" onClick={() => setShowInviteModal(false)}>
@@ -1227,24 +1374,36 @@ export const SettingsPage: React.FC = () => {
         </div>
       )}
 
-      {showInvoiceStyleModal && (
-        <div className="modal-overlay" onClick={() => setShowInvoiceStyleModal(false)}>
+      {showOrgEditModal && (
+        <div className="modal-overlay" onClick={() => setShowOrgEditModal(false)}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Edit invoice style</h3>
+              <h3>Edit organization</h3>
               <button
                 type="button"
                 className="icon-button close-button"
-                onClick={() => setShowInvoiceStyleModal(false)}
+                onClick={() => setShowOrgEditModal(false)}
                 aria-label="Close"
               >
                 ✕
               </button>
             </div>
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
-              These settings apply to invoices sent by email. Add a logo URL (must be a public image link) and customize colors and text.
+              Update organization details and invoice branding used on emailed invoices.
             </p>
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Organization name</span>
+                <input
+                  type="text"
+                  value={orgNameEdit}
+                  onChange={(e) => setOrgNameEdit(e.target.value)}
+                  placeholder="Organization name"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                />
+              </label>
+              <div style={{ height: "1px", background: "rgba(148, 163, 184, 0.35)", margin: "4px 0" }} />
+              <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#334155" }}>Invoice branding</p>
               <label>
                 <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Company / brand name</span>
                 <input
@@ -1345,7 +1504,7 @@ export const SettingsPage: React.FC = () => {
               </label>
             </div>
             <div className="form-actions" style={{ marginTop: "20px" }}>
-              <button type="button" className="secondary" onClick={() => setShowInvoiceStyleModal(false)}>
+              <button type="button" className="secondary" onClick={() => setShowOrgEditModal(false)}>
                 Cancel
               </button>
               <button type="button" className="primary" onClick={handleSaveInvoiceStyle} disabled={invoiceStyleSaving}>

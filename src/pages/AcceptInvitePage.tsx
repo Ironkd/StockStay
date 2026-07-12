@@ -10,7 +10,7 @@ const useQuery = () => {
 export const AcceptInvitePage: React.FC = () => {
   const query = useQuery();
   const token = query.get("token");
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, refreshUser } = useAuth();
   const navigate = useNavigate();
 
   const [status, setStatus] = useState<"idle" | "accepting" | "success" | "error">(

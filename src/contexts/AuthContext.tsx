@@ -7,6 +7,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   updateUser: (updates: Partial<AuthUser>) => void;
   refreshUser: () => Promise<void>;
+  switchTeam: (teamId: string) => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
 }
@@ -20,7 +21,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check if user is already authenticated
     const checkAuth = async () => {
       try {
         const token = sessionStorage.getItem("auth_token");
@@ -29,7 +29,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           setUser(currentUser);
         }
       } catch (error) {
-        // Token is invalid or expired
         sessionStorage.removeItem("auth_token");
         setUser(null);
       } finally {
@@ -71,7 +70,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     }
   };
 
-  // Refetch user when tab becomes visible so everyone sees latest team name (e.g. after owner edits it)
+  const switchTeam = async (teamId: string) => {
+    const updated = await authApi.switchActiveTeam(teamId);
+    setUser(updated);
+    window.dispatchEvent(new Event("active-team-changed"));
+  };
+
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
@@ -91,6 +95,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         logout,
         updateUser,
         refreshUser,
+        switchTeam,
         isAuthenticated: !!user,
         loading
       }}

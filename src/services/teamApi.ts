@@ -23,7 +23,17 @@ export const teamApi = {
     });
   },
 
-  /** Update invoice email style and logo (owner only). */
+  /** Update organization name (org owner only). */
+  updateOrganizationName: async (
+    organizationName: string
+  ): Promise<{ organization: { id: string; name: string }; team: { organizationName: string } }> => {
+    return apiRequest("/team", {
+      method: "PATCH",
+      body: JSON.stringify({ organizationName }),
+    });
+  },
+
+  /** Update invoice email style and logo (org owner only). */
   updateInvoiceStyle: async (params: {
     invoiceLogoUrl?: string | null;
     invoiceStyle?: InvoiceStyle | null;
@@ -37,8 +47,8 @@ export const teamApi = {
     });
   },
 
-  acceptInvitation: async (token: string): Promise<{ message: string }> => {
-    return apiRequest<{ message: string }>("/team/invitations/accept", {
+  acceptInvitation: async (token: string): Promise<{ message: string; user?: import("./authApi").AuthUser }> => {
+    return apiRequest("/team/invitations/accept", {
       method: "POST",
       body: JSON.stringify({ token }),
     });
@@ -102,6 +112,19 @@ export const teamApi = {
   removeMember: async (userId: string): Promise<{ message: string }> => {
     return apiRequest<{ message: string }>(`/team/members/${userId}`, {
       method: "DELETE",
+    });
+  },
+
+  createOrganizationTeam: async (
+    organizationId: string,
+    name: string
+  ): Promise<{
+    team: { id: string; name: string; organizationId: string };
+    user: import("./authApi").AuthUser;
+  }> => {
+    return apiRequest(`/organizations/${organizationId}/teams`, {
+      method: "POST",
+      body: JSON.stringify({ name }),
     });
   },
 

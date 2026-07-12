@@ -1,21 +1,19 @@
 /**
  * Stripe billing module
  * - Create Checkout Session for Pro subscription
- * - Handle webhooks to sync subscription status to Team
+ * - Handle webhooks to sync subscription status to Organization
  */
 
 import Stripe from "stripe";
-import { teamOps } from "./db.js";
+import { organizationOps, teamOps } from "./db.js";
 import { getPlanLimits } from "./trialManager.js";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
 const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
-// Price IDs: one per plan × billing period (optional – only Pro is required for "Upgrade to Pro")
 const stripeProPriceId = process.env.STRIPE_PRO_PRICE_ID;
 const stripeProAnnualPriceId = process.env.STRIPE_PRO_ANNUAL_PRICE_ID;
 const stripeStarterPriceId = process.env.STRIPE_STARTER_PRICE_ID;
 const stripeStarterAnnualPriceId = process.env.STRIPE_STARTER_ANNUAL_PRICE_ID;
-/** Extra user add-on: $5/month per slot (Starter: max 2, Pro: max 3). Create in Stripe as recurring $5/month. */
 const stripeExtraUserPriceId = process.env.STRIPE_EXTRA_USER_PRICE_ID;
 
 export const stripe = stripeSecretKey ? new Stripe(stripeSecretKey) : null;
@@ -24,7 +22,6 @@ export function isBillingConfigured() {
   return Boolean(stripeSecretKey && stripeProPriceId);
 }
 
-/** Resolve Stripe Price ID for plan + billing period. Falls back to monthly Pro if unknown. */
 function getPriceIdForPlan(plan, billingPeriod) {
   const isAnnual = billingPeriod === "annual";
   if (plan === "pro") {
@@ -38,19 +35,27 @@ function getPriceIdForPlan(plan, billingPeriod) {
 }
 
 /**
- * Create a Stripe Checkout Session for a paid plan (Pro or Starter).
- * @param {Object} opts - { teamId, customerEmail, successUrl, cancelUrl, plan, billingPeriod, stripeTrialDays }
- * @param {string} [opts.plan] - "pro" | "starter" (default "pro")
- * @param {string} [opts.billingPeriod] - "monthly" | "annual" (default "monthly")
- * @param {number} [opts.stripeTrialDays] - Days free then Stripe auto-charges (default 14). Set 0 to charge immediately.
- * @returns {Promise<{ url: string }>} Checkout URL
+ * Resolve organization id from Stripe metadata (organizationId preferred; legacy teamId supported).
+ */
+async function resolveOrganizationIdFromMetadata(metadata) {
+  if (metadata?.organizationId) return metadata.organizationId;
+  if (metadata?.teamId) {
+    const team = await teamOps.findById(metadata.teamId);
+    return team?.organizationId ?? null;
+  }
+  return null;
+}
+
+/**
+ * @param {Object} opts - { organizationId, customerEmail, successUrl, cancelUrl, plan, billingPeriod, stripeTrialDays }
  */
 export async function createCheckoutSession(opts) {
   if (!stripe || !stripeProPriceId) {
     throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY and STRIPE_PRO_PRICE_ID.");
   }
   const {
-    teamId,
+    organizationId,
+    teamId: legacyTeamId,
     customerEmail,
     successUrl,
     cancelUrl,
@@ -58,25 +63,31 @@ export async function createCheckoutSession(opts) {
     billingPeriod = "monthly",
     stripeTrialDays = 14,
   } = opts;
-  const team = await teamOps.findById(teamId);
-  if (!team) throw new Error("Team not found");
+
+  let orgId = organizationId;
+  if (!orgId && legacyTeamId) {
+    const team = await teamOps.findById(legacyTeamId);
+    orgId = team?.organizationId;
+  }
+  const org = await organizationOps.findById(orgId);
+  if (!org) throw new Error("Organization not found");
 
   const priceId = getPriceIdForPlan(plan, billingPeriod);
   if (!priceId) {
     throw new Error(`No Stripe price configured for plan "${plan}" and billing "${billingPeriod}".`);
   }
 
-  let customerId = team.stripeCustomerId;
+  let customerId = org.stripeCustomerId;
   if (!customerId) {
     const customer = await stripe.customers.create({
       email: customerEmail,
-      metadata: { teamId },
+      metadata: { organizationId: org.id },
     });
     customerId = customer.id;
-    await teamOps.update(teamId, { stripeCustomerId: customerId });
+    await organizationOps.update(org.id, { stripeCustomerId: customerId });
   }
 
-  const subscriptionData = { metadata: { teamId, plan } };
+  const subscriptionData = { metadata: { organizationId: org.id, plan } };
   if (typeof stripeTrialDays === "number" && stripeTrialDays > 0) {
     subscriptionData.trial_period_days = stripeTrialDays;
   }
@@ -92,7 +103,7 @@ export async function createCheckoutSession(opts) {
     ],
     success_url: successUrl,
     cancel_url: cancelUrl,
-    metadata: { teamId, plan },
+    metadata: { organizationId: org.id, plan },
     subscription_data: subscriptionData,
     allow_promotion_codes: true,
   });
@@ -101,15 +112,7 @@ export async function createCheckoutSession(opts) {
 }
 
 /**
- * Create a Stripe Checkout Session for new signup (no team yet). Uses customer_email.
- * After payment, call signup/complete with sessionId to create team and user.
- * @param {Object} opts - { customerEmail, successUrl, cancelUrl, plan, metadata }
- * @param {string} opts.customerEmail
- * @param {string} opts.successUrl - must include {CHECKOUT_SESSION_ID} for Stripe to substitute
- * @param {string} opts.cancelUrl
- * @param {string} [opts.plan] - "starter" | "pro" (default "pro"). Starter bills immediately; Pro gets 14-day trial.
- * @param {Object} [opts.metadata] - optional metadata for the session (plan is added for webhook/signup-complete)
- * @returns {Promise<{ url: string, sessionId: string }>}
+ * Create a Stripe Checkout Session for new signup (no org yet).
  */
 export async function createCheckoutSessionForNewSignup(opts) {
   if (!stripe) {
@@ -145,51 +148,48 @@ export async function createCheckoutSessionForNewSignup(opts) {
 }
 
 /**
- * Ensure team has a Stripe customer (create if missing). Returns customer ID.
- * @param {string} teamId
- * @param {string} customerEmail
- * @returns {Promise<string>} Stripe customer ID
+ * Ensure organization has a Stripe customer. Returns customer ID.
  */
-export async function ensureTeamStripeCustomer(teamId, customerEmail) {
+export async function ensureOrgStripeCustomer(organizationId, customerEmail) {
   if (!stripe) {
     throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY.");
   }
-  const team = await teamOps.findById(teamId);
-  if (team?.stripeCustomerId) return team.stripeCustomerId;
+  const org = await organizationOps.findById(organizationId);
+  if (org?.stripeCustomerId) return org.stripeCustomerId;
   const customer = await stripe.customers.create({
     email: customerEmail,
-    metadata: { teamId },
+    metadata: { organizationId },
   });
-  await teamOps.update(teamId, { stripeCustomerId: customer.id });
+  await organizationOps.update(organizationId, { stripeCustomerId: customer.id });
   return customer.id;
 }
 
-/**
- * Get current extra-user slots from team (for display). Uses DB value (synced by webhook).
- */
-export function getExtraUserSlots(team) {
-  return Math.max(0, Math.floor(Number(team.extraUserSlots ?? 0)));
+/** @deprecated use ensureOrgStripeCustomer */
+export async function ensureTeamStripeCustomer(teamId, customerEmail) {
+  const team = await teamOps.findById(teamId);
+  if (!team?.organizationId) throw new Error("Team not found");
+  return ensureOrgStripeCustomer(team.organizationId, customerEmail);
+}
+
+export function getExtraUserSlots(org) {
+  return Math.max(0, Math.floor(Number(org.extraUserSlots ?? 0)));
 }
 
 /**
- * Update the Stripe subscription to set extra user add-on quantity ($5/mo per slot).
- * Caller must ensure team is on Starter or Pro and newQuantity is within plan cap (Starter: 0–2, Pro: 0–3).
- * @param {string} teamId
- * @param {number} newQuantity - Desired number of extra user slots (0 to remove add-on).
- * @returns {Promise<{ extraUserSlots: number }>}
+ * Update extra user add-on quantity on the organization subscription.
  */
-export async function updateExtraUserSlots(teamId, newQuantity) {
+export async function updateExtraUserSlots(organizationId, newQuantity) {
   if (!stripe || !stripeExtraUserPriceId) {
     throw new Error("Extra user pricing is not configured. Set STRIPE_EXTRA_USER_PRICE_ID.");
   }
-  const team = await teamOps.findById(teamId);
-  if (!team?.stripeSubscriptionId) {
-    if (team?.isOnTrial) {
+  const org = await organizationOps.findById(organizationId);
+  if (!org?.stripeSubscriptionId) {
+    if (org?.isOnTrial) {
       throw new Error("You're on a trial. Extra user slots are available after you subscribe. Use 'Manage subscription' to add a payment method; once your trial converts to a paid subscription, you can add extra users here.");
     }
     throw new Error("No active subscription. Subscribe to Starter or Pro first.");
   }
-  const sub = await stripe.subscriptions.retrieve(team.stripeSubscriptionId, {
+  const sub = await stripe.subscriptions.retrieve(org.stripeSubscriptionId, {
     expand: ["items.data.price"],
   });
   if (!["active", "trialing"].includes(sub.status)) {
@@ -214,16 +214,11 @@ export async function updateExtraUserSlots(teamId, newQuantity) {
   }
 
   if (updates.length === 0) return { extraUserSlots: 0 };
-  await stripe.subscriptions.update(team.stripeSubscriptionId, { items: updates });
-  await teamOps.update(teamId, { extraUserSlots: newQuantity });
+  await stripe.subscriptions.update(org.stripeSubscriptionId, { items: updates });
+  await organizationOps.update(organizationId, { extraUserSlots: newQuantity });
   return { extraUserSlots: newQuantity };
 }
 
-/**
- * Create a Stripe Customer Portal session for managing subscription (cancel, update payment).
- * @param {Object} opts - { customerId, returnUrl }
- * @returns {Promise<{ url: string }>} Portal URL
- */
 export async function createCustomerPortalSession(opts) {
   if (!stripe) {
     throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY.");
@@ -237,10 +232,7 @@ export async function createCustomerPortalSession(opts) {
 }
 
 /**
- * Handle Stripe webhook event. Sync subscription status to Team.
- * @param {Buffer} rawBody - Raw request body (required for signature verification)
- * @param {string} signature - Stripe-Signature header
- * @returns {Promise<{ received: boolean }>}
+ * Handle Stripe webhook event. Sync subscription status to Organization.
  */
 export async function handleWebhook(rawBody, signature) {
   if (!stripe || !stripeWebhookSecret) {
@@ -257,8 +249,8 @@ export async function handleWebhook(rawBody, signature) {
     case "customer.subscription.created":
     case "customer.subscription.updated": {
       const subscription = event.data.object;
-      const teamId = subscription.metadata?.teamId;
-      if (!teamId) break;
+      const organizationId = await resolveOrganizationIdFromMetadata(subscription.metadata);
+      if (!organizationId) break;
       const status = subscription.status;
       const isActive = ["active", "trialing"].includes(status);
       const plan = subscription.metadata?.plan === "starter" ? "starter" : "pro";
@@ -272,7 +264,7 @@ export async function handleWebhook(rawBody, signature) {
         const extraItem = items.find((item) => item.price?.id === stripeExtraUserPriceId);
         if (extraItem?.quantity) extraUserSlots = Math.max(0, Math.floor(Number(extraItem.quantity)));
       }
-      await teamOps.update(teamId, {
+      await organizationOps.update(organizationId, {
         plan: isActive ? plan : "free",
         maxProperties: isActive ? limits.maxProperties : 1,
         extraUserSlots: isActive ? extraUserSlots : 0,
@@ -283,14 +275,14 @@ export async function handleWebhook(rawBody, signature) {
         trialEndsAt: null,
         trialPlan: null,
       });
-      console.log(`[BILLING] Subscription ${subscription.id} for team ${teamId}: ${plan} ${status}, extraUserSlots=${extraUserSlots}`);
+      console.log(`[BILLING] Subscription ${subscription.id} for org ${organizationId}: ${plan} ${status}, extraUserSlots=${extraUserSlots}`);
       break;
     }
     case "customer.subscription.deleted": {
       const subscription = event.data.object;
-      const teamId = subscription.metadata?.teamId;
-      if (!teamId) break;
-      await teamOps.update(teamId, {
+      const organizationId = await resolveOrganizationIdFromMetadata(subscription.metadata);
+      if (!organizationId) break;
+      await organizationOps.update(organizationId, {
         plan: "free",
         maxProperties: 1,
         extraUserSlots: 0,
@@ -298,11 +290,10 @@ export async function handleWebhook(rawBody, signature) {
         stripeSubscriptionStatus: "canceled",
         billingInterval: null,
       });
-      console.log(`[BILLING] Subscription canceled for team ${teamId}`);
+      console.log(`[BILLING] Subscription canceled for org ${organizationId}`);
       break;
     }
     default:
-      // Unhandled event type
       break;
   }
 

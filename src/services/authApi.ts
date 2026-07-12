@@ -13,11 +13,21 @@ export interface AuthUser {
   postalCode?: string;
   phone?: string;
   teamId?: string | null;
+  activeTeamId?: string | null;
   teamName?: string | null;
   teamRole?: "owner" | "member" | "viewer";
+  organizationId?: string | null;
+  isOrgOwner?: boolean;
   maxInventoryItems?: number | null;
   allowedPages?: string[] | null;
   allowedPropertyIds?: string[] | null;
+  memberships?: Array<{
+    teamId: string;
+    teamName: string | null;
+    teamRole: string;
+    organizationId: string | null;
+    organizationName: string | null;
+  }>;
 }
 
 export interface ProfileUpdatePayload {
@@ -40,6 +50,8 @@ export interface SignupPayload {
   email: string;
   password: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   address?: string;
   phoneNumber?: string;
   startProTrial?: boolean;
@@ -134,6 +146,13 @@ export const authApi = {
     return apiRequest<AuthUser>("/auth/profile", {
       method: "PATCH",
       body: JSON.stringify(payload),
+    });
+  },
+
+  switchActiveTeam: async (teamId: string): Promise<AuthUser> => {
+    return apiRequest<AuthUser>("/me/active-team", {
+      method: "POST",
+      body: JSON.stringify({ teamId }),
     });
   },
 

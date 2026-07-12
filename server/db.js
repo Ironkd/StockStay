@@ -69,16 +69,25 @@ const stringifyJson = (value) => {
   return JSON.stringify(value);
 };
 
+function mapUser(user) {
+  if (!user) return null;
+  return { ...user };
+}
+
+function mapMembership(m) {
+  if (!m) return null;
+  return {
+    ...m,
+    allowedPages: parseJson(m.allowedPages),
+    allowedPropertyIds: parseJson(m.allowedPropertyIds),
+  };
+}
+
 // User operations
 export const userOps = {
   async findById(id) {
     const user = await prisma.user.findUnique({ where: { id } });
-    if (!user) return null;
-    return {
-      ...user,
-      allowedPages: parseJson(user.allowedPages),
-      allowedPropertyIds: parseJson(user.allowedPropertyIds),
-    };
+    return mapUser(user);
   },
 
   async findByEmail(email) {
@@ -95,12 +104,7 @@ export const userOps = {
       user = await prisma.user.findUnique({ where: { email: normalized } });
       if (!user) user = await prisma.user.findUnique({ where: { email: email.trim() } });
     }
-    if (!user) return null;
-    return {
-      ...user,
-      allowedPages: parseJson(user.allowedPages),
-      allowedPropertyIds: parseJson(user.allowedPropertyIds),
-    };
+    return mapUser(user);
   },
 
   async findByEmailVerificationToken(token) {
@@ -111,31 +115,85 @@ export const userOps = {
         emailVerificationExpiresAt: { gt: new Date() },
       },
     });
-    if (!user) return null;
-    return {
-      ...user,
-      allowedPages: parseJson(user.allowedPages),
-      allowedPropertyIds: parseJson(user.allowedPropertyIds),
-    };
+    return mapUser(user);
   },
 
   async create(data) {
-    const user = await prisma.user.create({
+    const user = await prisma.user.create({ data });
+    return mapUser(user);
+  },
+
+  async update(id, data) {
+    const user = await prisma.user.update({ where: { id }, data });
+    return mapUser(user);
+  },
+};
+
+export const organizationOps = {
+  async findById(id) {
+    if (!id) return null;
+    return prisma.organization.findUnique({ where: { id } });
+  },
+
+  async create(data) {
+    return prisma.organization.create({ data });
+  },
+
+  async update(id, data) {
+    return prisma.organization.update({ where: { id }, data });
+  },
+};
+
+export const membershipOps = {
+  async findByUserAndTeam(userId, teamId) {
+    if (!userId || !teamId) return null;
+    const m = await prisma.userMembership.findUnique({
+      where: { userId_teamId: { userId, teamId } },
+    });
+    return mapMembership(m);
+  },
+
+  async findAllByUser(userId) {
+    const rows = await prisma.userMembership.findMany({
+      where: { userId },
+      include: { team: { include: { organization: true } } },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((m) => ({
+      ...mapMembership(m),
+      team: m.team,
+    }));
+  },
+
+  async findAllByTeam(teamId) {
+    const rows = await prisma.userMembership.findMany({
+      where: { teamId },
+      include: { user: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return rows.map((m) => ({
+      ...mapMembership(m),
+      user: m.user,
+    }));
+  },
+
+  async countByTeam(teamId) {
+    return prisma.userMembership.count({ where: { teamId } });
+  },
+
+  async create(data) {
+    const m = await prisma.userMembership.create({
       data: {
         ...data,
         allowedPages: stringifyJson(data.allowedPages),
         allowedPropertyIds: stringifyJson(data.allowedPropertyIds),
       },
     });
-    return {
-      ...user,
-      allowedPages: parseJson(user.allowedPages),
-      allowedPropertyIds: parseJson(user.allowedPropertyIds),
-    };
+    return mapMembership(m);
   },
 
   async update(id, data) {
-    const user = await prisma.user.update({
+    const m = await prisma.userMembership.update({
       where: { id },
       data: {
         ...data,
@@ -146,22 +204,127 @@ export const userOps = {
             : undefined,
       },
     });
-    return {
-      ...user,
-      allowedPages: parseJson(user.allowedPages),
-      allowedPropertyIds: parseJson(user.allowedPropertyIds),
-    };
+    return mapMembership(m);
   },
 
-  async findAllByTeam(teamId) {
-    const users = await prisma.user.findMany({ where: { teamId } });
-    return users.map((u) => ({
-      ...u,
-      allowedPages: parseJson(u.allowedPages),
-      allowedPropertyIds: parseJson(u.allowedPropertyIds),
-    }));
+  async upsertForUserTeam(userId, teamId, data) {
+    const m = await prisma.userMembership.upsert({
+      where: { userId_teamId: { userId, teamId } },
+      create: {
+        userId,
+        teamId,
+        teamRole: data.teamRole || "member",
+        maxInventoryItems: data.maxInventoryItems ?? null,
+        allowedPages: stringifyJson(data.allowedPages),
+        allowedPropertyIds: stringifyJson(data.allowedPropertyIds),
+      },
+      update: {
+        teamRole: data.teamRole !== undefined ? data.teamRole : undefined,
+        maxInventoryItems: data.maxInventoryItems !== undefined ? data.maxInventoryItems : undefined,
+        allowedPages: data.allowedPages !== undefined ? stringifyJson(data.allowedPages) : undefined,
+        allowedPropertyIds:
+          data.allowedPropertyIds !== undefined
+            ? stringifyJson(data.allowedPropertyIds)
+            : undefined,
+      },
+    });
+    return mapMembership(m);
+  },
+
+  async deleteByUserAndTeam(userId, teamId) {
+    await prisma.userMembership.deleteMany({ where: { userId, teamId } });
   },
 };
+
+/**
+ * Create Organization + Team + owner membership and set activeTeamId.
+ * @returns {{ organization, team, membership }}
+ */
+export async function provisionOrganizationWithTeam({
+  ownerUserId,
+  organizationName,
+  teamName,
+}) {
+  const organization = await organizationOps.create({
+    name: organizationName,
+    ownerId: ownerUserId,
+    plan: "free",
+  });
+  const team = await teamOps.create({
+    name: teamName || organizationName,
+    ownerId: ownerUserId,
+    organizationId: organization.id,
+  });
+  const membership = await membershipOps.create({
+    userId: ownerUserId,
+    teamId: team.id,
+    teamRole: "owner",
+  });
+  await userOps.update(ownerUserId, { activeTeamId: team.id });
+  return { organization, team, membership };
+}
+
+/**
+ * Full membership context for the user's active team.
+ * Enriched user includes teamId alias (= activeTeamId) and role/scopes from membership
+ * so existing API handlers can keep using currentUser.teamId / teamRole / allowedPages.
+ */
+export async function getMembershipContext(userId) {
+  const user = await userOps.findById(userId);
+  if (!user) return null;
+
+  let activeTeamId = user.activeTeamId;
+  let membership = activeTeamId
+    ? await membershipOps.findByUserAndTeam(userId, activeTeamId)
+    : null;
+
+  if (activeTeamId && !membership) {
+    activeTeamId = null;
+  }
+
+  if (!activeTeamId) {
+    const memberships = await membershipOps.findAllByUser(userId);
+    if (memberships.length > 0) {
+      activeTeamId = memberships[0].teamId;
+      membership = memberships[0];
+      await userOps.update(userId, { activeTeamId });
+      user.activeTeamId = activeTeamId;
+    }
+  }
+
+  const team = activeTeamId ? await teamOps.findById(activeTeamId) : null;
+  const organization = team?.organizationId
+    ? await organizationOps.findById(team.organizationId)
+    : null;
+
+  const allMemberships = await membershipOps.findAllByUser(userId);
+  const membershipSummaries = allMemberships.map((m) => ({
+    teamId: m.teamId,
+    teamName: m.team?.name ?? null,
+    teamRole: m.teamRole,
+    organizationId: m.team?.organizationId ?? null,
+    organizationName: m.team?.organization?.name ?? null,
+  }));
+
+  const enrichedUser = {
+    ...user,
+    teamId: activeTeamId,
+    teamRole: membership?.teamRole ?? null,
+    maxInventoryItems: membership?.maxInventoryItems ?? null,
+    allowedPages: membership?.allowedPages ?? null,
+    allowedPropertyIds: membership?.allowedPropertyIds ?? null,
+    organizationId: organization?.id ?? null,
+    isOrgOwner: organization ? organization.ownerId === userId : false,
+  };
+
+  return {
+    user: enrichedUser,
+    membership,
+    team,
+    organization,
+    memberships: membershipSummaries,
+  };
+}
 
 // Password reset token operations
 export const passwordResetTokenOps = {
@@ -188,14 +351,17 @@ export const passwordResetTokenOps = {
   },
 };
 
-// Team operations (resilient when Team table is missing columns from migrations)
+// Team operations
 export const teamOps = {
   async findById(id) {
     if (!id) return null;
     try {
-      return await prisma.team.findUnique({ where: { id } });
+      return await prisma.team.findUnique({
+        where: { id },
+        include: { organization: true },
+      });
     } catch (err) {
-      console.warn("teamOps.findById failed (Team table may be missing columns):", err.message);
+      console.warn("teamOps.findById failed:", err.message);
       return null;
     }
   },
@@ -206,6 +372,13 @@ export const teamOps = {
 
   async update(id, data) {
     return await prisma.team.update({ where: { id }, data });
+  },
+
+  async findAllByOrganization(organizationId) {
+    return prisma.team.findMany({
+      where: { organizationId },
+      orderBy: { createdAt: "asc" },
+    });
   },
 };
 

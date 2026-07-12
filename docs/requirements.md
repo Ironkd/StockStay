@@ -315,6 +315,7 @@ Top-level tenant. Owns Stock Stay subscription (Stripe). Contains one or more Te
 | stripeCustomerId | Moved from Team in target model |
 | stripeSubscriptionId | Active subscription |
 | plan | free / starter / pro |
+| invoiceLogoUrl, invoiceStyle | Client invoice branding (**one brand per org**) |
 
 #### Team
 
@@ -325,7 +326,6 @@ Operational unit within an Organization. Today Team is the de facto tenant; targ
 | organizationId | FK to Organization |
 | name | Team display name |
 | timezone | **TBD** — billing-period timezone policy is open (Q1b). Do not implement signup timezone capture until decided. |
-| invoiceLogoUrl, invoiceStyle | Client invoice branding (may move to org level) |
 
 #### UserMembership
 
@@ -865,7 +865,7 @@ flowchart LR
 | Ledger | InventoryMovement; direct quantity edits allowed | StockTransaction; all changes via ledger service | Refactor all mutation paths |
 | Categories | Browser localStorage (`useCategories.ts`) | Server-side, team-scoped | Replace localStorage |
 | Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | Replace with Replenishment + Invoice |
-| Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields |
+| Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields **and** invoice branding |
 | User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
 | Timezone | Not captured | Billing-period timezone policy **open (Q1b)** | Decide before scheduled billing engine |
 | Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | Extend plan config |
