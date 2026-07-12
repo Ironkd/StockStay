@@ -5,6 +5,16 @@ node_modules/
 .env
 .env.local
 .env.*.local
+.env~
+*.env~
+*~
+
+# Local databases and data dumps
+*.db
+*.db-journal
+*.backup
+data.json
+data.json.backup
 
 # Build
 dist/

@@ -1,3 +1,10 @@
 node_modules/
 data.json
+data.json.backup
 .env
+.env~
+*.env~
+*~
+*.db
+*.db-journal
+*.backup

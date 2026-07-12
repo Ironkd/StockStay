@@ -2,41 +2,30 @@
  * Reset demo user password to ensure it's correct
  */
 
+import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
-import pg from 'pg';
 import bcrypt from 'bcryptjs';
-import { readFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Load .env
-const envFile = join(__dirname, '.env');
-let databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl && existsSync(envFile)) {
-  const envContent = readFileSync(envFile, 'utf8');
-  const match = envContent.match(/DATABASE_URL=["']?([^"'\n]+)["']?/);
-  if (match) {
-    databaseUrl = match[1];
-    process.env.DATABASE_URL = databaseUrl;
-  }
+// Load .env (override: true ensures .env wins over shell env vars)
+dotenv.config({ path: join(__dirname, '.env'), override: true });
+const databaseUrl = process.env.DATABASE_URL;
+
+if (!databaseUrl) {
+  console.error('❌ DATABASE_URL is not set. Add it to server/.env');
+  process.exit(1);
 }
 
-// Create pool and adapter
-const poolConfig = databaseUrl && databaseUrl.includes('supabase')
-  ? {
-      connectionString: databaseUrl,
-      ssl: {
-        rejectUnauthorized: false
-      }
-    }
+// Pass connectionString directly to PrismaPg (creates its own pool)
+const adapterConfig = databaseUrl.includes('supabase')
+  ? { connectionString: databaseUrl, ssl: { rejectUnauthorized: false } }
   : { connectionString: databaseUrl };
-
-const pool = new pg.Pool(poolConfig);
-const adapter = new PrismaPg({ pool });
+const adapter = new PrismaPg(adapterConfig);
 const prisma = new PrismaClient({ adapter });
 
 async function resetPassword() {
@@ -103,7 +92,6 @@ async function resetPassword() {
     console.error(error);
   } finally {
     await prisma.$disconnect();
-    await pool.end();
   }
 }
 

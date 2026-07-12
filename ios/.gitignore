@@ -10,4 +10,5 @@ capacitor-cordova-ios-plugins
 
 # Generated Config files
 App/App/capacitor.config.json
+App/App/capacitor.config.ts
 App/App/config.xml
