@@ -38,7 +38,6 @@ A full-featured inventory management web app built with React and TypeScript. Th
    cp .env.example .env
    npx prisma generate
    npx prisma migrate deploy
-   # If migrate fails on a brand-new DB (no baseline), use: npx prisma db push
    cd ..
    ```
 
