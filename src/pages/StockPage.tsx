@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import type {
   Sku,
   SkuFormValues,
@@ -12,6 +12,21 @@ import { stockLocationsApi, unitsOfMeasureApi } from "../services/stockLocations
 import { skusApi, stockTransactionsApi, supplyItemsApi } from "../services/catalogueApi";
 
 type Tab = "onhand" | "catalogue" | "activity";
+
+type OnHandGroup = {
+  supplyItemId: string;
+  name: string;
+  category: string;
+  baseUnitLabel: string;
+  skus: Sku[];
+  packsOnHand: number;
+  baseUnitsOnHand: number;
+};
+
+function formatQty(n: number): string {
+  if (!Number.isFinite(n)) return "0";
+  return n.toFixed(4).replace(/\.?0+$/, "") || "0";
+}
 
 export const StockPage: React.FC = () => {
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -315,6 +330,44 @@ export const StockPage: React.FC = () => {
 
   const unitName = (unitId?: string) => units.find((u) => u.id === unitId)?.code || "—";
 
+  const onHandGroups = useMemo((): OnHandGroup[] => {
+    const byId = new Map<string, OnHandGroup>();
+    for (const sku of skus) {
+      const supplyItemId = sku.supplyItemId || sku.supplyItem?.id || "unknown";
+      const fromCatalogue = supplyItems.find((s) => s.id === supplyItemId);
+      const name =
+        sku.supplyItem?.name || fromCatalogue?.name || "Unknown supply item";
+      const category = sku.supplyItem?.category || fromCatalogue?.category || "";
+      const baseUnitLabel =
+        fromCatalogue?.baseUnit?.code ||
+        unitName(fromCatalogue?.baseUnitId || sku.supplyItem?.baseUnitId) ||
+        "units";
+      const packs = sku.stockOnHand ? Number(sku.stockOnHand.quantity) || 0 : 0;
+      const packSize = Number(sku.packSize) || 0;
+      const base = packs * packSize;
+
+      let group = byId.get(supplyItemId);
+      if (!group) {
+        group = {
+          supplyItemId,
+          name,
+          category,
+          baseUnitLabel,
+          skus: [],
+          packsOnHand: 0,
+          baseUnitsOnHand: 0,
+        };
+        byId.set(supplyItemId, group);
+      }
+      group.skus.push(sku);
+      group.packsOnHand += packs;
+      group.baseUnitsOnHand += base;
+    }
+    return Array.from(byId.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+    );
+  }, [skus, supplyItems, units]);
+
   return (
     <div className="inventory-page">
       <h2>Stock</h2>
@@ -417,49 +470,116 @@ export const StockPage: React.FC = () => {
                 <h3 style={{ marginTop: 0 }}>
                   On hand{selectedLocation ? ` · ${selectedLocation.name}` : ""}
                 </h3>
+                <p style={{ marginTop: "-4px", color: "#64748b", fontSize: "13px" }}>
+                  Grouped by supply item. Totals are equivalent base units across all pack sizes.
+                </p>
                 {skus.length === 0 ? (
                   <div className="empty-state">
                     <h3>Nothing here yet</h3>
                     <p>Add a supply item / receive packs to see stock on hand.</p>
                   </div>
                 ) : (
-                  <div style={{ overflowX: "auto" }}>
-                    <table className="inventory-table">
-                      <thead>
-                        <tr>
-                          <th>SKU</th>
-                          <th>Supply item</th>
-                          <th>Pack size</th>
-                          <th>Purchase price</th>
-                          <th>Unit rate</th>
-                          <th>Packs on hand</th>
-                          <th></th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {skus.map((sku) => (
-                          <tr key={sku.id}>
-                            <td>{sku.name}</td>
-                            <td>{sku.supplyItem?.name || "—"}</td>
-                            <td>{Number(sku.packSize).toFixed(2)}</td>
-                            <td>${Number(sku.purchasePrice).toFixed(2)}</td>
-                            <td>${Number(sku.unitRate).toFixed(4)}</td>
-                            <td>
-                              {sku.stockOnHand ? Number(sku.stockOnHand.quantity).toFixed(2) : "0.00"}
-                            </td>
-                            <td>
-                              <button
-                                type="button"
-                                className="secondary"
-                                onClick={() => openReceiveModal(sku.id)}
-                              >
-                                Receive
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                    {onHandGroups.map((group) => (
+                      <div
+                        key={group.supplyItemId}
+                        style={{
+                          border: "1px solid #e2e8f0",
+                          borderRadius: "8px",
+                          overflow: "hidden",
+                        }}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                            gap: "12px",
+                            flexWrap: "wrap",
+                            padding: "12px 14px",
+                            background: "#f8fafc",
+                            borderBottom: "1px solid #e2e8f0",
+                          }}
+                        >
+                          <div>
+                            <strong style={{ fontSize: "15px" }}>{group.name}</strong>
+                            {group.category ? (
+                              <span style={{ marginLeft: "8px", color: "#64748b", fontSize: "13px" }}>
+                                {group.category}
+                              </span>
+                            ) : null}
+                            <div style={{ marginTop: "4px", fontSize: "13px", color: "#334155" }}>
+                              ≈ {formatQty(group.baseUnitsOnHand)} {group.baseUnitLabel}
+                              <span style={{ color: "#94a3b8" }}>
+                                {" "}
+                                · {formatQty(group.packsOnHand)} packs · {group.skus.length} SKU
+                                {group.skus.length === 1 ? "" : "s"}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => openSkuModal(group.supplyItemId)}
+                          >
+                            Add SKU
+                          </button>
+                        </div>
+                        <div style={{ overflowX: "auto" }}>
+                          <table className="inventory-table" style={{ margin: 0 }}>
+                            <thead>
+                              <tr>
+                                <th>SKU</th>
+                                <th>Pack size</th>
+                                <th>Purchase price</th>
+                                <th>Unit rate</th>
+                                <th>Packs on hand</th>
+                                <th>Base equiv.</th>
+                                <th></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {group.skus.map((sku) => {
+                                const packs = sku.stockOnHand
+                                  ? Number(sku.stockOnHand.quantity) || 0
+                                  : 0;
+                                const packSize = Number(sku.packSize) || 0;
+                                return (
+                                  <tr key={sku.id}>
+                                    <td>
+                                      {sku.name}
+                                      {sku.supplier ? (
+                                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                                          {sku.supplier}
+                                        </div>
+                                      ) : null}
+                                    </td>
+                                    <td>
+                                      {formatQty(packSize)} {group.baseUnitLabel}
+                                    </td>
+                                    <td>${Number(sku.purchasePrice).toFixed(2)}</td>
+                                    <td>${Number(sku.unitRate).toFixed(4)}</td>
+                                    <td>{formatQty(packs)}</td>
+                                    <td>
+                                      {formatQty(packs * packSize)} {group.baseUnitLabel}
+                                    </td>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className="secondary"
+                                        onClick={() => openReceiveModal(sku.id)}
+                                      >
+                                        Receive
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 )}
               </>
