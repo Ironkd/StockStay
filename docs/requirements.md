@@ -1133,7 +1133,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
 2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
-4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates
+4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (PropertyStock + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5)
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits
 6. **Inter-property transfer** as linked return + replenish (both billable)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
@@ -1154,6 +1154,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Schema | `server/prisma/schema.prisma` |
 | API server | `server/server.js` |
 | DB operations | `server/db.js` |
+| Stock ledger | `server/stockLedger.js` |
 | Plan limits | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
 | Invoice email | `server/email.js` |
@@ -1173,3 +1174,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.3 | 2026-07-12 | Probable | Q12: multi-team schema+UI in v1; inter-property legs always bill/refund |
 | 0.4 | 2026-07-12 | Probable | Pre-alpha gaps from assessment/strategy; timezone reopened as Q1b; Appendix A reordered |
 | 0.5 | 2026-07-23 | Probable | Appendix A #3: StockLocation, SupplyItem, Sku, UnitOfMeasure, StockOnHand, StockLocationProperty (+ thin CRUD APIs); Inventory still current until step 10 |
+| 0.6 | 2026-07-23 | Probable | Appendix A #4: PropertyStock + StockTransaction ledger (`stockLedger.js`) with Decimal break-pack, FOR UPDATE locks, postingId, receive/adjust APIs |

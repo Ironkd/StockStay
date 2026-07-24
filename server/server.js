@@ -28,6 +28,14 @@ import {
   getMembershipContext,
   provisionOrganizationWithTeam,
 } from "./db.js";
+import {
+  receiveStock,
+  adjustStockOnHand,
+  InsufficientStockError,
+  LedgerValidationError,
+  propertyStockOps,
+  stockTransactionOps,
+} from "./stockLedger.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
   startProTrial,
@@ -1486,6 +1494,119 @@ app.patch("/api/skus/:id", authenticateToken, async (req, res) => {
     }
     console.error("Error updating SKU:", error);
     res.status(500).json({ message: "Error updating SKU" });
+  }
+});
+
+function mapLedgerError(res, error) {
+  if (error instanceof InsufficientStockError) {
+    return res.status(409).json({ message: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof LedgerValidationError) {
+    return res.status(400).json({ message: error.message, code: error.code, details: error.details });
+  }
+  return null;
+}
+
+app.post("/api/skus/:id/receive", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to receive stock." });
+    }
+    const qty = parseDecimalInput(req.body?.quantity, "quantity");
+    if (qty.error) return res.status(400).json({ message: qty.error });
+    if (!(qty.value > 0)) {
+      return res.status(400).json({ message: "quantity must be greater than zero." });
+    }
+    const result = await receiveStock({
+      teamId: currentUser.teamId,
+      skuId: req.params.id,
+      packQty: qty.value,
+      userId: currentUser.id,
+    });
+    const sku = await skuOps.findById(req.params.id);
+    res.status(201).json({ ...result, sku });
+  } catch (error) {
+    if (mapLedgerError(res, error)) return;
+    console.error("Error receiving stock:", error);
+    res.status(500).json({ message: "Error receiving stock" });
+  }
+});
+
+app.post("/api/skus/:id/adjust", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to adjust stock." });
+    }
+    const delta = parseDecimalInput(req.body?.quantityDelta, "quantityDelta");
+    if (delta.error) return res.status(400).json({ message: delta.error });
+    if (delta.value === 0) {
+      return res.status(400).json({ message: "quantityDelta cannot be zero." });
+    }
+    const result = await adjustStockOnHand({
+      teamId: currentUser.teamId,
+      skuId: req.params.id,
+      quantityDelta: delta.value,
+      reason: typeof req.body?.reason === "string" ? req.body.reason : null,
+      userId: currentUser.id,
+    });
+    const sku = await skuOps.findById(req.params.id);
+    res.json({ ...result, sku });
+  } catch (error) {
+    if (mapLedgerError(res, error)) return;
+    console.error("Error adjusting stock:", error);
+    res.status(500).json({ message: "Error adjusting stock" });
+  }
+});
+
+app.get("/api/property-stocks", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to property stock." });
+    }
+    const rows = await propertyStockOps.findAllByTeam(currentUser.teamId);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching property stocks:", error);
+    res.status(500).json({ message: "Error fetching property stocks" });
+  }
+});
+
+app.get("/api/stock-transactions", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to stock transactions." });
+    }
+    const rows = await stockTransactionOps.findAllByTeam(currentUser.teamId, {
+      entityType: typeof req.query.entityType === "string" ? req.query.entityType : undefined,
+      entityId: typeof req.query.entityId === "string" ? req.query.entityId : undefined,
+      skuId: typeof req.query.skuId === "string" ? req.query.skuId : undefined,
+      postingId: typeof req.query.postingId === "string" ? req.query.postingId : undefined,
+      transactionType:
+        typeof req.query.transactionType === "string" ? req.query.transactionType : undefined,
+      fromDate: typeof req.query.fromDate === "string" ? req.query.fromDate : undefined,
+      toDate: typeof req.query.toDate === "string" ? req.query.toDate : undefined,
+      limit: req.query.limit ? Number(req.query.limit) : 200,
+    });
+    res.json(rows);
+  } catch (error) {
+    console.error("Error fetching stock transactions:", error);
+    res.status(500).json({ message: "Error fetching stock transactions" });
   }
 });
 

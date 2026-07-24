@@ -1,5 +1,13 @@
 import { apiRequest } from "../config/api";
-import type { SupplyItem, SupplyItemFormValues, Sku, SkuFormValues } from "../types";
+import type {
+  SupplyItem,
+  SupplyItemFormValues,
+  Sku,
+  SkuFormValues,
+  PropertyStock,
+  StockTransaction,
+  LedgerPostResult,
+} from "../types";
 
 export const supplyItemsApi = {
   getAll: async (opts?: { includeArchived?: boolean }): Promise<SupplyItem[]> => {
@@ -64,5 +72,53 @@ export const skusApi = {
       method: "PATCH",
       body: JSON.stringify(values),
     });
+  },
+
+  receive: async (id: string, quantity: number | string): Promise<LedgerPostResult> => {
+    return apiRequest<LedgerPostResult>(`/skus/${id}/receive`, {
+      method: "POST",
+      body: JSON.stringify({ quantity }),
+    });
+  },
+
+  adjust: async (
+    id: string,
+    values: { quantityDelta: number | string; reason?: string }
+  ): Promise<LedgerPostResult> => {
+    return apiRequest<LedgerPostResult>(`/skus/${id}/adjust`, {
+      method: "POST",
+      body: JSON.stringify(values),
+    });
+  },
+};
+
+export const propertyStocksApi = {
+  getAll: async (): Promise<PropertyStock[]> => {
+    return apiRequest<PropertyStock[]>("/property-stocks");
+  },
+};
+
+export const stockTransactionsApi = {
+  getAll: async (opts?: {
+    skuId?: string;
+    entityType?: string;
+    entityId?: string;
+    postingId?: string;
+    transactionType?: string;
+    fromDate?: string;
+    toDate?: string;
+    limit?: number;
+  }): Promise<StockTransaction[]> => {
+    const params = new URLSearchParams();
+    if (opts?.skuId) params.set("skuId", opts.skuId);
+    if (opts?.entityType) params.set("entityType", opts.entityType);
+    if (opts?.entityId) params.set("entityId", opts.entityId);
+    if (opts?.postingId) params.set("postingId", opts.postingId);
+    if (opts?.transactionType) params.set("transactionType", opts.transactionType);
+    if (opts?.fromDate) params.set("fromDate", opts.fromDate);
+    if (opts?.toDate) params.set("toDate", opts.toDate);
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    const qs = params.toString() ? `?${params.toString()}` : "";
+    return apiRequest<StockTransaction[]>(`/stock-transactions${qs}`);
   },
 };

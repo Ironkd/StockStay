@@ -314,3 +314,48 @@ export type SkuFormValues = {
   packSize: number | string;
   purchasePrice: number | string;
 };
+
+/** Ledger (Appendix A #4) */
+export type StockEntityType = "stock_on_hand" | "property_stock";
+
+export type StockTransactionType =
+  | "receipt"
+  | "adjustment"
+  | "replenishment_out"
+  | "replenishment_in"
+  | "invoice";
+
+export type PropertyStock = {
+  id: string;
+  teamId: string;
+  propertyId: string;
+  supplyItemId: string;
+  quantity: string;
+  reorderPoint: string;
+  reorderQuantity: string;
+  createdAt: string;
+  updatedAt: string;
+  property?: { id: string; name: string };
+  supplyItem?: { id: string; name: string; category: string; baseUnitId: string };
+};
+
+export type StockTransaction = {
+  id: string;
+  teamId: string;
+  entityType: StockEntityType;
+  entityId: string;
+  quantityDelta: string;
+  transactionType: StockTransactionType;
+  postingId: string;
+  referenceType: string | null;
+  referenceId: string | null;
+  reason: string | null;
+  createdByUserId: string | null;
+  createdAt: string;
+};
+
+export type LedgerPostResult = {
+  postingId: string;
+  transactions: StockTransaction[];
+  sku?: Sku;
+};
