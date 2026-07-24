@@ -19,7 +19,9 @@ export const ClientsPage: React.FC = () => {
     postalCode: "",
     country: "",
     company: "",
-    notes: ""
+    notes: "",
+    defaultMarkupPercentage: "0",
+    billingFrequency: "monthly_eom" as "weekly" | "biweekly" | "monthly_eom",
   });
 
   const resetForm = () => {
@@ -34,7 +36,9 @@ export const ClientsPage: React.FC = () => {
       postalCode: "",
       country: "",
       company: "",
-      notes: ""
+      notes: "",
+      defaultMarkupPercentage: "0",
+      billingFrequency: "monthly_eom",
     });
     setEditingClient(null);
     setShowForm(false);
@@ -47,10 +51,15 @@ export const ClientsPage: React.FC = () => {
       return;
     }
 
+    const payload = {
+      ...formData,
+      defaultMarkupPercentage: Number(formData.defaultMarkupPercentage) || 0,
+    };
+
     if (editingClient) {
-      updateClient(editingClient.id, formData);
+      updateClient(editingClient.id, payload);
     } else {
-      addClient(formData);
+      addClient(payload);
     }
     resetForm();
   };
@@ -68,7 +77,9 @@ export const ClientsPage: React.FC = () => {
       postalCode: client.postalCode || "",
       country: client.country || "",
       company: client.company || "",
-      notes: client.notes || ""
+      notes: client.notes || "",
+      defaultMarkupPercentage: String(client.defaultMarkupPercentage ?? 0),
+      billingFrequency: client.billingFrequency || "monthly_eom",
     });
     setShowForm(true);
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -229,6 +240,35 @@ export const ClientsPage: React.FC = () => {
                 rows={3}
               />
             </label>
+            <div className="form-grid">
+              <label>
+                <span>Default markup %</span>
+                <input
+                  type="number"
+                  step="any"
+                  value={formData.defaultMarkupPercentage}
+                  onChange={(e) =>
+                    setFormData({ ...formData, defaultMarkupPercentage: e.target.value })
+                  }
+                />
+              </label>
+              <label>
+                <span>Billing frequency</span>
+                <select
+                  value={formData.billingFrequency}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      billingFrequency: e.target.value as typeof formData.billingFrequency,
+                    })
+                  }
+                >
+                  <option value="weekly">Weekly</option>
+                  <option value="biweekly">Biweekly</option>
+                  <option value="monthly_eom">Monthly (end of month)</option>
+                </select>
+              </label>
+            </div>
             <div className="form-actions">
               <button type="button" className="secondary" onClick={resetForm}>
                 Cancel
@@ -271,6 +311,18 @@ export const ClientsPage: React.FC = () => {
                 <div className="client-details">
                   <p>
                     <strong>Email:</strong> {client.email}
+                  </p>
+                  <p>
+                    <strong>Default markup:</strong>{" "}
+                    {Number(client.defaultMarkupPercentage ?? 0)}%
+                  </p>
+                  <p>
+                    <strong>Billing:</strong>{" "}
+                    {client.billingFrequency === "weekly"
+                      ? "Weekly"
+                      : client.billingFrequency === "biweekly"
+                        ? "Biweekly"
+                        : "Monthly EOM"}
                   </p>
                   {client.phone && (
                     <p>

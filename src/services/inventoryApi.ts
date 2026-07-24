@@ -42,16 +42,4 @@ export const inventoryApi = {
       body: JSON.stringify({ items }),
     });
   },
-
-  transfer: async (params: {
-    fromPropertyId: string;
-    toPropertyId: string;
-    inventoryItemId: string;
-    quantity: number;
-  }): Promise<{ message: string }> => {
-    return apiRequest<{ message: string }>("/inventory/transfer", {
-      method: "POST",
-      body: JSON.stringify(params),
-    });
-  },
 };

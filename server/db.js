@@ -396,22 +396,37 @@ export const propertyOps = {
   },
 
   async createForTeam(teamId, data) {
-    return await prisma.property.create({
-      data: {
-        teamId,
-        name: data.name,
-        location: data.location || null,
-      },
-    });
+    const payload = {
+      teamId,
+      name: data.name,
+      location: data.location || null,
+    };
+    if (data.clientId !== undefined) {
+      payload.clientId = data.clientId || null;
+    }
+    if (data.markupPercentage !== undefined) {
+      payload.markupPercentage =
+        data.markupPercentage === null || data.markupPercentage === ""
+          ? null
+          : data.markupPercentage;
+    }
+    return await prisma.property.create({ data: payload });
   },
 
   async update(id, data) {
+    const payload = {};
+    if (data.name !== undefined) payload.name = data.name;
+    if (data.location !== undefined) payload.location = data.location;
+    if (data.clientId !== undefined) payload.clientId = data.clientId || null;
+    if (data.markupPercentage !== undefined) {
+      payload.markupPercentage =
+        data.markupPercentage === null || data.markupPercentage === ""
+          ? null
+          : data.markupPercentage;
+    }
     return await prisma.property.update({
       where: { id },
-      data: {
-        name: data.name,
-        location: data.location,
-      },
+      data: payload,
     });
   },
 

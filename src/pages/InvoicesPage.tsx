@@ -6,7 +6,8 @@ import { useInventory } from "../hooks/useInventory";
 import { useProperties } from "../hooks/useProperties";
 import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
-import { Invoice, InvoiceItem } from "../types";
+import { replenishmentApi } from "../services/replenishmentApi";
+import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 
 export const InvoicesPage: React.FC = () => {
   const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
@@ -20,12 +21,14 @@ export const InvoicesPage: React.FC = () => {
   const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
   const [sendingInvoice, setSendingInvoice] = useState(false);
   const [senderBranding, setSenderBranding] = useState<{ companyName: string; companyAddress: string; companyPhone: string; companyEmail: string } | null>(null);
+  const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
   
   // Section visibility state
   const [sectionVisibility, setSectionVisibility] = useState({
+    unbilled: true,
     soldByMonth: true,
     activeInvoices: true,
     sentInvoices: true
@@ -73,6 +76,32 @@ export const InvoicesPage: React.FC = () => {
     }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    replenishmentApi
+      .listUnbilled()
+      .then((rows) => {
+        if (!cancelled) setUnbilledLines(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setUnbilledLines([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [invoices.length]);
+
+  const unbilledTotals = useMemo(() => {
+    let charges = 0;
+    let credits = 0;
+    for (const line of unbilledLines) {
+      const amt = Number(line.billBackAmount) || 0;
+      if (amt >= 0) charges += amt;
+      else credits += amt;
+    }
+    return { charges, credits, net: charges + credits };
+  }, [unbilledLines]);
 
   const [formData, setFormData] = useState({
     invoiceNumber: "",
@@ -851,6 +880,76 @@ export const InvoicesPage: React.FC = () => {
           </form>
         </section>
       )}
+
+      <section className="panel">
+        <div
+          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+          onClick={() => toggleSection("unbilled")}
+        >
+          <h3 style={{ margin: 0 }}>
+            Unbilled charges &amp; credits ({unbilledLines.length})
+          </h3>
+          <button
+            type="button"
+            className="icon-button"
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleSection("unbilled");
+            }}
+            title={sectionVisibility.unbilled ? "Hide section" : "Show section"}
+          >
+            {sectionVisibility.unbilled ? "↓" : "↑"}
+          </button>
+        </div>
+        {sectionVisibility.unbilled && (
+          <div style={{ marginTop: "12px" }}>
+            <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
+              These lines will be included on the next scheduled invoice for each client
+              (scheduled billing comes in a later release). Credits are returns with negative amounts.
+            </p>
+            {unbilledLines.length === 0 ? (
+              <div className="empty-state">No unbilled charges or credits.</div>
+            ) : (
+              <>
+                <p style={{ fontSize: "14px" }}>
+                  Charges ${unbilledTotals.charges.toFixed(2)} · Credits $
+                  {unbilledTotals.credits.toFixed(2)} · Net ${unbilledTotals.net.toFixed(2)}
+                </p>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th>Client</th>
+                        <th>Property</th>
+                        <th>Item</th>
+                        <th>Qty</th>
+                        <th>Amount</th>
+                        <th>Date</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unbilledLines.map((line) => (
+                        <tr key={line.id}>
+                          <td>{line.isCredit ? "Credit" : "Charge"}</td>
+                          <td>{line.property?.client?.name || "—"}</td>
+                          <td>{line.property?.name || "—"}</td>
+                          <td>{line.supplyItem?.name || line.sku?.name || "—"}</td>
+                          <td>{Number(line.baseQtyDeployed).toFixed(2)}</td>
+                          <td style={{ color: line.isCredit ? "#b91c1c" : undefined }}>
+                            ${Number(line.billBackAmount).toFixed(2)}
+                          </td>
+                          <td>{new Date(line.createdAt).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+          </div>
+        )}
+      </section>
 
       <section className="panel sold-by-month-panel">
         <div className="sold-by-month-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => toggleSection("soldByMonth")}>

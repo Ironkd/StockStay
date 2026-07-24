@@ -36,6 +36,14 @@ import {
   propertyStockOps,
   stockTransactionOps,
 } from "./stockLedger.js";
+import {
+  createReplenishment,
+  createReturn,
+  getReplenishment,
+  listReplenishments,
+  listUnbilledLines,
+  ReplenishmentError,
+} from "./replenishment.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
   startProTrial,
@@ -899,14 +907,26 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
       });
     }
 
-    const { name, location } = req.body;
+    const { name, location, clientId, markupPercentage } = req.body;
     if (!name || typeof name !== "string") {
       return res.status(400).json({ message: "Property name is required." });
+    }
+
+    if (clientId) {
+      const client = await clientOps.findById(clientId);
+      if (!client || client.teamId !== currentUser.teamId) {
+        return res.status(400).json({ message: "Billing client not found for this team." });
+      }
     }
 
     const property = await propertyOps.createForTeam(currentUser.teamId, {
       name,
       location,
+      clientId: clientId || null,
+      markupPercentage:
+        markupPercentage === undefined || markupPercentage === "" || markupPercentage === null
+          ? null
+          : markupPercentage,
     });
 
     res.status(201).json(property);
@@ -927,10 +947,23 @@ app.put("/api/properties/:id", authenticateToken, async (req, res) => {
     if (!property) {
       return res.status(404).json({ message: "Property not found." });
     }
-    const { name, location } = req.body;
+    const { name, location, clientId, markupPercentage } = req.body;
+    if (clientId) {
+      const client = await clientOps.findById(clientId);
+      if (!client || client.teamId !== currentUser.teamId) {
+        return res.status(400).json({ message: "Billing client not found for this team." });
+      }
+    }
     const updated = await propertyOps.update(req.params.id, {
       name: typeof name === "string" ? name : property.name,
       location: typeof location === "string" ? location : property.location ?? "",
+      ...(clientId !== undefined ? { clientId: clientId || null } : {}),
+      ...(markupPercentage !== undefined
+        ? {
+            markupPercentage:
+              markupPercentage === "" || markupPercentage === null ? null : markupPercentage,
+          }
+        : {}),
     });
     res.json(updated);
   } catch (error) {
@@ -1610,6 +1643,143 @@ app.get("/api/stock-transactions", authenticateToken, async (req, res) => {
   }
 });
 
+function mapReplenishmentError(res, error) {
+  if (error instanceof InsufficientStockError) {
+    return res.status(409).json({ message: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof LedgerValidationError) {
+    return res.status(400).json({ message: error.message, code: error.code, details: error.details });
+  }
+  if (error instanceof ReplenishmentError) {
+    const status =
+      error.code === "NOT_FOUND" ? 404 : error.code === "VALIDATION" || error.code === "NO_CLIENT" || error.code === "NOT_LINKED" ? 400 : 400;
+    return res.status(status).json({
+      message: error.message,
+      code: error.code,
+      details: error.details,
+    });
+  }
+  return null;
+}
+
+app.post("/api/replenishments", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "Viewers cannot create replenishments." });
+    }
+    const { stockLocationId, propertyId, lines } = req.body || {};
+    if (!stockLocationId || !propertyId) {
+      return res.status(400).json({ message: "stockLocationId and propertyId are required." });
+    }
+    const result = await createReplenishment({
+      teamId: currentUser.teamId,
+      stockLocationId,
+      propertyId,
+      lines: Array.isArray(lines) ? lines : [],
+      userId: currentUser.id,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (mapReplenishmentError(res, error)) return;
+    console.error("Error creating replenishment:", error);
+    res.status(500).json({ message: "Error creating replenishment" });
+  }
+});
+
+app.get("/api/replenishments", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    const limit = req.query.limit ? Number(req.query.limit) : 50;
+    const rows = await listReplenishments(currentUser.teamId, { limit });
+    res.json(rows);
+  } catch (error) {
+    console.error("Error listing replenishments:", error);
+    res.status(500).json({ message: "Error listing replenishments" });
+  }
+});
+
+app.post("/api/replenishments/returns", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "Viewers cannot create returns." });
+    }
+    const { reversesLineId, baseQty, stockLocationId, skuId } = req.body || {};
+    if (!reversesLineId || baseQty == null) {
+      return res.status(400).json({ message: "reversesLineId and baseQty are required." });
+    }
+    const result = await createReturn({
+      teamId: currentUser.teamId,
+      reversesLineId,
+      baseQty,
+      stockLocationId: stockLocationId || undefined,
+      skuId: skuId || undefined,
+      userId: currentUser.id,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (mapReplenishmentError(res, error)) return;
+    console.error("Error creating return:", error);
+    res.status(500).json({ message: "Error creating return" });
+  }
+});
+
+app.get("/api/replenishments/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    const row = await getReplenishment(currentUser.teamId, req.params.id);
+    if (!row) return res.status(404).json({ message: "Replenishment not found." });
+    res.json(row);
+  } catch (error) {
+    console.error("Error fetching replenishment:", error);
+    res.status(500).json({ message: "Error fetching replenishment" });
+  }
+});
+
+app.get("/api/unbilled-lines", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    const canAccess =
+      userHasPageAccess(currentUser, "invoices") || userHasPageAccess(currentUser, "inventory");
+    if (!canAccess) {
+      return res.status(403).json({ message: "You do not have access to unbilled lines." });
+    }
+    const rows = await listUnbilledLines(currentUser.teamId);
+    res.json(rows);
+  } catch (error) {
+    console.error("Error listing unbilled lines:", error);
+    res.status(500).json({ message: "Error listing unbilled lines" });
+  }
+});
+
 // ==================== BILLING (STRIPE) ROUTES ====================
 
 const APP_URL = process.env.APP_URL || process.env.FRONTEND_URL || "http://localhost:5173";
@@ -2056,91 +2226,11 @@ app.delete("/api/inventory", authenticateToken, async (req, res) => {
 });
 
 app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    const { fromPropertyId, toPropertyId, inventoryItemId, quantity } = req.body || {};
-    if (!fromPropertyId || !toPropertyId || !inventoryItemId || typeof quantity !== "number" || quantity <= 0) {
-      return res.status(400).json({ message: "Invalid transfer request. Provide fromPropertyId, toPropertyId, inventoryItemId, and quantity." });
-    }
-
-    if (fromPropertyId === toPropertyId) {
-      return res.status(400).json({ message: "From and To properties must be different." });
-    }
-
-    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
-    const teamPropertyIds = new Set(teamProperties.map((w) => w.id));
-    if (!teamPropertyIds.has(fromPropertyId) || !teamPropertyIds.has(toPropertyId)) {
-      return res.status(403).json({ message: "Properties not found or access denied." });
-    }
-
-    const sourceItem = await inventoryOps.findById(inventoryItemId);
-    if (!sourceItem) {
-      return res.status(404).json({ message: "Item not found." });
-    }
-    if (sourceItem.propertyId !== fromPropertyId) {
-      return res.status(400).json({ message: "Item is not in the selected source property." });
-    }
-    if (sourceItem.quantity < quantity) {
-      return res.status(400).json({ message: `Insufficient stock. Available: ${sourceItem.quantity}` });
-    }
-
-    const itemsInToProperty = await prisma.inventory.findMany({
-      where: { propertyId: toPropertyId },
-    });
-    const existingInDest = itemsInToProperty.find(
-      (i) => i.name === sourceItem.name && (i.sku || "") === (sourceItem.sku || "")
-    );
-
-    const fromWh = teamProperties.find((w) => w.id === fromPropertyId);
-    const toWh = teamProperties.find((w) => w.id === toPropertyId);
-    const fromName = fromWh?.name || fromPropertyId;
-    const toName = toWh?.name || toPropertyId;
-
-    let destItemId = null;
-    if (existingInDest) {
-      await inventoryOps.update(existingInDest.id, {
-        quantity: existingInDest.quantity + quantity,
-      });
-      destItemId = existingInDest.id;
-    } else {
-      const newDestItem = await inventoryOps.create({
-        name: sourceItem.name,
-        sku: sourceItem.sku || "",
-        category: sourceItem.category || "",
-        location: sourceItem.location || "",
-        propertyId: toPropertyId,
-        quantity,
-        unit: sourceItem.unit || "",
-        reorderPoint: sourceItem.reorderPoint ?? 0,
-        reorderQuantity: sourceItem.reorderQuantity ?? 0,
-        priceBoughtFor: sourceItem.priceBoughtFor ?? null,
-        markupPercentage: sourceItem.markupPercentage ?? null,
-        finalPrice: sourceItem.finalPrice ?? null,
-        tags: sourceItem.tags || [],
-        notes: sourceItem.notes || "",
-      });
-      destItemId = newDestItem.id;
-    }
-
-    const newSourceQty = sourceItem.quantity - quantity;
-    await inventoryOps.update(inventoryItemId, { quantity: newSourceQty });
-
-    if (currentUser?.teamId) {
-      await logMovement(currentUser.teamId, inventoryItemId, -quantity, "transfer_out", "transfer", null, `Transfer to ${toName}`);
-      if (destItemId) {
-        await logMovement(currentUser.teamId, destItemId, quantity, "transfer_in", "transfer", null, `Transfer from ${fromName}`);
-      }
-    }
-
-    res.json({ message: `Transferred ${quantity} ${sourceItem.unit || "units"} of ${sourceItem.name} successfully.` });
-  } catch (error) {
-    console.error("Transfer error:", error);
-    res.status(500).json({ message: "Transfer failed" });
-  }
+  return res.status(410).json({
+    message:
+      "Property-to-property transfer is retired. Use replenishment and return via a stock location (POST /api/replenishments and POST /api/replenishments/returns).",
+    code: "GONE",
+  });
 });
 
 // ==================== REPORTS ROUTES ====================
@@ -2373,7 +2463,7 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
-    // Allow create for users with Invoices access OR Inventory access (bill-to-client from +/- on inventory)
+    // Allow create for users with Invoices access (inventory bill-to path retired)
     const canCreateInvoice =
       userHasPageAccess(currentUser, "invoices") || userHasPageAccess(currentUser, "inventory");
     if (!canCreateInvoice) {
@@ -2381,55 +2471,22 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
     }
     const invoiceData = req.body;
 
-    // If invoice items are linked to inventory, validate and update stock
-    if (invoiceData.items && Array.isArray(invoiceData.items)) {
-      // Validate inventory availability
-      for (const item of invoiceData.items) {
-        if (!item.inventoryItemId) continue;
-        const inventoryItem = await inventoryOps.findById(item.inventoryItemId);
-        if (!inventoryItem) {
-          return res.status(400).json({
-            message: `Inventory item ${item.name || item.inventoryItemId} not found`,
-          });
-        }
-        if (item.quantity > inventoryItem.quantity) {
-          return res.status(400).json({
-            message: `Insufficient stock for ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
-          });
-        }
-      }
-
-      // Deduct quantities from inventory
-      for (const item of invoiceData.items) {
-        if (!item.inventoryItemId) continue;
-        const inventoryItem = await inventoryOps.findById(item.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(item.inventoryItemId, {
-            quantity: inventoryItem.quantity - item.quantity,
-          });
-        }
-      }
+    if (
+      invoiceData.items &&
+      Array.isArray(invoiceData.items) &&
+      invoiceData.items.some((item) => item.inventoryItemId)
+    ) {
+      return res.status(410).json({
+        message:
+          "Billing from inventory items is retired. Use replenishment (POST /api/replenishments); charges appear on unbilled lines until scheduled invoicing.",
+        code: "GONE",
+      });
     }
 
     const newInvoice = await invoiceOps.create({
       ...invoiceData,
       teamId: currentUser?.teamId ?? undefined,
     });
-
-    if (currentUser?.teamId && newInvoice?.items && Array.isArray(newInvoice.items)) {
-      for (const item of newInvoice.items) {
-        if (!item.inventoryItemId) continue;
-        await logMovement(
-          currentUser.teamId,
-          item.inventoryItemId,
-          -Number(item.quantity),
-          "invoice",
-          "invoice",
-          newInvoice.id,
-          `Invoice #${newInvoice.invoiceNumber || newInvoice.id}`
-        );
-      }
-    }
     res.status(201).json(newInvoice);
   } catch (error) {
     console.error("Error creating invoice:", error);

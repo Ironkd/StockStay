@@ -7,7 +7,9 @@ import {
   PropertyFormValues,
   Category,
   CategoryFormValues,
-  Client
+  Client,
+  PropertyStock,
+  Replenishment,
 } from "../types";
 import { useInventory } from "../hooks/useInventory";
 import { useProperties } from "../hooks/useProperties";
@@ -17,14 +19,15 @@ import { PropertyForm } from "../components/PropertyForm";
 import { CategoryForm } from "../components/CategoryForm";
 import { InventoryTable } from "../components/InventoryTable";
 import { SummaryBar } from "../components/SummaryBar";
-import { TransferModal } from "../components/TransferModal";
 import { SubtractItemModal } from "../components/SubtractItemModal";
 import { AddQuantityModal } from "../components/AddQuantityModal";
-import { BillToClientModal } from "../components/BillToClientModal";
+import { ReplenishModal } from "../components/ReplenishModal";
+import { ReturnStockModal } from "../components/ReturnStockModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
-import { invoicesApi } from "../services/invoicesApi";
+import { propertyStocksApi } from "../services/catalogueApi";
+import { replenishmentApi } from "../services/replenishmentApi";
 
 export const InventoryPage: React.FC = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -39,7 +42,6 @@ export const InventoryPage: React.FC = () => {
     updateItem,
     removeItem,
     clearAll,
-    transfer,
     importFromJson,
     exportToCsv,
     exportToCsvItems,
@@ -67,11 +69,13 @@ export const InventoryPage: React.FC = () => {
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [showInventoryModal, setShowInventoryModal] = useState(false);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
-  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [showReplenishModal, setShowReplenishModal] = useState(false);
+  const [showReturnModal, setShowReturnModal] = useState(false);
   const [subtractItem, setSubtractItem] = useState<InventoryItem | null>(null);
   const [addQuantityItem, setAddQuantityItem] = useState<InventoryItem | null>(null);
-  const [billToClientItem, setBillToClientItem] = useState<InventoryItem | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
+  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
+  const [recentReplenishments, setRecentReplenishments] = useState<Replenishment[]>([]);
   const [activePropertyTab, setActivePropertyTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -90,11 +94,28 @@ export const InventoryPage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Load clients when subtract or add-quantity modal opens (add modal can bill to client)
+  // Load clients for property billing fields
   useEffect(() => {
-    if (!subtractItem && !addQuantityItem) return;
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
-  }, [subtractItem, addQuantityItem]);
+  }, []);
+
+  const refreshStockFlows = async () => {
+    try {
+      const [stocks, reps] = await Promise.all([
+        propertyStocksApi.getAll(),
+        replenishmentApi.list({ limit: 15 }),
+      ]);
+      setPropertyStocks(stocks);
+      setRecentReplenishments(reps);
+    } catch {
+      setPropertyStocks([]);
+      setRecentReplenishments([]);
+    }
+  };
+
+  useEffect(() => {
+    refreshStockFlows();
+  }, []);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -307,69 +328,42 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
-  const createInvoiceForItem = async (item: InventoryItem, quantity: number, clientId: string) => {
-    const client = clients.find((c) => c.id === clientId);
-    if (!client) throw new Error("Client not found");
-    const invoiceNumber = `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Date.now().toString(36)}`;
-    const date = new Date().toISOString().split("T")[0];
-    const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-    const lineTotal = quantity * item.finalPrice;
-    const subtotal = lineTotal;
-    const tax = 0;
-    const total = subtotal + tax;
-    const invoiceItem = {
-      id: crypto.randomUUID(),
-      name: item.name,
-      quantity,
-      unitPrice: item.finalPrice,
-      total: lineTotal,
-      inventoryItemId: item.id,
-      sku: item.sku,
-    };
-    await invoicesApi.create({
-      invoiceNumber,
-      clientId,
-      clientName: client.name,
-      date,
-      dueDate,
-      items: [invoiceItem],
-      subtotal,
-      tax,
-      total,
-      status: "draft",
-    });
-    window.dispatchEvent(new CustomEvent("invoices-refresh"));
-  };
-
-  const handleSubtractSubmit = async (
-    item: InventoryItem,
-    quantity: number,
-    billToClient: boolean,
-    clientId: string | null
-  ) => {
-    if (billToClient && clientId) {
-      await createInvoiceForItem(item, quantity, clientId);
-      await refreshInventory();
-    } else {
-      await updateItem(item.id, {
-        ...item,
-        quantity: Math.max(0, item.quantity - quantity),
-      });
-    }
-  };
-
-  const handleAddQuantitySubmit = async (
-    item: InventoryItem,
-    quantity: number,
-    billToClient?: { clientId: string; quantityToBill: number }
-  ) => {
+  const handleSubtractSubmit = async (item: InventoryItem, quantity: number) => {
     await updateItem(item.id, {
-      ...item,
-      quantity: item.quantity + quantity,
+      name: item.name,
+      sku: item.sku,
+      category: item.category,
+      location: item.location,
+      propertyId: item.propertyId,
+      quantity: Math.max(0, item.quantity - quantity),
+      unit: item.unit,
+      reorderPoint: item.reorderPoint,
+      reorderQuantity: item.reorderQuantity ?? 0,
+      priceBoughtFor: item.priceBoughtFor,
+      markupPercentage: item.markupPercentage,
+      finalPrice: item.finalPrice,
+      tags: item.tags,
+      notes: item.notes,
     });
-    if (billToClient) {
-      await createInvoiceForItem(item, billToClient.quantityToBill, billToClient.clientId);
-    }
+  };
+
+  const handleAddQuantitySubmit = async (item: InventoryItem, quantity: number) => {
+    await updateItem(item.id, {
+      name: item.name,
+      sku: item.sku,
+      category: item.category,
+      location: item.location,
+      propertyId: item.propertyId,
+      quantity: item.quantity + quantity,
+      unit: item.unit,
+      reorderPoint: item.reorderPoint,
+      reorderQuantity: item.reorderQuantity ?? 0,
+      priceBoughtFor: item.priceBoughtFor,
+      markupPercentage: item.markupPercentage,
+      finalPrice: item.finalPrice,
+      tags: item.tags,
+      notes: item.notes,
+    });
   };
 
   const handleEditCategory = (categoryName: string, categoryId?: string) => {
@@ -500,15 +494,20 @@ export const InventoryPage: React.FC = () => {
         >
           Add new item
         </button>
-        {visibleProperties.length >= 2 && (
-          <button
-            type="button"
-            className="add-property-button"
-            onClick={() => setShowTransferModal(true)}
-          >
-            Transfer
-          </button>
-        )}
+        <button
+          type="button"
+          className="add-property-button"
+          onClick={() => setShowReplenishModal(true)}
+        >
+          Replenish
+        </button>
+        <button
+          type="button"
+          className="add-property-button"
+          onClick={() => setShowReturnModal(true)}
+        >
+          Return
+        </button>
         <button
           type="button"
           className="add-property-button"
@@ -574,6 +573,7 @@ export const InventoryPage: React.FC = () => {
             <PropertyForm
               key={editingProperty ? editingProperty.id : "new"}
               initialValues={editingProperty ?? undefined}
+              clients={clients}
               onSubmit={handlePropertySubmit}
               onCancel={handleCancelPropertyEdit}
             />
@@ -683,6 +683,51 @@ export const InventoryPage: React.FC = () => {
                 </button>
               )}
             </div>
+
+            <section className="panel" style={{ marginBottom: "16px" }}>
+              <h3 style={{ marginTop: 0 }}>Property stock</h3>
+              {propertyStocks.length === 0 ? (
+                <p style={{ color: "#64748b", fontSize: "14px" }}>
+                  No property stock yet. Replenish from a stock location to deploy items.
+                </p>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>Property</th>
+                        <th>Supply item</th>
+                        <th>Qty (base)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {propertyStocks.map((row) => (
+                        <tr key={row.id}>
+                          <td>{row.property?.name || "—"}</td>
+                          <td>{row.supplyItem?.name || "—"}</td>
+                          <td>{Number(row.quantity).toFixed(2)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+              <h3 style={{ marginTop: "20px" }}>Recent replenishments</h3>
+              {recentReplenishments.length === 0 ? (
+                <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments yet.</p>
+              ) : (
+                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
+                  {recentReplenishments.slice(0, 8).map((r) => (
+                    <li key={r.id}>
+                      <strong>{r.direction}</strong> · {r.property?.name || "Property"} ←{" "}
+                      {r.stockLocation?.name || "Location"} ·{" "}
+                      {(r.lines || []).length} line(s) ·{" "}
+                      {new Date(r.createdAt).toLocaleString()}
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
 
             <SummaryBar items={items} filteredItems={filteredItems} />
 
@@ -799,22 +844,33 @@ export const InventoryPage: React.FC = () => {
         </div>
       )}
 
-      {showTransferModal && (
-        <TransferModal
-          items={items}
+      {showReplenishModal && (
+        <ReplenishModal
           properties={visibleProperties}
-          onSubmit={transfer}
-          onClose={() => setShowTransferModal(false)}
+          onClose={() => setShowReplenishModal(false)}
+          onSuccess={() => {
+            refreshStockFlows();
+            refreshInventory();
+          }}
+        />
+      )}
+
+      {showReturnModal && (
+        <ReturnStockModal
+          onClose={() => setShowReturnModal(false)}
+          onSuccess={() => {
+            refreshStockFlows();
+            refreshInventory();
+          }}
         />
       )}
 
       {subtractItem && (
         <SubtractItemModal
           item={subtractItem}
-          clients={clients}
           onClose={() => setSubtractItem(null)}
-          onSubmit={async (quantity, billToClient, clientId) => {
-            await handleSubtractSubmit(subtractItem, quantity, billToClient, clientId);
+          onSubmit={async (quantity) => {
+            await handleSubtractSubmit(subtractItem, quantity);
           }}
         />
       )}
@@ -822,10 +878,9 @@ export const InventoryPage: React.FC = () => {
       {addQuantityItem && (
         <AddQuantityModal
           item={addQuantityItem}
-          clients={clients}
           onClose={() => setAddQuantityItem(null)}
-          onSubmit={async (quantity, billToClient) => {
-            await handleAddQuantitySubmit(addQuantityItem, quantity, billToClient);
+          onSubmit={async (quantity) => {
+            await handleAddQuantitySubmit(addQuantityItem, quantity);
           }}
         />
       )}

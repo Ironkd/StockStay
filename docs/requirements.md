@@ -1,9 +1,9 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 0.4 (pre-alpha gaps from assessment/strategy incorporated)  
+**Version:** 0.7 (Appendix A #5 replenishment + return)  
 **Status:** Ready for implementation planning (timezone for billing periods still open)  
 **Audience:** David (product owner), development agents, QA  
-**Last updated:** 2026-07-12
+**Last updated:** 2026-07-23
 
 ---
 
@@ -1134,7 +1134,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (PropertyStock + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5)
-5. **Replenishment + return** workflows (API + UI), including next-invoice credits
+5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
 6. **Inter-property transfer** as linked return + replenish (both billable)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
 8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20)
@@ -1155,12 +1155,13 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | API server | `server/server.js` |
 | DB operations | `server/db.js` |
 | Stock ledger | `server/stockLedger.js` |
+| Replenishment / return | `server/replenishment.js` |
 | Plan limits | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
 | Invoice email | `server/email.js` |
 | Frontend routes | `src/App.tsx` |
 | Access control | `src/components/ProtectedRoute.tsx` |
-| Bill-to-client (deprecated path) | `src/components/BillToClientModal.tsx` |
+| Replenish / Return UI | `src/components/ReplenishModal.tsx`, `src/components/ReturnStockModal.tsx` |
 | Categories (localStorage) | `src/hooks/useCategories.ts` |
 
 ---
@@ -1175,3 +1176,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.4 | 2026-07-12 | Probable | Pre-alpha gaps from assessment/strategy; timezone reopened as Q1b; Appendix A reordered |
 | 0.5 | 2026-07-23 | Probable | Appendix A #3: StockLocation, SupplyItem, Sku, UnitOfMeasure, StockOnHand, StockLocationProperty (+ thin CRUD APIs); Inventory still current until step 10 |
 | 0.6 | 2026-07-23 | Probable | Appendix A #4: PropertyStock + StockTransaction ledger (`stockLedger.js`) with Decimal break-pack, FOR UPDATE locks, postingId, receive/adjust APIs |
+| 0.7 | 2026-07-23 | Probable | Appendix A #5: Replenishment + return + unbilled credits queue; Client/Property markup fields; legacy Transfer/bill-to UI removed |

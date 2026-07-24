@@ -110,6 +110,7 @@ model Team {
   skus           Sku[]
   propertyStocks PropertyStock[]
   stockTransactions StockTransaction[]
+  replenishments Replenishment[]
   clients        Client[]
   invoices       Invoice[]
   sales          Sale[]
@@ -138,19 +139,24 @@ model UserMembership {
 }
 
 model Property {
-  id        String   @id @default(uuid())
-  teamId    String
-  name      String
-  location  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(uuid())
+  teamId           String
+  name             String
+  location         String?
+  clientId         String?
+  markupPercentage Decimal? @db.Decimal(9, 4)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   team           Team                    @relation(fields: [teamId], references: [id])
+  client         Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   items          Inventory[]
   stockLocations StockLocationProperty[]
   propertyStocks PropertyStock[]
+  replenishments Replenishment[]
 
   @@index([teamId])
+  @@index([clientId])
 }
 
 model UnitOfMeasure {
@@ -177,6 +183,7 @@ model StockLocation {
   team       Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
   properties StockLocationProperty[]
   skus       Sku[]
+  replenishments Replenishment[]
 
   @@unique([teamId, name])
   @@index([teamId])
@@ -213,6 +220,7 @@ model SupplyItem {
   baseUnit UnitOfMeasure @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
   skus     Sku[]
   propertyStocks PropertyStock[]
+  replenishmentLines ReplenishmentLine[]
 
   @@unique([teamId, name])
   @@index([teamId])
@@ -239,6 +247,7 @@ model Sku {
   supplyItem    SupplyItem    @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
   stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
   stockOnHand   StockOnHand?
+  replenishmentLines ReplenishmentLine[]
 
   @@unique([stockLocationId, name])
   @@index([teamId])
@@ -356,26 +365,96 @@ model InventoryMovement {
 }
 
 model Client {
-  id            String   @id @default(uuid())
-  teamId        String?
-  name          String
-  email         String   @default("")
-  phone         String   @default("")
-  address       String   @default("") // Legacy field
-  streetAddress String?  @default("")
-  city          String?  @default("")
-  province      String?  @default("")
-  postalCode    String?  @default("")
-  country       String?  @default("")
-  company       String   @default("")
-  notes         String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                       String          @id @default(uuid())
+  teamId                   String?
+  name                     String
+  email                    String          @default("")
+  phone                    String          @default("")
+  address                  String          @default("") // Legacy field
+  streetAddress            String?         @default("")
+  city                     String?         @default("")
+  province                 String?         @default("")
+  postalCode               String?         @default("")
+  country                  String?         @default("")
+  company                  String          @default("")
+  notes                    String          @default("")
+  defaultMarkupPercentage  Decimal         @default(0) @db.Decimal(9, 4)
+  billingFrequency         BillingFrequency @default(monthly_eom)
+  createdAt                DateTime        @default(now())
+  updatedAt                DateTime        @updatedAt
 
-  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team       Team?      @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  properties Property[]
 
   @@index([email])
   @@index([teamId])
+}
+
+enum BillingFrequency {
+  weekly
+  biweekly
+  monthly_eom
+}
+
+enum ReplenishmentDirection {
+  replenish
+  return
+}
+
+enum ReplenishmentStatus {
+  completed
+}
+
+model Replenishment {
+  id                String                  @id @default(uuid())
+  teamId            String
+  stockLocationId   String
+  propertyId        String
+  direction         ReplenishmentDirection
+  status            ReplenishmentStatus     @default(completed)
+  performedByUserId String?
+  transferGroupId   String?
+  createdAt         DateTime                @default(now())
+
+  team          Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  stockLocation StockLocation      @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+  property      Property           @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  lines         ReplenishmentLine[]
+
+  @@index([teamId, createdAt])
+  @@index([propertyId])
+  @@index([stockLocationId])
+  @@index([transferGroupId])
+}
+
+model ReplenishmentLine {
+  id               String   @id @default(uuid())
+  replenishmentId  String
+  skuId            String
+  supplyItemId     String
+  baseQtyDeployed  Decimal  @db.Decimal(18, 6)
+  packQtyConsumed  Decimal  @db.Decimal(18, 6)
+  unitRate         Decimal  @db.Decimal(18, 6)
+  markupPercentage Decimal  @db.Decimal(9, 4)
+  billBackAmount   Decimal  @db.Decimal(18, 4)
+  billable         Boolean  @default(true)
+  invoiced         Boolean  @default(false)
+  reversesLineId   String?
+  stockPostingId   String?
+  createdAt        DateTime @default(now())
+
+  replenishment Replenishment      @relation(fields: [replenishmentId], references: [id], onDelete: Cascade)
+  sku           Sku                @relation(fields: [skuId], references: [id], onDelete: Restrict)
+  supplyItem    SupplyItem         @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
+  reversesLine  ReplenishmentLine? @relation("ReplenishmentLineReversal", fields: [reversesLineId], references: [id], onDelete: SetNull)
+  reversedBy    ReplenishmentLine[] @relation("ReplenishmentLineReversal")
+
+  @@index([replenishmentId])
+  @@index([skuId])
+  @@index([supplyItemId])
+  @@index([invoiced])
+  @@index([reversesLineId])
+  @@index([stockPostingId])
 }
 
 model Invoice {

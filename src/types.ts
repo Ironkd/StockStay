@@ -2,6 +2,8 @@ export type Property = {
   id: string;
   name: string;
   location: string;
+  clientId?: string | null;
+  markupPercentage?: string | number | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -9,6 +11,8 @@ export type Property = {
 export type PropertyFormValues = {
   name: string;
   location: string;
+  clientId?: string | null;
+  markupPercentage?: string | number | null;
 };
 
 export type Category = {
@@ -59,6 +63,8 @@ export type InventoryItemFormValues = {
   notes?: string;
 };
 
+export type BillingFrequency = "weekly" | "biweekly" | "monthly_eom";
+
 export type Client = {
   id: string;
   name: string;
@@ -72,6 +78,8 @@ export type Client = {
   country?: string;
   company?: string;
   notes?: string;
+  defaultMarkupPercentage?: string | number;
+  billingFrequency?: BillingFrequency;
   createdAt: string;
   updatedAt: string;
 };
@@ -358,4 +366,77 @@ export type LedgerPostResult = {
   postingId: string;
   transactions: StockTransaction[];
   sku?: Sku;
+};
+
+/** Replenishment (Appendix A #5) */
+export type ReplenishmentDirection = "replenish" | "return";
+
+export type ReplenishmentLine = {
+  id: string;
+  replenishmentId: string;
+  skuId: string;
+  supplyItemId: string;
+  baseQtyDeployed: string;
+  packQtyConsumed: string;
+  unitRate: string;
+  markupPercentage: string;
+  billBackAmount: string;
+  billable: boolean;
+  invoiced: boolean;
+  reversesLineId: string | null;
+  stockPostingId: string | null;
+  createdAt: string;
+  sku?: { id: string; name: string };
+  supplyItem?: { id: string; name: string };
+  reversesLine?: { id: string } | null;
+  reversedBy?: Array<{ id: string; baseQtyDeployed: string }>;
+};
+
+export type Replenishment = {
+  id: string;
+  teamId: string;
+  stockLocationId: string;
+  propertyId: string;
+  direction: ReplenishmentDirection;
+  status: "completed";
+  performedByUserId: string | null;
+  transferGroupId: string | null;
+  createdAt: string;
+  lines?: ReplenishmentLine[];
+  property?: {
+    id: string;
+    name: string;
+    clientId?: string | null;
+    markupPercentage?: string | null;
+    client?: {
+      id: string;
+      name: string;
+      defaultMarkupPercentage?: string;
+    };
+  };
+  stockLocation?: { id: string; name: string };
+};
+
+export type UnbilledLine = ReplenishmentLine & {
+  direction: ReplenishmentDirection;
+  property: {
+    id: string;
+    name: string;
+    client?: { id: string; name: string } | null;
+  } | null;
+  stockLocation?: { id: string; name: string } | null;
+  isCredit: boolean;
+};
+
+export type CreateReplenishmentInput = {
+  stockLocationId: string;
+  propertyId: string;
+  lines: Array<{ skuId: string; baseQty: number | string }>;
+};
+
+export type CreateReturnInput = {
+  reversesLineId: string;
+  baseQty: number | string;
+  stockLocationId?: string;
+  skuId?: string;
 };

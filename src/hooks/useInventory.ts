@@ -105,22 +105,6 @@ export const useInventory = () => {
     }
   };
 
-  const transfer = async (params: {
-    fromPropertyId: string;
-    toPropertyId: string;
-    inventoryItemId: string;
-    quantity: number;
-  }) => {
-    try {
-      setError(null);
-      await inventoryApi.transfer(params);
-      await loadItems();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Transfer failed");
-      throw err;
-    }
-  };
-
   /** Escape a value for CSV (quote if needed, double internal quotes). */
   const csvEscape = (v: string | number | undefined | null): string => {
     const s = v === undefined || v === null ? "" : String(v);
@@ -187,7 +171,6 @@ export const useInventory = () => {
     updateItem,
     removeItem,
     clearAll,
-    transfer,
     importFromJson,
     exportToCsv,
     exportToCsvItems,
