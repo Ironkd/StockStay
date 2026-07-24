@@ -110,7 +110,10 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
         {loadingList ? (
           <p>Loading replenishment lines…</p>
         ) : options.length === 0 ? (
-          <p>No returnable replenishment lines. Replenish first.</p>
+          <p>
+            No returnable replenishment lines yet. Use <strong>Replenish</strong> to deploy
+            stock to a property first; returns credit the next invoice.
+          </p>
         ) : (
           <form onSubmit={handleSubmit} className="inventory-form">
             <label>

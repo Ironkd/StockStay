@@ -66,7 +66,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
 
   const navItems: Array<{ path: string; label: string; icon: string; pageKey: string; proOnly?: boolean }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
-    { path: "/inventory", label: "Inventory", icon: "📦", pageKey: "inventory" },
+    { path: "/inventory", label: "Stock", icon: "📦", pageKey: "inventory" },
     { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
     { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },

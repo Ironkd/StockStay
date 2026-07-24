@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import {
   InventoryItem,
@@ -10,6 +10,7 @@ import {
   Client,
   PropertyStock,
   Replenishment,
+  StockLocation,
 } from "../types";
 import { useInventory } from "../hooks/useInventory";
 import { useProperties } from "../hooks/useProperties";
@@ -26,7 +27,8 @@ import { ReturnStockModal } from "../components/ReturnStockModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
-import { propertyStocksApi } from "../services/catalogueApi";
+import { propertyStocksApi, skusApi } from "../services/catalogueApi";
+import { stockLocationsApi } from "../services/stockLocationsApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 
 export const InventoryPage: React.FC = () => {
@@ -53,7 +55,8 @@ export const InventoryPage: React.FC = () => {
     addProperty,
     updateProperty,
     removeProperty,
-    getPropertyById
+    getPropertyById,
+    refresh: refreshProperties,
   } = useProperties();
 
   const {
@@ -76,6 +79,18 @@ export const InventoryPage: React.FC = () => {
   const [clients, setClients] = useState<Client[]>([]);
   const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
   const [recentReplenishments, setRecentReplenishments] = useState<Replenishment[]>([]);
+  const [stockLocations, setStockLocations] = useState<StockLocation[]>([]);
+  const [hasSkuOnHand, setHasSkuOnHand] = useState(false);
+  const [showAddMenu, setShowAddMenu] = useState(false);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [showLinkModal, setShowLinkModal] = useState(false);
+  const [locationName, setLocationName] = useState("");
+  const [locationAddress, setLocationAddress] = useState("");
+  const [linkLocationId, setLinkLocationId] = useState("");
+  const [linkPropertyId, setLinkPropertyId] = useState("");
+  const [setupBusy, setSetupBusy] = useState(false);
+  const [legacyOpen, setLegacyOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
   const [activePropertyTab, setActivePropertyTab] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -101,21 +116,40 @@ export const InventoryPage: React.FC = () => {
 
   const refreshStockFlows = async () => {
     try {
-      const [stocks, reps] = await Promise.all([
+      const [stocks, reps, locs, skus] = await Promise.all([
         propertyStocksApi.getAll(),
         replenishmentApi.list({ limit: 15 }),
+        stockLocationsApi.getAll(),
+        skusApi.getAll(),
       ]);
       setPropertyStocks(stocks);
       setRecentReplenishments(reps);
+      setStockLocations(locs);
+      setHasSkuOnHand(
+        skus.some((s) => s.stockOnHand && Number(s.stockOnHand.quantity) > 0)
+      );
     } catch {
       setPropertyStocks([]);
       setRecentReplenishments([]);
+      setStockLocations([]);
+      setHasSkuOnHand(false);
     }
   };
 
   useEffect(() => {
     refreshStockFlows();
   }, []);
+
+  useEffect(() => {
+    if (!showAddMenu) return;
+    const onDoc = (e: MouseEvent) => {
+      if (addMenuRef.current && !addMenuRef.current.contains(e.target as Node)) {
+        setShowAddMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [showAddMenu]);
 
   // Read status filter from URL params on mount and when params change
   useEffect(() => {
@@ -241,7 +275,81 @@ export const InventoryPage: React.FC = () => {
   ]);
 
 
-  const handleSubmit = (values: InventoryItemFormValues | InventoryItemFormValues[]) => {
+  const hasPropertyWithClient = visibleProperties.some((p) => !!p.clientId);
+  const hasLocationLink = stockLocations.some(
+    (loc) => (loc.properties || []).some((p) => visibleProperties.some((vp) => vp.id === p.propertyId))
+  );
+  const showSetupChecklist =
+    visibleProperties.length === 0 ||
+    !hasPropertyWithClient ||
+    !hasLocationLink ||
+    !hasSkuOnHand;
+
+  const filteredPropertyStocks = useMemo(() => {
+    if (activePropertyTab === "all" || activePropertyTab === null || activePropertyTab === "unassigned") {
+      return propertyStocks.filter((row) =>
+        !row.propertyId || visibleProperties.some((p) => p.id === row.propertyId)
+      );
+    }
+    return propertyStocks.filter((row) => row.propertyId === activePropertyTab);
+  }, [propertyStocks, activePropertyTab, visibleProperties]);
+
+  const openLegacyAnd = (fn: () => void) => {
+    setLegacyOpen(true);
+    setShowAddMenu(false);
+    fn();
+  };
+
+  const handleCreateLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!locationName.trim()) {
+      alert("Stock location name is required.");
+      return;
+    }
+    setSetupBusy(true);
+    try {
+      const created = await stockLocationsApi.create({
+        name: locationName.trim(),
+        address: locationAddress.trim() || null,
+      });
+      setShowLocationModal(false);
+      setLocationName("");
+      setLocationAddress("");
+      await refreshStockFlows();
+      if (activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned") {
+        if (window.confirm(`Link "${created.name}" to the selected property?`)) {
+          await stockLocationsApi.linkProperty(created.id, activePropertyTab);
+          await refreshStockFlows();
+        }
+      }
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to create stock location");
+    } finally {
+      setSetupBusy(false);
+    }
+  };
+
+  const handleLinkLocation = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!linkLocationId || !linkPropertyId) {
+      alert("Select a stock location and property.");
+      return;
+    }
+    setSetupBusy(true);
+    try {
+      await stockLocationsApi.linkProperty(linkLocationId, linkPropertyId);
+      setShowLinkModal(false);
+      setLinkLocationId("");
+      setLinkPropertyId("");
+      await refreshStockFlows();
+    } catch (err) {
+      alert(err instanceof Error ? err.message : "Failed to link location");
+    } finally {
+      setSetupBusy(false);
+    }
+  };
+
+    const handleSubmit = (values: InventoryItemFormValues | InventoryItemFormValues[]) => {
     if (editingItem) {
       if (Array.isArray(values)) {
         alert("Cannot edit multiple items at once.");
@@ -279,6 +387,7 @@ export const InventoryPage: React.FC = () => {
         await addProperty(values);
       }
       setShowPropertyModal(false);
+      await refreshProperties();
     } catch {
       // Error already set in useProperties; keep modal open
     }
@@ -477,23 +586,12 @@ export const InventoryPage: React.FC = () => {
 
   return (
     <div className="inventory-page">
-      <h2>Inventory Management</h2>
+      <h2>Stock</h2>
+      <p style={{ marginTop: "-8px", marginBottom: "16px", color: "#64748b", fontSize: "14px" }}>
+        Stock location packs → property base units → unbilled bill-back
+      </p>
 
-      <div style={{ display: "flex", gap: "8px", marginBottom: "20px" }}>
-        <button
-          type="button"
-          className="add-property-button"
-          onClick={handleAddProperty}
-        >
-          Add property
-        </button>
-        <button
-          type="button"
-          className="add-property-button"
-          onClick={handleAddItem}
-        >
-          Add new item
-        </button>
+      <div className="stock-toolbar">
         <button
           type="button"
           className="add-property-button"
@@ -508,16 +606,76 @@ export const InventoryPage: React.FC = () => {
         >
           Return
         </button>
-        <button
-          type="button"
-          className="add-property-button"
-          onClick={() => {
-            setEditingCategory(null);
-            setShowCategoryModal(true);
-          }}
-        >
-          Manage Categories
-        </button>
+        <div className="stock-add-menu" ref={addMenuRef}>
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => setShowAddMenu((v) => !v)}
+            aria-expanded={showAddMenu}
+            aria-haspopup="menu"
+          >
+            Add new ▾
+          </button>
+          {showAddMenu && (
+            <div className="stock-add-menu-panel" role="menu">
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  handleAddProperty();
+                }}
+              >
+                Property
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setShowLocationModal(true);
+                }}
+              >
+                Stock location
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setShowAddMenu(false);
+                  setLinkPropertyId(
+                    activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned"
+                      ? activePropertyTab
+                      : ""
+                  );
+                  setShowLinkModal(true);
+                }}
+              >
+                Link location ↔ property
+              </button>
+              <div className="stock-add-menu-divider" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => openLegacyAnd(handleAddItem)}
+              >
+                Legacy item
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() =>
+                  openLegacyAnd(() => {
+                    setEditingCategory(null);
+                    setShowCategoryModal(true);
+                  })
+                }
+              >
+                Categories
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {showUpgradeModal && (
@@ -581,241 +739,273 @@ export const InventoryPage: React.FC = () => {
         </div>
       )}
 
-      <section className="panel">
-
-        {visibleProperties.length > 0 ? (
-          <>
-            <div className="property-tabs">
-              <button
-                type="button"
-                className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
-                onClick={() => setActivePropertyTab("all")}
-              >
-                All Products
-                <span className="tab-count">({items.length})</span>
-              </button>
-              {visibleProperties.map((property) => {
-                const itemsInProperty = items.filter((item) => item.propertyId === property.id);
-                return (
-                  <button
-                    key={property.id}
-                    type="button"
-                    className={`property-tab ${activePropertyTab === property.id ? "active" : ""}`}
-                    onClick={() => setActivePropertyTab(property.id)}
-                  >
-                    {property.name}
-                    <span className="tab-count">({itemsInProperty.length})</span>
-                  </button>
-                );
-              })}
-              {items.some((item) => !item.propertyId) && (
-                <button
-                  type="button"
-                  className={`property-tab ${activePropertyTab === "unassigned" ? "active" : ""}`}
-                  onClick={() => setActivePropertyTab("unassigned")}
-                >
-                  Unassigned
-                  <span className="tab-count">({items.filter((item) => !item.propertyId).length})</span>
+      {showLocationModal && (
+        <div className="modal-overlay" onClick={() => !setupBusy && setShowLocationModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
+            <h3 style={{ marginTop: 0 }}>Add stock location</h3>
+            <form className="inventory-form" onSubmit={handleCreateLocation}>
+              <label>
+                <span>Name *</span>
+                <input
+                  value={locationName}
+                  onChange={(e) => setLocationName(e.target.value)}
+                  placeholder="e.g. Central Supply"
+                  required
+                />
+              </label>
+              <label>
+                <span>Address</span>
+                <input
+                  value={locationAddress}
+                  onChange={(e) => setLocationAddress(e.target.value)}
+                  placeholder="Optional"
+                />
+              </label>
+              <div className="form-actions">
+                <button type="button" className="secondary" onClick={() => setShowLocationModal(false)} disabled={setupBusy}>
+                  Cancel
                 </button>
-              )}
-            </div>
+                <button type="submit" disabled={setupBusy}>
+                  {setupBusy ? "Saving…" : "Create"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
-            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => exportToCsv()}
-              >
-                Export all inventory
-              </button>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <label htmlFor="export-property-select" style={{ fontSize: "13px", color: "#64748b" }}>
-                  Export by property:
-                </label>
-                <select
-                  id="export-property-select"
-                  className="export-property-select"
-                  value=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    e.target.value = "";
-                    if (!v) return;
-                    if (v === "all") {
-                      exportToCsv();
-                      return;
-                    }
-                    const subset =
-                      v === "unassigned"
-                        ? items.filter((i) => !i.propertyId)
-                        : items.filter((i) => i.propertyId === v);
-                    const name =
-                      v === "unassigned"
-                        ? "Unassigned"
-                        : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
-                    exportToCsvItems(subset, `inventory-${name}`);
-                  }}
-                >
-                  <option value="">Choose property…</option>
-                  <option value="all">All inventory</option>
-                  {visibleProperties.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} ({items.filter((i) => i.propertyId === w.id).length})
+      {showLinkModal && (
+        <div className="modal-overlay" onClick={() => !setupBusy && setShowLinkModal(false)}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
+            <h3 style={{ marginTop: 0 }}>Link location ↔ property</h3>
+            <form className="inventory-form" onSubmit={handleLinkLocation}>
+              <label>
+                <span>Stock location *</span>
+                <select value={linkLocationId} onChange={(e) => setLinkLocationId(e.target.value)} required>
+                  <option value="">Select…</option>
+                  {stockLocations.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.name}
                     </option>
                   ))}
-                  {items.some((i) => !i.propertyId) && (
-                    <option value="unassigned">
-                      Unassigned ({items.filter((i) => !i.propertyId).length})
-                    </option>
-                  )}
                 </select>
+              </label>
+              <label>
+                <span>Property *</span>
+                <select value={linkPropertyId} onChange={(e) => setLinkPropertyId(e.target.value)} required>
+                  <option value="">Select…</option>
+                  {visibleProperties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="form-actions">
+                <button type="button" className="secondary" onClick={() => setShowLinkModal(false)} disabled={setupBusy}>
+                  Cancel
+                </button>
+                <button type="submit" disabled={setupBusy}>
+                  {setupBusy ? "Linking…" : "Link"}
+                </button>
               </div>
-              {activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned" && (
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showSetupChecklist && (
+        <section className="stock-checklist">
+          <h3>Setup checklist</h3>
+          <ul>
+            <li>
+              <span className={visibleProperties.length > 0 ? "ok" : "todo"}>
+                {visibleProperties.length > 0 ? "✓" : "○"} Property
+              </span>
+              {visibleProperties.length === 0 && (
+                <button type="button" className="linkish" onClick={handleAddProperty}>
+                  Add property…
+                </button>
+              )}
+            </li>
+            <li>
+              <span className={hasPropertyWithClient ? "ok" : "todo"}>
+                {hasPropertyWithClient ? "✓" : "○"} Billing client on a property
+              </span>
+              {!hasPropertyWithClient && visibleProperties[0] && (
                 <button
                   type="button"
-                  className="add-property-button"
+                  className="linkish"
+                  onClick={() => handleEditProperty(visibleProperties[0])}
+                >
+                  Edit property…
+                </button>
+              )}
+              {!hasPropertyWithClient && visibleProperties.length === 0 && (
+                <button type="button" className="linkish" onClick={handleAddProperty}>
+                  Add property…
+                </button>
+              )}
+            </li>
+            <li>
+              <span className={hasLocationLink ? "ok" : "todo"}>
+                {hasLocationLink ? "✓" : "○"} Location linked to a property
+              </span>
+              {!hasLocationLink && (
+                <button
+                  type="button"
+                  className="linkish"
                   onClick={() => {
-                    if (activePropertyTab) {
-                      handleDeleteProperty(activePropertyTab);
-                    }
+                    if (stockLocations.length === 0) setShowLocationModal(true);
+                    else setShowLinkModal(true);
                   }}
                 >
-                  Delete property
+                  {stockLocations.length === 0 ? "Add stock location…" : "Link…"}
                 </button>
               )}
-            </div>
-
-            <section className="panel" style={{ marginBottom: "16px" }}>
-              <h3 style={{ marginTop: 0 }}>Property stock</h3>
-              {propertyStocks.length === 0 ? (
-                <p style={{ color: "#64748b", fontSize: "14px" }}>
-                  No property stock yet. Replenish from a stock location to deploy items.
-                </p>
-              ) : (
-                <div style={{ overflowX: "auto" }}>
-                  <table className="inventory-table">
-                    <thead>
-                      <tr>
-                        <th>Property</th>
-                        <th>Supply item</th>
-                        <th>Qty (base)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {propertyStocks.map((row) => (
-                        <tr key={row.id}>
-                          <td>{row.property?.name || "—"}</td>
-                          <td>{row.supplyItem?.name || "—"}</td>
-                          <td>{Number(row.quantity).toFixed(2)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+            </li>
+            <li>
+              <span className={hasSkuOnHand ? "ok" : "todo"}>
+                {hasSkuOnHand ? "✓" : "○"} Packs on hand at a stock location
+              </span>
+              {!hasSkuOnHand && (
+                <span style={{ color: "#64748b", fontSize: "13px" }}>
+                  Receive packs on a SKU at a stock location (catalogue receive API).
+                </span>
               )}
-              <h3 style={{ marginTop: "20px" }}>Recent replenishments</h3>
-              {recentReplenishments.length === 0 ? (
-                <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments yet.</p>
-              ) : (
-                <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
-                  {recentReplenishments.slice(0, 8).map((r) => (
-                    <li key={r.id}>
-                      <strong>{r.direction}</strong> · {r.property?.name || "Property"} ←{" "}
-                      {r.stockLocation?.name || "Location"} ·{" "}
-                      {(r.lines || []).length} line(s) ·{" "}
-                      {new Date(r.createdAt).toLocaleString()}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </section>
+            </li>
+          </ul>
+        </section>
+      )}
 
-            <SummaryBar items={items} filteredItems={filteredItems} />
-
-            <InventoryTable
-              items={filteredItems}
-              properties={visibleProperties}
-              onEdit={handleEdit}
-              onDelete={removeItem}
-              onAddQuantity={(item) => setAddQuantityItem(item)}
-              onSubtract={(item) => setSubtractItem(item)}
-            />
-          </>
-        ) : (
-          <>
-            <div className="property-tabs">
+      <section className="panel">
+        <div className="property-tabs">
+          <button
+            type="button"
+            className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
+            onClick={() => setActivePropertyTab("all")}
+          >
+            All properties
+            <span className="tab-count">({filteredPropertyStocks.length})</span>
+          </button>
+          {visibleProperties.map((property) => {
+            const stockCount = propertyStocks.filter((s) => s.propertyId === property.id).length;
+            return (
               <button
+                key={property.id}
                 type="button"
-                className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
-                onClick={() => setActivePropertyTab("all")}
+                className={`property-tab ${activePropertyTab === property.id ? "active" : ""}`}
+                onClick={() => setActivePropertyTab(property.id)}
               >
-                All Products
-                <span className="tab-count">({items.length})</span>
+                {property.name}
+                <span className="tab-count">({stockCount})</span>
               </button>
-            </div>
+            );
+          })}
+        </div>
 
-            <div style={{ marginBottom: "16px", display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => exportToCsv()}
-              >
-                Export all inventory
-              </button>
-              <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
-                <label htmlFor="export-property-select-single" style={{ fontSize: "13px", color: "#64748b" }}>
-                  Export by property:
-                </label>
-                <select
-                  id="export-property-select-single"
-                  className="export-property-select"
-                  value=""
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    e.target.value = "";
-                    if (!v) return;
-                    if (v === "all") {
-                      exportToCsv();
-                      return;
-                    }
-                    const subset =
-                      v === "unassigned"
-                        ? items.filter((i) => !i.propertyId)
-                        : items.filter((i) => i.propertyId === v);
-                    const name =
-                      v === "unassigned"
-                        ? "Unassigned"
-                        : visibleProperties.find((w) => w.id === v)?.name.replace(/[^a-zA-Z0-9]/g, "-") ?? v;
-                    exportToCsvItems(subset, `inventory-${name}`);
-                  }}
-                >
-                  <option value="">Choose property…</option>
-                  <option value="all">All inventory</option>
-                  {visibleProperties.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name} ({items.filter((i) => i.propertyId === w.id).length})
-                    </option>
-                  ))}
-                  {items.some((i) => !i.propertyId) && (
-                    <option value="unassigned">
-                      Unassigned ({items.filter((i) => !i.propertyId).length})
-                    </option>
-                  )}
-                </select>
-              </div>
-            </div>
-
-            <SummaryBar items={items} filteredItems={filteredItems} />
-
-            <InventoryTable
-              items={filteredItems}
-              properties={visibleProperties}
-              onEdit={handleEdit}
-              onDelete={removeItem}
-              onAddQuantity={(item) => setAddQuantityItem(item)}
-              onSubtract={(item) => setSubtractItem(item)}
-            />
-          </>
+        {activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned" && (
+          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                const p = getPropertyById(activePropertyTab);
+                if (p) handleEditProperty(p);
+              }}
+            >
+              Edit property
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => handleDeleteProperty(activePropertyTab)}
+            >
+              Delete property
+            </button>
+          </div>
         )}
+
+        <h3 style={{ marginTop: 0 }}>Property stock</h3>
+        {filteredPropertyStocks.length === 0 ? (
+          <p style={{ color: "#64748b", fontSize: "14px" }}>
+            Replenish from a stock location to deploy items here.
+          </p>
+        ) : (
+          <div style={{ overflowX: "auto" }}>
+            <table className="inventory-table">
+              <thead>
+                <tr>
+                  <th>Property</th>
+                  <th>Supply item</th>
+                  <th>Qty (base)</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredPropertyStocks.map((row) => (
+                  <tr key={row.id}>
+                    <td>{row.property?.name || "—"}</td>
+                    <td>{row.supplyItem?.name || "—"}</td>
+                    <td>{Number(row.quantity).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <h3 style={{ marginTop: "20px" }}>Recent moves</h3>
+        {recentReplenishments.length === 0 ? (
+          <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments or returns yet.</p>
+        ) : (
+          <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
+            {recentReplenishments.slice(0, 8).map((r) => (
+              <li key={r.id}>
+                <strong>{r.direction}</strong> · {r.property?.name || "Property"} ←{" "}
+                {r.stockLocation?.name || "Location"} · {(r.lines || []).length} line(s) ·{" "}
+                {new Date(r.createdAt).toLocaleString()}
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <details
+          className="legacy-items-details"
+          open={legacyOpen}
+          onToggle={(e) => setLegacyOpen((e.target as HTMLDetailsElement).open)}
+        >
+          <summary>Legacy items (deprecated)</summary>
+          <p style={{ fontSize: "13px", color: "#64748b", marginTop: 0 }}>
+            Bill-back uses Replenish / Return. This table is the old per-property item list and will be retired later.
+          </p>
+          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button type="button" className="secondary" onClick={handleAddItem}>
+              Add legacy item
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setEditingCategory(null);
+                setShowCategoryModal(true);
+              }}
+            >
+              Categories
+            </button>
+            <button type="button" className="secondary" onClick={() => exportToCsv()}>
+              Export CSV
+            </button>
+          </div>
+          <SummaryBar items={items} filteredItems={filteredItems} />
+          <InventoryTable
+            items={filteredItems}
+            properties={visibleProperties}
+            onEdit={handleEdit}
+            onDelete={removeItem}
+            onAddQuantity={(item) => setAddQuantityItem(item)}
+            onSubtract={(item) => setSubtractItem(item)}
+          />
+        </details>
       </section>
 
       {showInventoryModal && (
@@ -847,6 +1037,7 @@ export const InventoryPage: React.FC = () => {
       {showReplenishModal && (
         <ReplenishModal
           properties={visibleProperties}
+          clients={clients}
           onClose={() => setShowReplenishModal(false)}
           onSuccess={() => {
             refreshStockFlows();
@@ -924,7 +1115,7 @@ export const InventoryPage: React.FC = () => {
                     const itemsInCategory = items.filter((item) => item.category === categoryName);
                     const managedCategory = categories.find((c) => c.name === categoryName);
                     const isManaged = !!managedCategory;
-                    
+
                     return (
                       <div
                         key={categoryName}
@@ -978,4 +1169,5 @@ export const InventoryPage: React.FC = () => {
       )}
     </div>
   );
-};
+}
+

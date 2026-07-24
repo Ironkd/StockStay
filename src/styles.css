@@ -1917,6 +1917,123 @@ button.secondary:hover {
   filter: brightness(1.02);
 }
 
+.stock-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.stock-add-menu {
+  position: relative;
+}
+
+.stock-add-menu-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 40;
+  min-width: 220px;
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stock-add-menu-panel button {
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 13px;
+  cursor: pointer;
+  color: #0f172a;
+}
+
+.stock-add-menu-panel button:hover {
+  background: #f1f5f9;
+}
+
+.stock-add-menu-divider {
+  height: 1px;
+  background: #e2e8f0;
+  margin: 4px 0;
+}
+
+.stock-checklist {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.stock-checklist h3 {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.stock-checklist ul {
+  margin: 0;
+  padding-left: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.stock-checklist li {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  font-size: 14px;
+}
+
+.stock-checklist .ok {
+  color: #15803d;
+}
+
+.stock-checklist .todo {
+  color: #b45309;
+}
+
+.stock-checklist button.linkish {
+  background: none;
+  border: none;
+  color: #2563eb;
+  padding: 0;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.legacy-items-details {
+  margin-top: 20px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 8px 12px 12px;
+  background: #fff;
+}
+
+.legacy-items-details > summary {
+  cursor: pointer;
+  font-weight: 600;
+  padding: 8px 4px;
+  color: #64748b;
+}
+
+.legacy-items-details[open] > summary {
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
 .modal-overlay {
   position: fixed;
   top: 0;

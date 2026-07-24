@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import type { Property, Sku, StockLocation } from "../types";
+import type { Client, Property, Sku, StockLocation } from "../types";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
@@ -12,6 +12,7 @@ type LineDraft = {
 
 type Props = {
   properties: Property[];
+  clients?: Client[];
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -27,13 +28,17 @@ function packQtyPreview(baseQty: number, packSize: number): string {
   return (baseQty / packSize).toFixed(6).replace(/\.?0+$/, "") || "0";
 }
 
-function billBackPreview(baseQty: number, unitRate: number, markup: number): string {
-  if (!(baseQty > 0)) return "—";
-  const amount = baseQty * unitRate * (1 + markup / 100);
-  return amount.toFixed(2);
+function billBackAmount(baseQty: number, unitRate: number, markup: number): number {
+  if (!(baseQty > 0)) return 0;
+  return baseQty * unitRate * (1 + markup / 100);
 }
 
-export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess }) => {
+export const ReplenishModal: React.FC<Props> = ({
+  properties,
+  clients = [],
+  onClose,
+  onSuccess,
+}) => {
   const [propertyId, setPropertyId] = useState("");
   const [stockLocationId, setStockLocationId] = useState("");
   const [locations, setLocations] = useState<StockLocation[]>([]);
@@ -57,12 +62,23 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
   }, [locations, propertyId]);
 
   const selectedProperty = properties.find((p) => p.id === propertyId);
+  const billingClient = clients.find((c) => c.id === selectedProperty?.clientId);
+
+  const linkedLocationKey = linkedLocations.map((l) => l.id).join(",");
 
   useEffect(() => {
-    setStockLocationId("");
     setSkus([]);
     setLines([newLine()]);
+    setStockLocationId("");
   }, [propertyId]);
+
+  useEffect(() => {
+    if (!propertyId) return;
+    if (linkedLocations.length === 1) {
+      setStockLocationId(linkedLocations[0].id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- key captures link set for this property
+  }, [propertyId, linkedLocationKey]);
 
   useEffect(() => {
     if (!stockLocationId) {
@@ -75,16 +91,32 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
       .catch(() => setSkus([]));
   }, [stockLocationId]);
 
-  const markupPct = useMemo(() => {
-    if (!selectedProperty) return 0;
+  const markupInfo = useMemo(() => {
+    if (!selectedProperty) {
+      return { pct: 0, label: "No markup" };
+    }
     if (
       selectedProperty.markupPercentage != null &&
       selectedProperty.markupPercentage !== ""
     ) {
-      return Number(selectedProperty.markupPercentage) || 0;
+      const pct = Number(selectedProperty.markupPercentage) || 0;
+      return { pct, label: `Property override ${pct}%` };
     }
-    return 0;
-  }, [selectedProperty]);
+    if (billingClient) {
+      const pct = Number(billingClient.defaultMarkupPercentage ?? 0) || 0;
+      return { pct, label: pct ? `Client default ${pct}%` : "Client default 0%" };
+    }
+    return { pct: 0, label: "No markup" };
+  }, [selectedProperty, billingClient]);
+
+  const estimatedTotal = useMemo(() => {
+    return lines.reduce((sum, line) => {
+      const sku = skus.find((s) => s.id === line.skuId);
+      const base = Number(line.baseQty) || 0;
+      if (!sku || !(base > 0)) return sum;
+      return sum + billBackAmount(base, Number(sku.unitRate) || 0, markupInfo.pct);
+    }, 0);
+  }, [lines, skus, markupInfo.pct]);
 
   const updateLine = (id: string, patch: Partial<LineDraft>) => {
     setLines((prev) => prev.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -94,11 +126,11 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
     e.preventDefault();
     setError("");
     if (!propertyId || !stockLocationId) {
-      setError("Select a property and linked stock location.");
+      setError("Select a property and linked stock location. Use Add new → Link if needed.");
       return;
     }
     if (!selectedProperty?.clientId) {
-      setError("Property needs a billing client. Edit the property to assign one.");
+      setError("Property needs a billing client. Use Add new → Property (or Edit on the property tab).");
       return;
     }
     const payloadLines = lines
@@ -185,9 +217,22 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
             </label>
           </div>
 
+          {selectedProperty && (
+            <p style={{ fontSize: "13px", color: "#64748b", marginTop: "8px" }}>
+              Markup: {markupInfo.label}
+              {billingClient ? ` · Client ${billingClient.name}` : ""}
+            </p>
+          )}
+
           {selectedProperty && !selectedProperty.clientId && (
             <p style={{ color: "#b45309", fontSize: "13px" }}>
-              Assign a billing client on this property before replenishing.
+              Assign a billing client via Add new → Property before replenishing.
+            </p>
+          )}
+
+          {selectedProperty && linkedLocations.length === 0 && (
+            <p style={{ color: "#b45309", fontSize: "13px" }}>
+              Link a stock location via Add new → Link location ↔ property.
             </p>
           )}
 
@@ -209,6 +254,7 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
               const packSize = sku ? Number(sku.packSize) : 0;
               const unitRate = sku ? Number(sku.unitRate) : 0;
               const onHand = sku?.stockOnHand ? Number(sku.stockOnHand.quantity) : null;
+              const lineBill = billBackAmount(base, unitRate, markupInfo.pct);
               return (
                 <div
                   key={line.id}
@@ -264,14 +310,17 @@ export const ReplenishModal: React.FC<Props> = ({ properties, onClose, onSuccess
                       Packs used ≈ {packQtyPreview(base, packSize)}
                       {onHand != null ? ` · on hand ${onHand.toFixed(4)}` : ""}
                       {" · "}
-                      Est. bill-back ${billBackPreview(base, unitRate, markupPct)}
-                      {markupPct ? ` (markup ${markupPct}%)` : ""}
+                      Est. bill-back ${lineBill.toFixed(2)}
                     </div>
                   )}
                 </div>
               );
             })}
           </div>
+
+          <p style={{ fontWeight: 600, marginTop: "12px" }}>
+            Estimated bill-back total: ${estimatedTotal.toFixed(2)}
+          </p>
 
           {error && (
             <p style={{ color: "#b91c1c", fontSize: "14px" }} role="alert">
