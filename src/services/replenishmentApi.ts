@@ -3,6 +3,8 @@ import type {
   Replenishment,
   CreateReplenishmentInput,
   CreateReturnInput,
+  CreateTransferInput,
+  TransferResult,
   UnbilledLine,
 } from "../types";
 
@@ -14,8 +16,14 @@ export const replenishmentApi = {
     });
   },
 
-  list: async (opts?: { limit?: number }): Promise<Replenishment[]> => {
-    const qs = opts?.limit != null ? `?limit=${opts.limit}` : "";
+  list: async (opts?: {
+    limit?: number;
+    transferGroupId?: string;
+  }): Promise<Replenishment[]> => {
+    const params = new URLSearchParams();
+    if (opts?.limit != null) params.set("limit", String(opts.limit));
+    if (opts?.transferGroupId) params.set("transferGroupId", opts.transferGroupId);
+    const qs = params.toString() ? `?${params.toString()}` : "";
     return apiRequest<Replenishment[]>(`/replenishments${qs}`);
   },
 
@@ -25,6 +33,13 @@ export const replenishmentApi = {
 
   createReturn: async (input: CreateReturnInput): Promise<Replenishment> => {
     return apiRequest<Replenishment>("/replenishments/returns", {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  },
+
+  createTransfer: async (input: CreateTransferInput): Promise<TransferResult> => {
+    return apiRequest<TransferResult>("/replenishments/transfers", {
       method: "POST",
       body: JSON.stringify(input),
     });

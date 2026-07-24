@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 0.7 (Appendix A #5 replenishment + return)  
+**Version:** 0.8 (Appendix A #6 inter-property transfer)  
 **Status:** Ready for implementation planning (timezone for billing periods still open)  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-07-23
@@ -1135,7 +1135,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (PropertyStock + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5)
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
-6. **Inter-property transfer** as linked return + replenish (both billable)
+6. **Inter-property transfer** as linked return + replenish (both billable) — **Done** (`createInterPropertyTransfer` + `POST /api/replenishments/transfers`; shared `transferGroupId`; Stock-page Transfer UI)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
 8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20)
 9. **Streamlined signup** (minimal fields; no payment required to start)
@@ -1161,7 +1161,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Invoice email | `server/email.js` |
 | Frontend routes | `src/App.tsx` |
 | Access control | `src/components/ProtectedRoute.tsx` |
-| Replenish / Return UI | `src/components/ReplenishModal.tsx`, `src/components/ReturnStockModal.tsx` |
+| Replenish / Return / Transfer UI | `src/components/ReplenishModal.tsx`, `src/components/ReturnStockModal.tsx`, `src/components/TransferStockModal.tsx` |
 | Categories (localStorage) | `src/hooks/useCategories.ts` |
 
 ---
@@ -1177,3 +1177,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.5 | 2026-07-23 | Probable | Appendix A #3: StockLocation, SupplyItem, Sku, UnitOfMeasure, StockOnHand, StockLocationProperty (+ thin CRUD APIs); Inventory still current until step 10 |
 | 0.6 | 2026-07-23 | Probable | Appendix A #4: PropertyStock + StockTransaction ledger (`stockLedger.js`) with Decimal break-pack, FOR UPDATE locks, postingId, receive/adjust APIs |
 | 0.7 | 2026-07-23 | Probable | Appendix A #5: Replenishment + return + unbilled credits queue; Client/Property markup fields; legacy Transfer/bill-to UI removed |
+| 0.8 | 2026-07-23 | Probable | Appendix A #6: Inter-property transfer as linked return + replenish (`transferGroupId`); Stock Transfer UI |

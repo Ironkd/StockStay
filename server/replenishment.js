@@ -1,8 +1,9 @@
 /**
- * Replenishment + return workflows (Appendix A #5).
+ * Replenishment + return + inter-property transfer (Appendix A #5/#6).
  * Bill-back snapshots and unbilled credit queue; ledger via postBreakPackMove.
  */
 
+import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
 import {
@@ -115,6 +116,24 @@ function computeBillBack(baseQty, unitRate, markupPct, { credit = false } = {}) 
   return amount;
 }
 
+
+async function loadPropertyWithClient(teamId, propertyId, label = "Property") {
+  const property = await prisma.property.findFirst({
+    where: { id: propertyId, teamId },
+    include: { client: true },
+  });
+  if (!property) {
+    throw new ReplenishmentError(`${label} not found`, "NOT_FOUND");
+  }
+  if (!property.clientId || !property.client) {
+    throw new ReplenishmentError(
+      `${label} must have a billing client.`,
+      "NO_CLIENT"
+    );
+  }
+  return property;
+}
+
 async function assertLocationLinked(stockLocationId, propertyId) {
   const link = await prisma.stockLocationProperty.findUnique({
     where: {
@@ -138,24 +157,13 @@ export async function createReplenishment({
   propertyId,
   lines,
   userId,
+  transferGroupId = null,
 }) {
   if (!Array.isArray(lines) || lines.length === 0) {
     throw new ReplenishmentError("At least one line is required", "VALIDATION");
   }
 
-  const property = await prisma.property.findFirst({
-    where: { id: propertyId, teamId },
-    include: { client: true },
-  });
-  if (!property) {
-    throw new ReplenishmentError("Property not found", "NOT_FOUND");
-  }
-  if (!property.clientId || !property.client) {
-    throw new ReplenishmentError(
-      "Property must have a billing client before replenishing.",
-      "NO_CLIENT"
-    );
-  }
+  const property = await loadPropertyWithClient(teamId, propertyId);
 
   const location = await prisma.stockLocation.findFirst({
     where: { id: stockLocationId, teamId, archivedAt: null },
@@ -178,6 +186,7 @@ export async function createReplenishment({
       direction: "replenish",
       status: "completed",
       performedByUserId: userId ?? null,
+      transferGroupId: transferGroupId || null,
     },
   });
 
@@ -245,6 +254,208 @@ export async function createReplenishment({
   return getReplenishment(teamId, header.id);
 }
 
+
+/**
+ * Free-standing return from property stock (no reversesLineId).
+ * Used by inter-property transfer; capped by PropertyStock.
+ */
+async function createFreeStandingReturn({
+  teamId,
+  propertyId,
+  stockLocationId,
+  skuId,
+  baseQty,
+  userId,
+  transferGroupId = null,
+}) {
+  const qty = toDecimal(baseQty, "baseQty");
+  if (!(qty.gt(0))) {
+    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
+  }
+
+  const property = await loadPropertyWithClient(teamId, propertyId, "Source property");
+  await assertLocationLinked(stockLocationId, propertyId);
+
+  const sku = await prisma.sku.findFirst({
+    where: { id: skuId, teamId, stockLocationId, archivedAt: null },
+  });
+  if (!sku) {
+    throw new ReplenishmentError("SKU not found at stock location", "NOT_FOUND");
+  }
+
+  const propertyStock = await prisma.propertyStock.findUnique({
+    where: {
+      propertyId_supplyItemId: {
+        propertyId,
+        supplyItemId: sku.supplyItemId,
+      },
+    },
+  });
+  const available = propertyStock ? toDecimal(propertyStock.quantity) : new Decimal(0);
+  if (qty.gt(available)) {
+    throw new InsufficientStockError("Insufficient property stock", {
+      available: qtyStr(available),
+      requested: qtyStr(qty),
+    });
+  }
+
+  const markup = effectiveMarkup(property, property.client);
+  const unitRate = toDecimal(sku.unitRate);
+  const packQty = computePackQtyFromBase(qty, sku.packSize);
+  const billBackAmount = computeBillBack(qty, unitRate, markup, { credit: true });
+
+  const header = await prisma.replenishment.create({
+    data: {
+      teamId,
+      stockLocationId,
+      propertyId,
+      direction: "return",
+      status: "completed",
+      performedByUserId: userId ?? null,
+      transferGroupId: transferGroupId || null,
+    },
+  });
+
+  try {
+    const move = await postBreakPackMove({
+      teamId,
+      skuId: sku.id,
+      propertyId,
+      baseQty: qty,
+      direction: "return",
+      userId,
+      referenceType: "replenishment",
+      referenceId: header.id,
+    });
+
+    await prisma.replenishmentLine.create({
+      data: {
+        replenishmentId: header.id,
+        skuId: sku.id,
+        supplyItemId: sku.supplyItemId,
+        baseQtyDeployed: qty.toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP),
+        packQtyConsumed: packQty,
+        unitRate,
+        markupPercentage: markup,
+        billBackAmount,
+        billable: true,
+        invoiced: false,
+        reversesLineId: null,
+        stockPostingId: move.postingId,
+      },
+    });
+  } catch (err) {
+    await prisma.replenishment.delete({ where: { id: header.id } }).catch(() => {});
+    throw err;
+  }
+
+  return getReplenishment(teamId, header.id);
+}
+
+/**
+ * Inter-property transfer: return A → location, then replenish location → B.
+ * Both legs billable; linked by transferGroupId. Same SKU for both legs (v1).
+ */
+export async function createInterPropertyTransfer({
+  teamId,
+  fromPropertyId,
+  toPropertyId,
+  stockLocationId,
+  skuId,
+  baseQty,
+  userId,
+}) {
+  if (!fromPropertyId || !toPropertyId || !stockLocationId || !skuId) {
+    throw new ReplenishmentError(
+      "fromPropertyId, toPropertyId, stockLocationId, and skuId are required",
+      "VALIDATION"
+    );
+  }
+  if (fromPropertyId === toPropertyId) {
+    throw new ReplenishmentError("Source and destination properties must differ", "VALIDATION");
+  }
+
+  const qty = toDecimal(baseQty, "baseQty");
+  if (!(qty.gt(0))) {
+    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
+  }
+
+  await loadPropertyWithClient(teamId, fromPropertyId, "Source property");
+  await loadPropertyWithClient(teamId, toPropertyId, "Destination property");
+
+  const location = await prisma.stockLocation.findFirst({
+    where: { id: stockLocationId, teamId, archivedAt: null },
+  });
+  if (!location) {
+    throw new ReplenishmentError("Stock location not found", "NOT_FOUND");
+  }
+
+  await assertLocationLinked(stockLocationId, fromPropertyId);
+  await assertLocationLinked(stockLocationId, toPropertyId);
+
+  const sku = await prisma.sku.findFirst({
+    where: { id: skuId, teamId, stockLocationId, archivedAt: null },
+  });
+  if (!sku) {
+    throw new ReplenishmentError("SKU not found at stock location", "NOT_FOUND");
+  }
+
+  const propertyStock = await prisma.propertyStock.findUnique({
+    where: {
+      propertyId_supplyItemId: {
+        propertyId: fromPropertyId,
+        supplyItemId: sku.supplyItemId,
+      },
+    },
+  });
+  const available = propertyStock ? toDecimal(propertyStock.quantity) : new Decimal(0);
+  if (qty.gt(available)) {
+    throw new InsufficientStockError("Insufficient property stock at source", {
+      available: qtyStr(available),
+      requested: qtyStr(qty),
+    });
+  }
+
+  const transferGroupId = crypto.randomUUID();
+
+  const returnLeg = await createFreeStandingReturn({
+    teamId,
+    propertyId: fromPropertyId,
+    stockLocationId,
+    skuId: sku.id,
+    baseQty: qty,
+    userId,
+    transferGroupId,
+  });
+
+  let replenishLeg;
+  try {
+    replenishLeg = await createReplenishment({
+      teamId,
+      stockLocationId,
+      propertyId: toPropertyId,
+      lines: [{ skuId: sku.id, baseQty: qty }],
+      userId,
+      transferGroupId,
+    });
+  } catch (err) {
+    err.transferGroupId = transferGroupId;
+    err.details = {
+      ...(err.details || {}),
+      transferGroupId,
+      returnReplenishmentId: returnLeg?.id,
+      partial: true,
+    };
+    throw err;
+  }
+
+  return {
+    transferGroupId,
+    return: returnLeg,
+    replenish: replenishLeg,
+  };
+}
+
 /**
  * Return stock to location; create unbilled credit line reversing (part of) an original line.
  */
@@ -297,13 +508,7 @@ export async function createReturn({
   const locationId = stockLocationId || original.replenishment.stockLocationId;
   const returnSkuId = skuId || original.skuId;
 
-  const property = await prisma.property.findFirst({
-    where: { id: propertyId, teamId },
-    include: { client: true },
-  });
-  if (!property?.clientId) {
-    throw new ReplenishmentError("Property must have a billing client", "NO_CLIENT");
-  }
+  const property = await loadPropertyWithClient(teamId, propertyId);
 
   await assertLocationLinked(locationId, propertyId);
 
@@ -398,9 +603,12 @@ export async function getReplenishment(teamId, id) {
   return mapReplenishment(row);
 }
 
-export async function listReplenishments(teamId, { limit = 50 } = {}) {
+export async function listReplenishments(teamId, { limit = 50, transferGroupId } = {}) {
   const rows = await prisma.replenishment.findMany({
-    where: { teamId },
+    where: {
+      teamId,
+      ...(transferGroupId ? { transferGroupId } : {}),
+    },
     include: replenishmentInclude,
     orderBy: { createdAt: "desc" },
     take: Math.min(limit, 200),
@@ -436,6 +644,7 @@ export async function listUnbilledLines(teamId) {
   return lines.map((line) => ({
     ...mapLine(line),
     direction: line.replenishment.direction,
+    transferGroupId: line.replenishment.transferGroupId,
     property: line.replenishment.property
       ? {
           id: line.replenishment.property.id,

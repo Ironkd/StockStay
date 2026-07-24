@@ -24,6 +24,7 @@ import { SubtractItemModal } from "../components/SubtractItemModal";
 import { AddQuantityModal } from "../components/AddQuantityModal";
 import { ReplenishModal } from "../components/ReplenishModal";
 import { ReturnStockModal } from "../components/ReturnStockModal";
+import { TransferStockModal } from "../components/TransferStockModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
@@ -74,6 +75,7 @@ export const InventoryPage: React.FC = () => {
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [showReplenishModal, setShowReplenishModal] = useState(false);
   const [showReturnModal, setShowReturnModal] = useState(false);
+  const [showTransferModal, setShowTransferModal] = useState(false);
   const [subtractItem, setSubtractItem] = useState<InventoryItem | null>(null);
   const [addQuantityItem, setAddQuantityItem] = useState<InventoryItem | null>(null);
   const [clients, setClients] = useState<Client[]>([]);
@@ -606,6 +608,13 @@ export const InventoryPage: React.FC = () => {
         >
           Return
         </button>
+        <button
+          type="button"
+          className="add-property-button"
+          onClick={() => setShowTransferModal(true)}
+        >
+          Transfer
+        </button>
         <div className="stock-add-menu" ref={addMenuRef}>
           <button
             type="button"
@@ -959,13 +968,22 @@ export const InventoryPage: React.FC = () => {
           <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments or returns yet.</p>
         ) : (
           <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
-            {recentReplenishments.slice(0, 8).map((r) => (
-              <li key={r.id}>
-                <strong>{r.direction}</strong> · {r.property?.name || "Property"} ←{" "}
-                {r.stockLocation?.name || "Location"} · {(r.lines || []).length} line(s) ·{" "}
-                {new Date(r.createdAt).toLocaleString()}
-              </li>
-            ))}
+            {recentReplenishments.slice(0, 10).map((r) => {
+              const isTransfer = !!r.transferGroupId;
+              const label = isTransfer
+                ? r.direction === "return"
+                  ? "transfer out"
+                  : "transfer in"
+                : r.direction;
+              return (
+                <li key={r.id}>
+                  <strong>{label}</strong>
+                  {isTransfer ? " · pass-through" : ""} · {r.property?.name || "Property"} ←{" "}
+                  {r.stockLocation?.name || "Location"} · {(r.lines || []).length} line(s) ·{" "}
+                  {new Date(r.createdAt).toLocaleString()}
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -1049,6 +1067,19 @@ export const InventoryPage: React.FC = () => {
       {showReturnModal && (
         <ReturnStockModal
           onClose={() => setShowReturnModal(false)}
+          onSuccess={() => {
+            refreshStockFlows();
+            refreshInventory();
+          }}
+        />
+      )}
+
+      {showTransferModal && (
+        <TransferStockModal
+          properties={visibleProperties}
+          clients={clients}
+          propertyStocks={propertyStocks}
+          onClose={() => setShowTransferModal(false)}
           onSuccess={() => {
             refreshStockFlows();
             refreshInventory();

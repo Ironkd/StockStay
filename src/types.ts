@@ -440,3 +440,17 @@ export type CreateReturnInput = {
   stockLocationId?: string;
   skuId?: string;
 };
+
+export type CreateTransferInput = {
+  fromPropertyId: string;
+  toPropertyId: string;
+  stockLocationId: string;
+  skuId: string;
+  baseQty: number | string;
+};
+
+export type TransferResult = {
+  transferGroupId: string;
+  return: Replenishment;
+  replenish: Replenishment;
+};

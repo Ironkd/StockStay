@@ -39,6 +39,7 @@ import {
 import {
   createReplenishment,
   createReturn,
+  createInterPropertyTransfer,
   getReplenishment,
   listReplenishments,
   listUnbilledLines,
@@ -1703,11 +1704,52 @@ app.get("/api/replenishments", authenticateToken, async (req, res) => {
       return res.status(403).json({ message: "You do not have access to Inventory." });
     }
     const limit = req.query.limit ? Number(req.query.limit) : 50;
-    const rows = await listReplenishments(currentUser.teamId, { limit });
+    const transferGroupId =
+      typeof req.query.transferGroupId === "string" ? req.query.transferGroupId : undefined;
+    const rows = await listReplenishments(currentUser.teamId, { limit, transferGroupId });
     res.json(rows);
   } catch (error) {
     console.error("Error listing replenishments:", error);
     res.status(500).json({ message: "Error listing replenishments" });
+  }
+});
+
+app.post("/api/replenishments/transfers", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "Viewers cannot create transfers." });
+    }
+    const { fromPropertyId, toPropertyId, stockLocationId, skuId, baseQty } = req.body || {};
+    if (!fromPropertyId || !toPropertyId || !stockLocationId || !skuId || baseQty == null) {
+      return res.status(400).json({
+        message: "fromPropertyId, toPropertyId, stockLocationId, skuId, and baseQty are required.",
+      });
+    }
+    const result = await createInterPropertyTransfer({
+      teamId: currentUser.teamId,
+      fromPropertyId,
+      toPropertyId,
+      stockLocationId,
+      skuId,
+      baseQty,
+      userId: currentUser.id,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    if (mapReplenishmentError(res, error)) return;
+    console.error("Error creating inter-property transfer:", error);
+    res.status(500).json({
+      message: "Error creating transfer",
+      transferGroupId: error.transferGroupId || error.details?.transferGroupId,
+      details: error.details,
+    });
   }
 });
 
@@ -2228,7 +2270,7 @@ app.delete("/api/inventory", authenticateToken, async (req, res) => {
 app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
   return res.status(410).json({
     message:
-      "Property-to-property transfer is retired. Use replenishment and return via a stock location (POST /api/replenishments and POST /api/replenishments/returns).",
+      "Property-to-property transfer via legacy inventory is retired. Use POST /api/replenishments/transfers (pass-through stock location).",
     code: "GONE",
   });
 });
