@@ -4,18 +4,22 @@
  */
 
 import crypto from "crypto";
-import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
+import {
+  toDecimal as decToDecimal,
+  qtyStr,
+  moneyStr,
+  markupStr,
+  Decimal,
+  QTY_DP,
+  MONEY_DP,
+} from "./decimalUtil.js";
 import {
   postBreakPackMove,
   computePackQtyFromBase,
   InsufficientStockError,
   LedgerValidationError,
 } from "./stockLedger.js";
-
-const Decimal = Prisma.Decimal;
-const MONEY_DP = 4;
-const QTY_DP = 6;
 
 export { InsufficientStockError, LedgerValidationError };
 
@@ -30,20 +34,132 @@ export class ReplenishmentError extends Error {
 
 function toDecimal(value, field = "value") {
   try {
-    const d = value instanceof Decimal ? value : new Decimal(value);
-    if (!d.isFinite()) throw new Error("not finite");
-    return d;
-  } catch {
-    throw new ReplenishmentError(`${field} must be a number`, "VALIDATION");
+    return decToDecimal(value, field);
+  } catch (err) {
+    throw new ReplenishmentError(err.message, err.code || "VALIDATION");
   }
 }
 
-function moneyStr(d) {
-  return toDecimal(d).toFixed(MONEY_DP);
+function assertPositiveBaseQty(value) {
+  const d = toDecimal(value, "baseQty");
+  if (!d.gt(0)) {
+    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
+  }
+  return d;
 }
 
-function qtyStr(d) {
-  return toDecimal(d).toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP).toFixed(QTY_DP);
+async function resolveSkuAtLocation(teamId, skuId, stockLocationId, queryOptions = {}) {
+  const sku = await prisma.sku.findFirst({
+    where: { id: skuId, teamId, stockLocationId, archivedAt: null },
+    ...queryOptions,
+  });
+  if (!sku) {
+    throw new ReplenishmentError("SKU not found at this stock location", "NOT_FOUND");
+  }
+  return sku;
+}
+
+async function createHeader({
+  teamId,
+  stockLocationId,
+  propertyId,
+  direction,
+  userId,
+  transferGroupId = null,
+}) {
+  return prisma.replenishment.create({
+    data: {
+      teamId,
+      stockLocationId,
+      propertyId,
+      direction,
+      status: "completed",
+      performedByUserId: userId ?? null,
+      transferGroupId: transferGroupId || null,
+    },
+  });
+}
+
+async function postBreakPackLine({
+  header,
+  teamId,
+  sku,
+  propertyId,
+  baseQty,
+  direction,
+  markup,
+  userId,
+  reversesLineId = null,
+  billable = true,
+}) {
+  const qty = baseQty instanceof Decimal ? baseQty : toDecimal(baseQty, "baseQty");
+  const unitRate = toDecimal(sku.unitRate);
+  const packQty = computePackQtyFromBase(qty, sku.packSize);
+  const billBackAmount = computeBillBack(qty, unitRate, markup, {
+    credit: direction === "return",
+  });
+
+  try {
+    const move = await postBreakPackMove({
+      teamId,
+      skuId: sku.id,
+      propertyId,
+      baseQty: qty,
+      direction,
+      userId,
+      referenceType: "replenishment",
+      referenceId: header.id,
+    });
+
+    return prisma.replenishmentLine.create({
+      data: {
+        replenishmentId: header.id,
+        skuId: sku.id,
+        supplyItemId: sku.supplyItemId,
+        baseQtyDeployed: qty.toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP),
+        packQtyConsumed: packQty,
+        unitRate,
+        markupPercentage: markup,
+        billBackAmount,
+        billable,
+        invoiced: false,
+        reversesLineId,
+        stockPostingId: move.postingId,
+      },
+      include: {
+        sku: { select: { id: true, name: true } },
+        supplyItem: { select: { id: true, name: true } },
+      },
+    });
+  } catch (err) {
+    const lineCount = await prisma.replenishmentLine.count({
+      where: { replenishmentId: header.id },
+    });
+    if (lineCount === 0) {
+      await prisma.replenishment.delete({ where: { id: header.id } }).catch(() => {});
+    }
+    throw err;
+  }
+}
+
+async function assertPropertyStockAvailable(
+  propertyId,
+  supplyItemId,
+  qty,
+  message = "Insufficient property stock"
+) {
+  const propertyStock = await prisma.propertyStock.findUnique({
+    where: {
+      propertyId_supplyItemId: { propertyId, supplyItemId },
+    },
+  });
+  const available = propertyStock ? toDecimal(propertyStock.quantity) : new Decimal(0);
+  if (qty.gt(available)) {
+    throw new InsufficientStockError(message, {
+      available: qtyStr(available),
+      requested: qtyStr(qty),
+    });
+  }
 }
 
 function mapLine(line) {
@@ -53,7 +169,7 @@ function mapLine(line) {
     baseQtyDeployed: qtyStr(line.baseQtyDeployed),
     packQtyConsumed: qtyStr(line.packQtyConsumed),
     unitRate: qtyStr(line.unitRate),
-    markupPercentage: toDecimal(line.markupPercentage).toFixed(4),
+    markupPercentage: markupStr(line.markupPercentage),
     billBackAmount: moneyStr(line.billBackAmount),
   };
   if (Array.isArray(line.reversedBy)) {
@@ -77,15 +193,15 @@ function mapReplenishment(row) {
           clientId: row.property.clientId,
           markupPercentage:
             row.property.markupPercentage != null
-              ? toDecimal(row.property.markupPercentage).toFixed(4)
+              ? markupStr(row.property.markupPercentage)
               : null,
           client: row.property.client
             ? {
                 id: row.property.client.id,
                 name: row.property.client.name,
-                defaultMarkupPercentage: toDecimal(
+                defaultMarkupPercentage: markupStr(
                   row.property.client.defaultMarkupPercentage ?? 0
-                ).toFixed(4),
+                ),
               }
             : undefined,
         }
@@ -115,7 +231,6 @@ function computeBillBack(baseQty, unitRate, markupPct, { credit = false } = {}) 
   if (credit) amount = amount.neg();
   return amount;
 }
-
 
 async function loadPropertyWithClient(teamId, propertyId, label = "Property") {
   const property = await prisma.property.findFirst({
@@ -175,77 +290,38 @@ export async function createReplenishment({
   await assertLocationLinked(stockLocationId, propertyId);
 
   const markup = effectiveMarkup(property, property.client);
-  const createdLines = [];
 
-  // Process lines sequentially so stock locks don't conflict within one request
-  const header = await prisma.replenishment.create({
-    data: {
-      teamId,
-      stockLocationId,
-      propertyId,
-      direction: "replenish",
-      status: "completed",
-      performedByUserId: userId ?? null,
-      transferGroupId: transferGroupId || null,
-    },
+  const header = await createHeader({
+    teamId,
+    stockLocationId,
+    propertyId,
+    direction: "replenish",
+    userId,
+    transferGroupId,
   });
 
   try {
     for (const raw of lines) {
-      const skuId = raw.skuId;
-      const baseQty = toDecimal(raw.baseQty, "baseQty");
-      if (!(baseQty.gt(0))) {
-        throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
-      }
-
-      const sku = await prisma.sku.findFirst({
-        where: { id: skuId, teamId, stockLocationId, archivedAt: null },
+      const baseQty = assertPositiveBaseQty(raw.baseQty);
+      const sku = await resolveSkuAtLocation(teamId, raw.skuId, stockLocationId, {
         include: { stockOnHand: true, supplyItem: true },
       });
-      if (!sku) {
-        throw new ReplenishmentError("SKU not found at this stock location", "NOT_FOUND");
-      }
-
-      const packQty = computePackQtyFromBase(baseQty, sku.packSize);
-      const unitRate = toDecimal(sku.unitRate);
-      const billBackAmount = computeBillBack(baseQty, unitRate, markup);
-
-      const move = await postBreakPackMove({
+      await postBreakPackLine({
+        header,
         teamId,
-        skuId: sku.id,
+        sku,
         propertyId,
         baseQty,
         direction: "replenish",
+        markup,
         userId,
-        referenceType: "replenishment",
-        referenceId: header.id,
       });
-
-      const line = await prisma.replenishmentLine.create({
-        data: {
-          replenishmentId: header.id,
-          skuId: sku.id,
-          supplyItemId: sku.supplyItemId,
-          baseQtyDeployed: baseQty.toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP),
-          packQtyConsumed: packQty,
-          unitRate,
-          markupPercentage: markup,
-          billBackAmount,
-          billable: true,
-          invoiced: false,
-          stockPostingId: move.postingId,
-        },
-        include: {
-          sku: { select: { id: true, name: true } },
-          supplyItem: { select: { id: true, name: true } },
-        },
-      });
-      createdLines.push(line);
     }
   } catch (err) {
-    // Best-effort: leave header; partial lines may exist. Prefer fail loud.
-    // If first line failed, delete empty header.
-    if (createdLines.length === 0) {
+    const lineCount = await prisma.replenishmentLine.count({
+      where: { replenishmentId: header.id },
+    });
+    if (lineCount === 0) {
       await prisma.replenishment.delete({ where: { id: header.id } }).catch(() => {});
     }
     throw err;
@@ -253,7 +329,6 @@ export async function createReplenishment({
 
   return getReplenishment(teamId, header.id);
 }
-
 
 /**
  * Free-standing return from property stock (no reversesLineId).
@@ -268,86 +343,35 @@ async function createFreeStandingReturn({
   userId,
   transferGroupId = null,
 }) {
-  const qty = toDecimal(baseQty, "baseQty");
-  if (!(qty.gt(0))) {
-    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
-  }
+  const qty = assertPositiveBaseQty(baseQty);
 
   const property = await loadPropertyWithClient(teamId, propertyId, "Source property");
   await assertLocationLinked(stockLocationId, propertyId);
 
-  const sku = await prisma.sku.findFirst({
-    where: { id: skuId, teamId, stockLocationId, archivedAt: null },
-  });
-  if (!sku) {
-    throw new ReplenishmentError("SKU not found at stock location", "NOT_FOUND");
-  }
-
-  const propertyStock = await prisma.propertyStock.findUnique({
-    where: {
-      propertyId_supplyItemId: {
-        propertyId,
-        supplyItemId: sku.supplyItemId,
-      },
-    },
-  });
-  const available = propertyStock ? toDecimal(propertyStock.quantity) : new Decimal(0);
-  if (qty.gt(available)) {
-    throw new InsufficientStockError("Insufficient property stock", {
-      available: qtyStr(available),
-      requested: qtyStr(qty),
-    });
-  }
+  const sku = await resolveSkuAtLocation(teamId, skuId, stockLocationId);
+  await assertPropertyStockAvailable(propertyId, sku.supplyItemId, qty);
 
   const markup = effectiveMarkup(property, property.client);
-  const unitRate = toDecimal(sku.unitRate);
-  const packQty = computePackQtyFromBase(qty, sku.packSize);
-  const billBackAmount = computeBillBack(qty, unitRate, markup, { credit: true });
 
-  const header = await prisma.replenishment.create({
-    data: {
-      teamId,
-      stockLocationId,
-      propertyId,
-      direction: "return",
-      status: "completed",
-      performedByUserId: userId ?? null,
-      transferGroupId: transferGroupId || null,
-    },
+  const header = await createHeader({
+    teamId,
+    stockLocationId,
+    propertyId,
+    direction: "return",
+    userId,
+    transferGroupId,
   });
 
-  try {
-    const move = await postBreakPackMove({
-      teamId,
-      skuId: sku.id,
-      propertyId,
-      baseQty: qty,
-      direction: "return",
-      userId,
-      referenceType: "replenishment",
-      referenceId: header.id,
-    });
-
-    await prisma.replenishmentLine.create({
-      data: {
-        replenishmentId: header.id,
-        skuId: sku.id,
-        supplyItemId: sku.supplyItemId,
-        baseQtyDeployed: qty.toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP),
-        packQtyConsumed: packQty,
-        unitRate,
-        markupPercentage: markup,
-        billBackAmount,
-        billable: true,
-        invoiced: false,
-        reversesLineId: null,
-        stockPostingId: move.postingId,
-      },
-    });
-  } catch (err) {
-    await prisma.replenishment.delete({ where: { id: header.id } }).catch(() => {});
-    throw err;
-  }
+  await postBreakPackLine({
+    header,
+    teamId,
+    sku,
+    propertyId,
+    baseQty: qty,
+    direction: "return",
+    markup,
+    userId,
+  });
 
   return getReplenishment(teamId, header.id);
 }
@@ -375,10 +399,7 @@ export async function createInterPropertyTransfer({
     throw new ReplenishmentError("Source and destination properties must differ", "VALIDATION");
   }
 
-  const qty = toDecimal(baseQty, "baseQty");
-  if (!(qty.gt(0))) {
-    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
-  }
+  const qty = assertPositiveBaseQty(baseQty);
 
   await loadPropertyWithClient(teamId, fromPropertyId, "Source property");
   await loadPropertyWithClient(teamId, toPropertyId, "Destination property");
@@ -393,28 +414,13 @@ export async function createInterPropertyTransfer({
   await assertLocationLinked(stockLocationId, fromPropertyId);
   await assertLocationLinked(stockLocationId, toPropertyId);
 
-  const sku = await prisma.sku.findFirst({
-    where: { id: skuId, teamId, stockLocationId, archivedAt: null },
-  });
-  if (!sku) {
-    throw new ReplenishmentError("SKU not found at stock location", "NOT_FOUND");
-  }
-
-  const propertyStock = await prisma.propertyStock.findUnique({
-    where: {
-      propertyId_supplyItemId: {
-        propertyId: fromPropertyId,
-        supplyItemId: sku.supplyItemId,
-      },
-    },
-  });
-  const available = propertyStock ? toDecimal(propertyStock.quantity) : new Decimal(0);
-  if (qty.gt(available)) {
-    throw new InsufficientStockError("Insufficient property stock at source", {
-      available: qtyStr(available),
-      requested: qtyStr(qty),
-    });
-  }
+  const sku = await resolveSkuAtLocation(teamId, skuId, stockLocationId);
+  await assertPropertyStockAvailable(
+    fromPropertyId,
+    sku.supplyItemId,
+    qty,
+    "Insufficient property stock at source"
+  );
 
   const transferGroupId = crypto.randomUUID();
 
@@ -439,13 +445,42 @@ export async function createInterPropertyTransfer({
       transferGroupId,
     });
   } catch (err) {
+    let compensationOk = false;
+    try {
+      await postBreakPackMove({
+        teamId,
+        skuId: sku.id,
+        propertyId: fromPropertyId,
+        baseQty: qty,
+        direction: "replenish",
+        userId,
+        referenceType: "transfer_compensation",
+        referenceId: transferGroupId,
+      });
+      await prisma.replenishmentLine
+        .deleteMany({ where: { replenishmentId: returnLeg.id } })
+        .catch(() => {});
+      await prisma.replenishment.delete({ where: { id: returnLeg.id } }).catch(() => {});
+      compensationOk = true;
+    } catch (compErr) {
+      err.details = {
+        ...(err.details || {}),
+        transferGroupId,
+        returnReplenishmentId: returnLeg?.id,
+        partial: true,
+        compensationFailed: true,
+        compensationError: compErr.message,
+      };
+    }
+    if (compensationOk) {
+      err.details = {
+        ...(err.details || {}),
+        transferGroupId,
+        compensated: true,
+        partial: false,
+      };
+    }
     err.transferGroupId = transferGroupId;
-    err.details = {
-      ...(err.details || {}),
-      transferGroupId,
-      returnReplenishmentId: returnLeg?.id,
-      partial: true,
-    };
     throw err;
   }
 
@@ -486,10 +521,7 @@ export async function createReturn({
     throw new ReplenishmentError("Only replenish lines can be returned", "VALIDATION");
   }
 
-  const qty = toDecimal(baseQty, "baseQty");
-  if (!(qty.gt(0))) {
-    throw new ReplenishmentError("baseQty must be greater than zero", "VALIDATION");
-  }
+  const qty = assertPositiveBaseQty(baseQty);
 
   const alreadyReturned = (original.reversedBy || []).reduce(
     (sum, l) => sum.add(toDecimal(l.baseQtyDeployed).abs()),
@@ -512,12 +544,7 @@ export async function createReturn({
 
   await assertLocationLinked(locationId, propertyId);
 
-  const sku = await prisma.sku.findFirst({
-    where: { id: returnSkuId, teamId, stockLocationId: locationId, archivedAt: null },
-  });
-  if (!sku) {
-    throw new ReplenishmentError("SKU not found at stock location", "NOT_FOUND");
-  }
+  const sku = await resolveSkuAtLocation(teamId, returnSkuId, locationId);
   if (sku.supplyItemId !== original.supplyItemId) {
     throw new ReplenishmentError(
       "Return SKU must be for the same supply item as the original line",
@@ -526,53 +553,26 @@ export async function createReturn({
   }
 
   const markup = effectiveMarkup(property, property.client);
-  const unitRate = toDecimal(sku.unitRate);
-  const packQty = computePackQtyFromBase(qty, sku.packSize);
-  const billBackAmount = computeBillBack(qty, unitRate, markup, { credit: true });
 
-  const header = await prisma.replenishment.create({
-    data: {
-      teamId,
-      stockLocationId: locationId,
-      propertyId,
-      direction: "return",
-      status: "completed",
-      performedByUserId: userId ?? null,
-    },
+  const header = await createHeader({
+    teamId,
+    stockLocationId: locationId,
+    propertyId,
+    direction: "return",
+    userId,
   });
 
-  try {
-    const move = await postBreakPackMove({
-      teamId,
-      skuId: sku.id,
-      propertyId,
-      baseQty: qty,
-      direction: "return",
-      userId,
-      referenceType: "replenishment",
-      referenceId: header.id,
-    });
-
-    await prisma.replenishmentLine.create({
-      data: {
-        replenishmentId: header.id,
-        skuId: sku.id,
-        supplyItemId: sku.supplyItemId,
-        baseQtyDeployed: qty.toDecimalPlaces(QTY_DP, Decimal.ROUND_HALF_UP),
-        packQtyConsumed: packQty,
-        unitRate,
-        markupPercentage: markup,
-        billBackAmount,
-        billable: true,
-        invoiced: false,
-        reversesLineId: original.id,
-        stockPostingId: move.postingId,
-      },
-    });
-  } catch (err) {
-    await prisma.replenishment.delete({ where: { id: header.id } }).catch(() => {});
-    throw err;
-  }
+  await postBreakPackLine({
+    header,
+    teamId,
+    sku,
+    propertyId,
+    baseQty: qty,
+    direction: "return",
+    markup,
+    userId,
+    reversesLineId: original.id,
+  });
 
   return getReplenishment(teamId, header.id);
 }

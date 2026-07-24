@@ -9,6 +9,7 @@ import pg from 'pg';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
+import { qtyStr, moneyStr } from './decimalUtil.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -438,6 +439,10 @@ export const propertyOps = {
 };
 
 // Inventory operations
+/**
+ * Legacy Inventory item CRUD (pre-catalogue).
+ * StockOnHand / PropertyStock quantities must only be mutated via stockLedger.js.
+ */
 export const inventoryOps = {
   async findAll(propertyFilter = null) {
     let where;
@@ -783,12 +788,17 @@ export const movementOps = {
   },
 };
 
-function decimalToString(value) {
+/** Catalogue qty fields: fixed 6 dp. Money fields: fixed 4 dp. */
+function decimalToString(value, { money = false } = {}) {
   if (value == null) return null;
-  if (typeof value === "object" && typeof value.toString === "function") {
-    return value.toString();
+  try {
+    return money ? moneyStr(value) : qtyStr(value);
+  } catch {
+    if (typeof value === "object" && typeof value.toString === "function") {
+      return value.toString();
+    }
+    return String(value);
   }
-  return String(value);
 }
 
 function normalizeTags(tags) {
@@ -843,7 +853,7 @@ function mapSku(row) {
   return {
     ...row,
     packSize: decimalToString(row.packSize),
-    purchasePrice: decimalToString(row.purchasePrice),
+    purchasePrice: decimalToString(row.purchasePrice, { money: true }),
     unitRate: decimalToString(row.unitRate),
     stockOnHand: row.stockOnHand
       ? {

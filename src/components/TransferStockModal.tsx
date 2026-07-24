@@ -3,36 +3,23 @@ import type { Client, Property, PropertyStock, Sku, StockLocation } from "../typ
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
+import { effectiveMarkup, estimateBillBack, formatMoney } from "../utils/billBack";
+import { StockFlowModal } from "./StockFlowModal";
 
 type Props = {
   properties: Property[];
   clients?: Client[];
   propertyStocks: PropertyStock[];
+  stockLocations?: StockLocation[];
   onClose: () => void;
   onSuccess: () => void;
 };
-
-function markupPct(property: Property | undefined, clients: Client[]): { pct: number; label: string } {
-  if (!property) return { pct: 0, label: "—" };
-  if (property.markupPercentage != null && property.markupPercentage !== "") {
-    const pct = Number(property.markupPercentage) || 0;
-    return { pct, label: `Property override ${pct}%` };
-  }
-  const client = clients.find((c) => c.id === property.clientId);
-  const pct = Number(client?.defaultMarkupPercentage ?? 0) || 0;
-  return { pct, label: client ? `Client default ${pct}%` : "No markup" };
-}
-
-function billAmount(baseQty: number, unitRate: number, markup: number, credit: boolean): number {
-  if (!(baseQty > 0)) return 0;
-  const amt = baseQty * unitRate * (1 + markup / 100);
-  return credit ? -amt : amt;
-}
 
 export const TransferStockModal: React.FC<Props> = ({
   properties,
   clients = [],
   propertyStocks,
+  stockLocations: stockLocationsProp,
   onClose,
   onSuccess,
 }) => {
@@ -41,22 +28,32 @@ export const TransferStockModal: React.FC<Props> = ({
   const [stockLocationId, setStockLocationId] = useState("");
   const [skuId, setSkuId] = useState("");
   const [baseQty, setBaseQty] = useState("");
-  const [locations, setLocations] = useState<StockLocation[]>([]);
+  const [locations, setLocations] = useState<StockLocation[]>(stockLocationsProp || []);
   const [skus, setSkus] = useState<Sku[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
+    if (stockLocationsProp) {
+      setLocations(stockLocationsProp);
+      return;
+    }
     stockLocationsApi
       .getAll()
       .then(setLocations)
       .catch(() => setLocations([]));
-  }, []);
+  }, [stockLocationsProp]);
 
   const fromProperty = properties.find((p) => p.id === fromPropertyId);
   const toProperty = properties.find((p) => p.id === toPropertyId);
-  const fromMarkup = markupPct(fromProperty, clients);
-  const toMarkup = markupPct(toProperty, clients);
+  const fromMarkup = useMemo(
+    () => effectiveMarkup(fromProperty, null, clients),
+    [fromProperty, clients]
+  );
+  const toMarkup = useMemo(
+    () => effectiveMarkup(toProperty, null, clients),
+    [toProperty, clients]
+  );
 
   const sharedLocations = useMemo(() => {
     if (!fromPropertyId || !toPropertyId) return [];
@@ -106,8 +103,8 @@ export const TransferStockModal: React.FC<Props> = ({
 
   const qty = Number(baseQty) || 0;
   const unitRate = selectedSku ? Number(selectedSku.unitRate) || 0 : 0;
-  const creditEst = billAmount(qty, unitRate, fromMarkup.pct, true);
-  const chargeEst = billAmount(qty, unitRate, toMarkup.pct, false);
+  const creditEst = estimateBillBack(qty, unitRate, fromMarkup.pct, { credit: true });
+  const chargeEst = estimateBillBack(qty, unitRate, toMarkup.pct);
 
   const toOptions = properties.filter((p) => p.id !== fromPropertyId);
 
@@ -149,147 +146,130 @@ export const TransferStockModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content"
-        style={{ maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0 }}>Transfer between properties</h3>
-          <button type="button" className="icon-button close-button" onClick={onClose} aria-label="Close">
-            ✕
+    <StockFlowModal
+      title="Transfer between properties"
+      subtitle="Pass-through a stock location: return from source (credit) then replenish destination (charge). Both legs queue to unbilled / next invoice."
+      error={error}
+      loading={loading}
+      onClose={onClose}
+    >
+      <form onSubmit={handleSubmit} className="inventory-form">
+        <div className="form-grid">
+          <label>
+            <span>From property *</span>
+            <select value={fromPropertyId} onChange={(e) => setFromPropertyId(e.target.value)} required>
+              <option value="">Select…</option>
+              {properties.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {!p.clientId ? " (no client)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>To property *</span>
+            <select
+              value={toPropertyId}
+              onChange={(e) => setToPropertyId(e.target.value)}
+              required
+              disabled={!fromPropertyId}
+            >
+              <option value="">Select…</option>
+              {toOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {!p.clientId ? " (no client)" : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>Pass-through location *</span>
+            <select
+              value={stockLocationId}
+              onChange={(e) => setStockLocationId(e.target.value)}
+              required
+              disabled={!fromPropertyId || !toPropertyId}
+            >
+              <option value="">
+                {!fromPropertyId || !toPropertyId
+                  ? "Select both properties first"
+                  : sharedLocations.length === 0
+                    ? "No shared linked locations"
+                    : "Select…"}
+              </option>
+              {sharedLocations.map((loc) => (
+                <option key={loc.id} value={loc.id}>
+                  {loc.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            <span>SKU *</span>
+            <select
+              value={skuId}
+              onChange={(e) => setSkuId(e.target.value)}
+              required
+              disabled={!stockLocationId}
+            >
+              <option value="">Select SKU…</option>
+              {skus.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                  {s.supplyItem ? ` · ${s.supplyItem.name}` : ""}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {selectedSku && availablePropertyStock != null && (
+          <p style={{ fontSize: "13px", color: "#64748b" }}>
+            Available at source: {availablePropertyStock.toFixed(2)} base units
+            {selectedSku.supplyItem ? ` (${selectedSku.supplyItem.name})` : ""}
+          </p>
+        )}
+
+        {fromPropertyId && toPropertyId && sharedLocations.length === 0 && (
+          <p style={{ color: "#b45309", fontSize: "13px" }}>
+            Link both properties to the same stock location (Add new → Link).
+          </p>
+        )}
+
+        <label>
+          <span>Base qty *</span>
+          <input
+            type="number"
+            min="0"
+            step="any"
+            value={baseQty}
+            onChange={(e) => setBaseQty(e.target.value)}
+            required
+          />
+        </label>
+
+        {qty > 0 && selectedSku && (
+          <div style={{ fontSize: "13px", color: "#64748b", marginTop: "8px" }}>
+            <div>
+              Est. credit (source): ${formatMoney(creditEst)} · {fromMarkup.label}
+            </div>
+            <div>
+              Est. charge (destination): ${formatMoney(chargeEst)} · {toMarkup.label}
+            </div>
+          </div>
+        )}
+
+        <div className="form-actions">
+          <button type="button" className="secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </button>
+          <button type="submit" disabled={loading}>
+            {loading ? "Transferring…" : "Confirm transfer"}
           </button>
         </div>
-        <p style={{ marginTop: 0, color: "#64748b", fontSize: "14px" }}>
-          Pass-through a stock location: return from source (credit) then replenish destination (charge).
-          Both legs queue to unbilled / next invoice.
-        </p>
-
-        <form onSubmit={handleSubmit} className="inventory-form">
-          <div className="form-grid">
-            <label>
-              <span>From property *</span>
-              <select value={fromPropertyId} onChange={(e) => setFromPropertyId(e.target.value)} required>
-                <option value="">Select…</option>
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {!p.clientId ? " (no client)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>To property *</span>
-              <select
-                value={toPropertyId}
-                onChange={(e) => setToPropertyId(e.target.value)}
-                required
-                disabled={!fromPropertyId}
-              >
-                <option value="">Select…</option>
-                {toOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {!p.clientId ? " (no client)" : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Pass-through location *</span>
-              <select
-                value={stockLocationId}
-                onChange={(e) => setStockLocationId(e.target.value)}
-                required
-                disabled={!fromPropertyId || !toPropertyId}
-              >
-                <option value="">
-                  {!fromPropertyId || !toPropertyId
-                    ? "Select both properties first"
-                    : sharedLocations.length === 0
-                      ? "No shared linked locations"
-                      : "Select…"}
-                </option>
-                {sharedLocations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>SKU *</span>
-              <select
-                value={skuId}
-                onChange={(e) => setSkuId(e.target.value)}
-                required
-                disabled={!stockLocationId}
-              >
-                <option value="">Select SKU…</option>
-                {skus.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
-                    {s.supplyItem ? ` · ${s.supplyItem.name}` : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {selectedSku && availablePropertyStock != null && (
-            <p style={{ fontSize: "13px", color: "#64748b" }}>
-              Available at source: {availablePropertyStock.toFixed(2)} base units
-              {selectedSku.supplyItem ? ` (${selectedSku.supplyItem.name})` : ""}
-            </p>
-          )}
-
-          {fromPropertyId && toPropertyId && sharedLocations.length === 0 && (
-            <p style={{ color: "#b45309", fontSize: "13px" }}>
-              Link both properties to the same stock location (Add new → Link).
-            </p>
-          )}
-
-          <label>
-            <span>Base qty *</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={baseQty}
-              onChange={(e) => setBaseQty(e.target.value)}
-              required
-            />
-          </label>
-
-          {qty > 0 && selectedSku && (
-            <div style={{ fontSize: "13px", color: "#64748b", marginTop: "8px" }}>
-              <div>
-                Est. credit (source): ${creditEst.toFixed(2)} · {fromMarkup.label}
-              </div>
-              <div>
-                Est. charge (destination): ${chargeEst.toFixed(2)} · {toMarkup.label}
-              </div>
-            </div>
-          )}
-
-          {error && (
-            <p style={{ color: "#b91c1c", fontSize: "14px" }} role="alert">
-              {error}
-            </p>
-          )}
-
-          <div className="form-actions">
-            <button type="button" className="secondary" onClick={onClose} disabled={loading}>
-              Cancel
-            </button>
-            <button type="submit" disabled={loading}>
-              {loading ? "Transferring…" : "Confirm transfer"}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+      </form>
+    </StockFlowModal>
   );
 };

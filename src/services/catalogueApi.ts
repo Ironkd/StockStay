@@ -1,4 +1,5 @@
 import { apiRequest } from "../config/api";
+import { toQuery } from "../utils/toQuery";
 import type {
   SupplyItem,
   SupplyItemFormValues,
@@ -9,10 +10,12 @@ import type {
   LedgerPostResult,
 } from "../types";
 
+/** Catalogue clients — used by stock flows today; receive/UI admin coming soon. */
 export const supplyItemsApi = {
   getAll: async (opts?: { includeArchived?: boolean }): Promise<SupplyItem[]> => {
-    const qs = opts?.includeArchived ? "?includeArchived=true" : "";
-    return apiRequest<SupplyItem[]>(`/supply-items${qs}`);
+    return apiRequest<SupplyItem[]>(
+      `/supply-items${toQuery({ includeArchived: opts?.includeArchived })}`
+    );
   },
 
   getById: async (id: string): Promise<SupplyItem> => {
@@ -43,12 +46,13 @@ export const skusApi = {
     supplyItemId?: string;
     stockLocationId?: string;
   }): Promise<Sku[]> => {
-    const params = new URLSearchParams();
-    if (opts?.includeArchived) params.set("includeArchived", "true");
-    if (opts?.supplyItemId) params.set("supplyItemId", opts.supplyItemId);
-    if (opts?.stockLocationId) params.set("stockLocationId", opts.stockLocationId);
-    const qs = params.toString() ? `?${params.toString()}` : "";
-    return apiRequest<Sku[]>(`/skus${qs}`);
+    return apiRequest<Sku[]>(
+      `/skus${toQuery({
+        includeArchived: opts?.includeArchived,
+        supplyItemId: opts?.supplyItemId,
+        stockLocationId: opts?.stockLocationId,
+      })}`
+    );
   },
 
   getById: async (id: string): Promise<Sku> => {
@@ -74,6 +78,7 @@ export const skusApi = {
     });
   },
 
+  /** Pack receive into StockOnHand (ledger). Catalogue admin UI will use this. */
   receive: async (id: string, quantity: number | string): Promise<LedgerPostResult> => {
     return apiRequest<LedgerPostResult>(`/skus/${id}/receive`, {
       method: "POST",
@@ -109,16 +114,17 @@ export const stockTransactionsApi = {
     toDate?: string;
     limit?: number;
   }): Promise<StockTransaction[]> => {
-    const params = new URLSearchParams();
-    if (opts?.skuId) params.set("skuId", opts.skuId);
-    if (opts?.entityType) params.set("entityType", opts.entityType);
-    if (opts?.entityId) params.set("entityId", opts.entityId);
-    if (opts?.postingId) params.set("postingId", opts.postingId);
-    if (opts?.transactionType) params.set("transactionType", opts.transactionType);
-    if (opts?.fromDate) params.set("fromDate", opts.fromDate);
-    if (opts?.toDate) params.set("toDate", opts.toDate);
-    if (opts?.limit != null) params.set("limit", String(opts.limit));
-    const qs = params.toString() ? `?${params.toString()}` : "";
-    return apiRequest<StockTransaction[]>(`/stock-transactions${qs}`);
+    return apiRequest<StockTransaction[]>(
+      `/stock-transactions${toQuery({
+        skuId: opts?.skuId,
+        entityType: opts?.entityType,
+        entityId: opts?.entityId,
+        postingId: opts?.postingId,
+        transactionType: opts?.transactionType,
+        fromDate: opts?.fromDate,
+        toDate: opts?.toDate,
+        limit: opts?.limit,
+      })}`
+    );
   },
 };

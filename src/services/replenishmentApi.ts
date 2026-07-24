@@ -1,4 +1,5 @@
 import { apiRequest } from "../config/api";
+import { toQuery } from "../utils/toQuery";
 import type {
   Replenishment,
   CreateReplenishmentInput,
@@ -20,15 +21,22 @@ export const replenishmentApi = {
     limit?: number;
     transferGroupId?: string;
   }): Promise<Replenishment[]> => {
-    const params = new URLSearchParams();
-    if (opts?.limit != null) params.set("limit", String(opts.limit));
-    if (opts?.transferGroupId) params.set("transferGroupId", opts.transferGroupId);
-    const qs = params.toString() ? `?${params.toString()}` : "";
-    return apiRequest<Replenishment[]>(`/replenishments${qs}`);
+    return apiRequest<Replenishment[]>(
+      `/replenishments${toQuery({
+        limit: opts?.limit,
+        transferGroupId: opts?.transferGroupId,
+      })}`
+    );
   },
 
   getById: async (id: string): Promise<Replenishment> => {
     return apiRequest<Replenishment>(`/replenishments/${id}`);
+  },
+
+  getReturnable: async (
+    lineId: string
+  ): Promise<{ remaining: string; originalBaseQty?: string }> => {
+    return apiRequest(`/replenishments/lines/${lineId}/returnable`);
   },
 
   createReturn: async (input: CreateReturnInput): Promise<Replenishment> => {

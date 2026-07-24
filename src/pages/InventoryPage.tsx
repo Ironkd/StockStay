@@ -17,14 +17,15 @@ import { useProperties } from "../hooks/useProperties";
 import { useCategories } from "../hooks/useCategories";
 import { InventoryForm } from "../components/InventoryForm";
 import { PropertyForm } from "../components/PropertyForm";
-import { CategoryForm } from "../components/CategoryForm";
-import { InventoryTable } from "../components/InventoryTable";
-import { SummaryBar } from "../components/SummaryBar";
 import { SubtractItemModal } from "../components/SubtractItemModal";
 import { AddQuantityModal } from "../components/AddQuantityModal";
 import { ReplenishModal } from "../components/ReplenishModal";
 import { ReturnStockModal } from "../components/ReturnStockModal";
 import { TransferStockModal } from "../components/TransferStockModal";
+import { StockSetupChecklist } from "../components/stock/StockSetupChecklist";
+import { PropertyStockPanel } from "../components/stock/PropertyStockPanel";
+import { LegacyItemsSection } from "../components/stock/LegacyItemsSection";
+import { CategoryManageModal } from "../components/stock/CategoryManageModal";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
@@ -44,11 +45,8 @@ export const InventoryPage: React.FC = () => {
     addItem,
     updateItem,
     removeItem,
-    clearAll,
-    importFromJson,
     exportToCsv,
-    exportToCsvItems,
-    refresh: refreshInventory
+    refresh: refreshInventory,
   } = useInventory();
 
   const {
@@ -64,7 +62,7 @@ export const InventoryPage: React.FC = () => {
     categories,
     addCategory,
     updateCategory,
-    removeCategory
+    removeCategory,
   } = useCategories();
 
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null);
@@ -94,12 +92,8 @@ export const InventoryPage: React.FC = () => {
   const [legacyOpen, setLegacyOpen] = useState(false);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const [activePropertyTab, setActivePropertyTab] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [locationFilter, setLocationFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  // Load team property limit (Pro trial = 10, Starter = 3, free = 1). Use /team/limits so we don't need settings access.
   useEffect(() => {
     let cancelled = false;
     teamApi.getTeamLimits().then((data) => {
@@ -111,7 +105,6 @@ export const InventoryPage: React.FC = () => {
     return () => { cancelled = true; };
   }, []);
 
-  // Load clients for property billing fields
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
   }, []);
@@ -142,6 +135,11 @@ export const InventoryPage: React.FC = () => {
     refreshStockFlows();
   }, []);
 
+  const handleStockFlowSuccess = () => {
+    refreshStockFlows();
+    refreshInventory();
+  };
+
   useEffect(() => {
     if (!showAddMenu) return;
     const onDoc = (e: MouseEvent) => {
@@ -153,18 +151,15 @@ export const InventoryPage: React.FC = () => {
     return () => document.removeEventListener("mousedown", onDoc);
   }, [showAddMenu]);
 
-  // Read status filter from URL params on mount and when params change
   useEffect(() => {
     const statusParam = searchParams.get("status");
     if (statusParam === "low-stock" || statusParam === "out-of-stock") {
       setStatusFilter(statusParam);
     } else if (!statusParam) {
-      // If no status param, reset to "all"
       setStatusFilter("all");
     }
   }, [searchParams]);
 
-  // Update URL when status filter changes (except when it's set from URL)
   const handleStatusFilterChange = (value: string) => {
     setStatusFilter(value);
     const newSearchParams = new URLSearchParams(searchParams);
@@ -180,19 +175,13 @@ export const InventoryPage: React.FC = () => {
     () => Array.from(new Set(items.map((i) => i.category).filter(Boolean))),
     [items]
   );
-  
-  // Combine managed categories with categories from items (for backward compatibility)
-  const allCategories = useMemo(() => {
-    const managedCategoryNames = new Set(categories.map(c => c.name));
-    const itemCategoryNames = categoriesFromItems.filter(cat => !managedCategoryNames.has(cat));
-    return [...categories.map(c => c.name), ...itemCategoryNames];
-  }, [categories, categoriesFromItems]);
-  const locations = useMemo(
-    () => Array.from(new Set(items.map((i) => i.location).filter(Boolean))),
-    [items]
-  );
 
-  // Apply property visibility restrictions: invited members see only properties the owner picked (empty = all)
+  const allCategories = useMemo(() => {
+    const managedCategoryNames = new Set(categories.map((c) => c.name));
+    const itemCategoryNames = categoriesFromItems.filter((cat) => !managedCategoryNames.has(cat));
+    return [...categories.map((c) => c.name), ...itemCategoryNames];
+  }, [categories, categoriesFromItems]);
+
   const visibleProperties = useMemo(() => {
     if (!user) return properties;
     if (user.teamRole === "owner") return properties;
@@ -202,53 +191,32 @@ export const InventoryPage: React.FC = () => {
     return properties.filter((w) => user.allowedPropertyIds!.includes(w.id));
   }, [user, properties]);
 
-  // Set default active tab to "all" to show all products
   useEffect(() => {
     if (activePropertyTab === null) {
       setActivePropertyTab("all");
     } else if (
       activePropertyTab !== "all" &&
-      activePropertyTab !== "unassigned" &&
       visibleProperties.length > 0 &&
       !visibleProperties.find((w) => w.id === activePropertyTab)
     ) {
-      // If the active property was deleted, switch to "all"
       setActivePropertyTab("all");
     }
-  }, [properties, activePropertyTab]);
+  }, [visibleProperties, activePropertyTab]);
 
   const filteredItems = useMemo(() => {
-    // Members: only filter by property when owner explicitly picked some; empty = see all
     const allowedPropertyIds =
       user && user.teamRole !== "owner" && user.allowedPropertyIds && user.allowedPropertyIds.length > 0
         ? new Set(user.allowedPropertyIds)
         : null;
 
-    const normalizedSearch = search.trim().toLowerCase();
     return items.filter((item) => {
-      // Enforce property-level visibility: members only see items in allowed properties (when restricted)
       if (allowedPropertyIds !== null) {
         if (!item.propertyId || !allowedPropertyIds.has(item.propertyId)) return false;
       }
 
-      const matchesSearch =
-        !normalizedSearch ||
-        item.name.toLowerCase().includes(normalizedSearch) ||
-        item.sku.toLowerCase().includes(normalizedSearch) ||
-        (item.category &&
-          item.category.toLowerCase().includes(normalizedSearch)) ||
-        (item.location &&
-          item.location.toLowerCase().includes(normalizedSearch));
-
-      const matchesCategory =
-        categoryFilter === "all" || item.category === categoryFilter;
-      const matchesLocation =
-        locationFilter === "all" || item.location === locationFilter;
       const matchesProperty =
         activePropertyTab === "all" || activePropertyTab === null
           ? true
-          : activePropertyTab === "unassigned"
-          ? !item.propertyId
           : item.propertyId === activePropertyTab;
       const matchesStatus =
         statusFilter === "all" ||
@@ -258,24 +226,9 @@ export const InventoryPage: React.FC = () => {
           item.quantity > 0 &&
           item.quantity <= item.reorderPoint);
 
-      return (
-        matchesSearch &&
-        matchesCategory &&
-        matchesLocation &&
-        matchesProperty &&
-        matchesStatus
-      );
+      return matchesProperty && matchesStatus;
     });
-  }, [
-    items,
-    search,
-    categoryFilter,
-    locationFilter,
-    activePropertyTab,
-    statusFilter,
-    user
-  ]);
-
+  }, [items, activePropertyTab, statusFilter, user]);
 
   const hasPropertyWithClient = visibleProperties.some((p) => !!p.clientId);
   const hasLocationLink = stockLocations.some(
@@ -288,7 +241,7 @@ export const InventoryPage: React.FC = () => {
     !hasSkuOnHand;
 
   const filteredPropertyStocks = useMemo(() => {
-    if (activePropertyTab === "all" || activePropertyTab === null || activePropertyTab === "unassigned") {
+    if (activePropertyTab === "all" || activePropertyTab === null) {
       return propertyStocks.filter((row) =>
         !row.propertyId || visibleProperties.some((p) => p.id === row.propertyId)
       );
@@ -300,6 +253,13 @@ export const InventoryPage: React.FC = () => {
     setLegacyOpen(true);
     setShowAddMenu(false);
     fn();
+  };
+
+  const openLinkModal = () => {
+    setLinkPropertyId(
+      activePropertyTab && activePropertyTab !== "all" ? activePropertyTab : ""
+    );
+    setShowLinkModal(true);
   };
 
   const handleCreateLocation = async (e: React.FormEvent) => {
@@ -318,7 +278,7 @@ export const InventoryPage: React.FC = () => {
       setLocationName("");
       setLocationAddress("");
       await refreshStockFlows();
-      if (activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned") {
+      if (activePropertyTab && activePropertyTab !== "all") {
         if (window.confirm(`Link "${created.name}" to the selected property?`)) {
           await stockLocationsApi.linkProperty(created.id, activePropertyTab);
           await refreshStockFlows();
@@ -351,7 +311,7 @@ export const InventoryPage: React.FC = () => {
     }
   };
 
-    const handleSubmit = (values: InventoryItemFormValues | InventoryItemFormValues[]) => {
+  const handleSubmit = (values: InventoryItemFormValues | InventoryItemFormValues[]) => {
     if (editingItem) {
       if (Array.isArray(values)) {
         alert("Cannot edit multiple items at once.");
@@ -406,7 +366,6 @@ export const InventoryPage: React.FC = () => {
   };
 
   const handleAddProperty = () => {
-    // Only block when we've loaded limits from the server (Pro trial = 10, so we don't block at 1 incorrectly)
     if (teamLimitsLoaded && properties.length >= maxProperties) {
       setShowUpgradeModal(true);
       return;
@@ -418,20 +377,20 @@ export const InventoryPage: React.FC = () => {
   const handleDeleteProperty = async (id: string) => {
     const property = properties.find((w) => w.id === id);
     if (!property) return;
-    
+
     const itemsInProperty = items.filter((item) => item.propertyId === id);
     const itemCount = itemsInProperty.length;
-    
+
     let message = `Are you sure you want to delete the property "${property.name}"?`;
     if (itemCount > 0) {
       message += `\n\n⚠️ WARNING: This property has ${itemCount} item(s) assigned to it. Deleting this property will remove the property assignment from these items.`;
     }
     message += "\n\nThis action cannot be undone.";
-    
+
     if (!window.confirm(message)) {
       return;
     }
-    
+
     try {
       await removeProperty(id);
     } catch (err) {
@@ -478,7 +437,6 @@ export const InventoryPage: React.FC = () => {
   };
 
   const handleEditCategory = (categoryName: string, categoryId?: string) => {
-    // If it's a managed category, find it by ID
     if (categoryId) {
       const category = categories.find((c) => c.id === categoryId);
       if (category) {
@@ -486,12 +444,11 @@ export const InventoryPage: React.FC = () => {
         return;
       }
     }
-    // If it's a category from items, create a temporary category object for editing
     setEditingCategory({
-      id: categoryName, // Use name as ID for item-based categories
+      id: categoryName,
       name: categoryName,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      updatedAt: new Date().toISOString(),
     } as Category);
   };
 
@@ -499,38 +456,30 @@ export const InventoryPage: React.FC = () => {
     setEditingCategory(null);
   };
 
-  const handleAddCategory = () => {
-    setEditingCategory(null);
-  };
-
   const handleDeleteCategory = async (categoryName: string, categoryId?: string) => {
     const itemsInCategory = items.filter((item) => item.category === categoryName);
     const itemCount = itemsInCategory.length;
-    
+
     let message = `Are you sure you want to delete the category "${categoryName}"?`;
     if (itemCount > 0) {
       message += `\n\n⚠️ WARNING: This category has ${itemCount} item(s) assigned to it. Deleting this category will remove the category assignment from these items.`;
     }
     message += "\n\nThis action cannot be undone.";
-    
+
     if (!window.confirm(message)) {
       return;
     }
-    
-    // If it's a managed category, delete it
+
     if (categoryId) {
       const category = categories.find((c) => c.id === categoryId);
       if (category) {
         removeCategory(categoryId);
       }
     }
-    
-    // Remove category from all items
+
     try {
       await Promise.all(
-        itemsInCategory.map(item => 
-          updateItem(item.id, { ...item, category: "" })
-        )
+        itemsInCategory.map((item) => updateItem(item.id, { ...item, category: "" }))
       );
     } catch (err) {
       console.error("Error removing category from items:", err);
@@ -544,27 +493,23 @@ export const InventoryPage: React.FC = () => {
         alert("Cannot edit multiple categories at once.");
         return;
       }
-      
-      // Check if this is a managed category (has proper ID) or item-based category
+
       const isManagedCategory = categories.find((c) => c.id === editingCategory.id);
-      
+
       if (isManagedCategory) {
-        // Update managed category
         updateCategory(editingCategory.id, values);
       } else {
-        // Also create a managed category with the new name if it doesn't exist
         const categoryExists = categories.find((c) => c.name === values.name);
         if (!categoryExists) {
           addCategory(values);
         }
       }
-      
-      // Update all items that use the old category name
+
       const itemsWithOldCategory = items.filter((item) => item.category === editingCategory.name);
       if (itemsWithOldCategory.length > 0) {
         try {
           await Promise.all(
-            itemsWithOldCategory.map(item => 
+            itemsWithOldCategory.map((item) =>
               updateItem(item.id, { ...item, category: values.name })
             )
           );
@@ -573,17 +518,20 @@ export const InventoryPage: React.FC = () => {
           alert("Category updated, but some items could not be updated. Please try again.");
         }
       }
-      
+
       setEditingCategory(null);
     } else {
       if (Array.isArray(values)) {
-        // Bulk add
-        values.forEach(category => addCategory(category));
+        values.forEach((category) => addCategory(category));
       } else {
-        // Single add
         addCategory(values);
       }
     }
+  };
+
+  const openCategoryModal = () => {
+    setEditingCategory(null);
+    setShowCategoryModal(true);
   };
 
   return (
@@ -652,12 +600,7 @@ export const InventoryPage: React.FC = () => {
                 role="menuitem"
                 onClick={() => {
                   setShowAddMenu(false);
-                  setLinkPropertyId(
-                    activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned"
-                      ? activePropertyTab
-                      : ""
-                  );
-                  setShowLinkModal(true);
+                  openLinkModal();
                 }}
               >
                 Link location ↔ property
@@ -673,12 +616,7 @@ export const InventoryPage: React.FC = () => {
               <button
                 type="button"
                 role="menuitem"
-                onClick={() =>
-                  openLegacyAnd(() => {
-                    setEditingCategory(null);
-                    setShowCategoryModal(true);
-                  })
-                }
+                onClick={() => openLegacyAnd(openCategoryModal)}
               >
                 Categories
               </button>
@@ -824,206 +762,45 @@ export const InventoryPage: React.FC = () => {
       )}
 
       {showSetupChecklist && (
-        <section className="stock-checklist">
-          <h3>Setup checklist</h3>
-          <ul>
-            <li>
-              <span className={visibleProperties.length > 0 ? "ok" : "todo"}>
-                {visibleProperties.length > 0 ? "✓" : "○"} Property
-              </span>
-              {visibleProperties.length === 0 && (
-                <button type="button" className="linkish" onClick={handleAddProperty}>
-                  Add property…
-                </button>
-              )}
-            </li>
-            <li>
-              <span className={hasPropertyWithClient ? "ok" : "todo"}>
-                {hasPropertyWithClient ? "✓" : "○"} Billing client on a property
-              </span>
-              {!hasPropertyWithClient && visibleProperties[0] && (
-                <button
-                  type="button"
-                  className="linkish"
-                  onClick={() => handleEditProperty(visibleProperties[0])}
-                >
-                  Edit property…
-                </button>
-              )}
-              {!hasPropertyWithClient && visibleProperties.length === 0 && (
-                <button type="button" className="linkish" onClick={handleAddProperty}>
-                  Add property…
-                </button>
-              )}
-            </li>
-            <li>
-              <span className={hasLocationLink ? "ok" : "todo"}>
-                {hasLocationLink ? "✓" : "○"} Location linked to a property
-              </span>
-              {!hasLocationLink && (
-                <button
-                  type="button"
-                  className="linkish"
-                  onClick={() => {
-                    if (stockLocations.length === 0) setShowLocationModal(true);
-                    else setShowLinkModal(true);
-                  }}
-                >
-                  {stockLocations.length === 0 ? "Add stock location…" : "Link…"}
-                </button>
-              )}
-            </li>
-            <li>
-              <span className={hasSkuOnHand ? "ok" : "todo"}>
-                {hasSkuOnHand ? "✓" : "○"} Packs on hand at a stock location
-              </span>
-              {!hasSkuOnHand && (
-                <span style={{ color: "#64748b", fontSize: "13px" }}>
-                  Receive packs on a SKU at a stock location (catalogue receive API).
-                </span>
-              )}
-            </li>
-          </ul>
-        </section>
+        <StockSetupChecklist
+          visibleProperties={visibleProperties}
+          hasPropertyWithClient={hasPropertyWithClient}
+          hasLocationLink={hasLocationLink}
+          hasSkuOnHand={hasSkuOnHand}
+          stockLocationCount={stockLocations.length}
+          onAddProperty={handleAddProperty}
+          onEditProperty={handleEditProperty}
+          onOpenLocationModal={() => setShowLocationModal(true)}
+          onOpenLinkModal={openLinkModal}
+        />
       )}
 
       <section className="panel">
-        <div className="property-tabs">
-          <button
-            type="button"
-            className={`property-tab ${activePropertyTab === "all" ? "active" : ""}`}
-            onClick={() => setActivePropertyTab("all")}
-          >
-            All properties
-            <span className="tab-count">({filteredPropertyStocks.length})</span>
-          </button>
-          {visibleProperties.map((property) => {
-            const stockCount = propertyStocks.filter((s) => s.propertyId === property.id).length;
-            return (
-              <button
-                key={property.id}
-                type="button"
-                className={`property-tab ${activePropertyTab === property.id ? "active" : ""}`}
-                onClick={() => setActivePropertyTab(property.id)}
-              >
-                {property.name}
-                <span className="tab-count">({stockCount})</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {activePropertyTab && activePropertyTab !== "all" && activePropertyTab !== "unassigned" && (
-          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                const p = getPropertyById(activePropertyTab);
-                if (p) handleEditProperty(p);
-              }}
-            >
-              Edit property
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => handleDeleteProperty(activePropertyTab)}
-            >
-              Delete property
-            </button>
-          </div>
-        )}
-
-        <h3 style={{ marginTop: 0 }}>Property stock</h3>
-        {filteredPropertyStocks.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "14px" }}>
-            Replenish from a stock location to deploy items here.
-          </p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="inventory-table">
-              <thead>
-                <tr>
-                  <th>Property</th>
-                  <th>Supply item</th>
-                  <th>Qty (base)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredPropertyStocks.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.property?.name || "—"}</td>
-                    <td>{row.supplyItem?.name || "—"}</td>
-                    <td>{Number(row.quantity).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        <h3 style={{ marginTop: "20px" }}>Recent moves</h3>
-        {recentReplenishments.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments or returns yet.</p>
-        ) : (
-          <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
-            {recentReplenishments.slice(0, 10).map((r) => {
-              const isTransfer = !!r.transferGroupId;
-              const label = isTransfer
-                ? r.direction === "return"
-                  ? "transfer out"
-                  : "transfer in"
-                : r.direction;
-              return (
-                <li key={r.id}>
-                  <strong>{label}</strong>
-                  {isTransfer ? " · pass-through" : ""} · {r.property?.name || "Property"} ←{" "}
-                  {r.stockLocation?.name || "Location"} · {(r.lines || []).length} line(s) ·{" "}
-                  {new Date(r.createdAt).toLocaleString()}
-                </li>
-              );
-            })}
-          </ul>
-        )}
-
-        <details
-          className="legacy-items-details"
-          open={legacyOpen}
-          onToggle={(e) => setLegacyOpen((e.target as HTMLDetailsElement).open)}
-        >
-          <summary>Legacy items (deprecated)</summary>
-          <p style={{ fontSize: "13px", color: "#64748b", marginTop: 0 }}>
-            Bill-back uses Replenish / Return. This table is the old per-property item list and will be retired later.
-          </p>
-          <div style={{ marginBottom: "12px", display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            <button type="button" className="secondary" onClick={handleAddItem}>
-              Add legacy item
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                setEditingCategory(null);
-                setShowCategoryModal(true);
-              }}
-            >
-              Categories
-            </button>
-            <button type="button" className="secondary" onClick={() => exportToCsv()}>
-              Export CSV
-            </button>
-          </div>
-          <SummaryBar items={items} filteredItems={filteredItems} />
-          <InventoryTable
-            items={filteredItems}
-            properties={visibleProperties}
-            onEdit={handleEdit}
-            onDelete={removeItem}
-            onAddQuantity={(item) => setAddQuantityItem(item)}
-            onSubtract={(item) => setSubtractItem(item)}
-          />
-        </details>
+        <PropertyStockPanel
+          activePropertyTab={activePropertyTab}
+          onActivePropertyTabChange={setActivePropertyTab}
+          visibleProperties={visibleProperties}
+          propertyStocks={propertyStocks}
+          filteredPropertyStocks={filteredPropertyStocks}
+          recentReplenishments={recentReplenishments}
+          getPropertyById={getPropertyById}
+          onEditProperty={handleEditProperty}
+          onDeleteProperty={handleDeleteProperty}
+        />
+        <LegacyItemsSection
+          legacyOpen={legacyOpen}
+          onLegacyOpenChange={setLegacyOpen}
+          items={items}
+          filteredItems={filteredItems}
+          visibleProperties={visibleProperties}
+          onAddItem={handleAddItem}
+          onOpenCategoryModal={openCategoryModal}
+          onExportCsv={exportToCsv}
+          onEdit={handleEdit}
+          onDelete={removeItem}
+          onAddQuantity={setAddQuantityItem}
+          onSubtract={setSubtractItem}
+        />
       </section>
 
       {showInventoryModal && (
@@ -1056,21 +833,16 @@ export const InventoryPage: React.FC = () => {
         <ReplenishModal
           properties={visibleProperties}
           clients={clients}
+          stockLocations={stockLocations}
           onClose={() => setShowReplenishModal(false)}
-          onSuccess={() => {
-            refreshStockFlows();
-            refreshInventory();
-          }}
+          onSuccess={handleStockFlowSuccess}
         />
       )}
 
       {showReturnModal && (
         <ReturnStockModal
           onClose={() => setShowReturnModal(false)}
-          onSuccess={() => {
-            refreshStockFlows();
-            refreshInventory();
-          }}
+          onSuccess={handleStockFlowSuccess}
         />
       )}
 
@@ -1079,11 +851,9 @@ export const InventoryPage: React.FC = () => {
           properties={visibleProperties}
           clients={clients}
           propertyStocks={propertyStocks}
+          stockLocations={stockLocations}
           onClose={() => setShowTransferModal(false)}
-          onSuccess={() => {
-            refreshStockFlows();
-            refreshInventory();
-          }}
+          onSuccess={handleStockFlowSuccess}
         />
       )}
 
@@ -1108,97 +878,19 @@ export const InventoryPage: React.FC = () => {
       )}
 
       {showCategoryModal && (
-        <div className="modal-overlay" onClick={() => setShowCategoryModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "600px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Manage Categories</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => {
-                  setShowCategoryModal(false);
-                  setEditingCategory(null);
-                }}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div style={{ marginBottom: "24px" }}>
-              <h4 style={{ marginBottom: "12px" }}>{editingCategory ? "Edit Category" : "Add New Category"}</h4>
-              <CategoryForm
-                key={editingCategory ? editingCategory.id : "new"}
-                initialValues={editingCategory ?? undefined}
-                onSubmit={(values) => {
-                  handleCategorySubmit(values);
-                  setEditingCategory(null);
-                }}
-                onCancel={editingCategory ? handleCancelCategoryEdit : undefined}
-              />
-            </div>
-
-            {(categories.length > 0 || allCategories.length > 0) && (
-              <div style={{ marginTop: "32px", borderTop: "1px solid rgba(148, 163, 184, 0.3)", paddingTop: "20px" }}>
-                <h4 style={{ marginBottom: "12px" }}>All Categories</h4>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: "12px" }}>
-                  {allCategories.map((categoryName) => {
-                    const itemsInCategory = items.filter((item) => item.category === categoryName);
-                    const managedCategory = categories.find((c) => c.name === categoryName);
-                    const isManaged = !!managedCategory;
-
-                    return (
-                      <div
-                        key={categoryName}
-                        style={{
-                          border: "1px solid #ddd",
-                          padding: "12px",
-                          borderRadius: "8px",
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center"
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontWeight: "bold", display: "flex", alignItems: "center", gap: "6px" }}>
-                            {categoryName}
-                            {isManaged && (
-                              <span style={{ fontSize: "0.7em", color: "#2563eb", fontWeight: "normal" }}>(Managed)</span>
-                            )}
-                          </div>
-                          <div style={{ fontSize: "0.85em", color: "#666" }}>
-                            {itemsInCategory.length} item{itemsInCategory.length !== 1 ? "s" : ""}
-                          </div>
-                        </div>
-                        <div>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            onClick={() => handleEditCategory(categoryName, managedCategory?.id)}
-                            aria-label="Edit category"
-                            style={{ marginRight: "8px" }}
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button danger"
-                            onClick={() => handleDeleteCategory(categoryName, managedCategory?.id)}
-                            aria-label="Delete category"
-                          >
-                            🗑️
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
+        <CategoryManageModal
+          editingCategory={editingCategory}
+          categories={categories}
+          allCategories={allCategories}
+          items={items}
+          onClose={() => setShowCategoryModal(false)}
+          onCategorySubmit={handleCategorySubmit}
+          onCancelCategoryEdit={handleCancelCategoryEdit}
+          onEditCategory={handleEditCategory}
+          onDeleteCategory={handleDeleteCategory}
+          onEditingCategoryClear={() => setEditingCategory(null)}
+        />
       )}
     </div>
   );
-}
-
+};

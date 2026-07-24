@@ -31,8 +31,6 @@ import {
 import {
   receiveStock,
   adjustStockOnHand,
-  InsufficientStockError,
-  LedgerValidationError,
   propertyStockOps,
   stockTransactionOps,
 } from "./stockLedger.js";
@@ -41,10 +39,12 @@ import {
   createReturn,
   createInterPropertyTransfer,
   getReplenishment,
+  getReturnableQty,
   listReplenishments,
   listUnbilledLines,
-  ReplenishmentError,
 } from "./replenishment.js";
+import { createCatalogueAuth, mapStockDomainError } from "./middleware/catalogueAuth.js";
+import { computeUnitRate } from "./decimalUtil.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
   startProTrial,
@@ -828,6 +828,13 @@ const userHasPageAccess = (user, pageKey) => {
   return Array.isArray(user.allowedPages) && user.allowedPages.includes(pageKey);
 };
 
+const {
+  requireCatalogueRead,
+  requireCatalogueWrite,
+  requireInventoryRead,
+  requireInventoryWrite,
+} = createCatalogueAuth({ loadCurrentUser, userHasPageAccess });
+
 // Inventory read is allowed for both "inventory" and "shopping-list" (Shopping List page needs to fetch inventory)
 const userCanReadInventory = (user) =>
   userHasPageAccess(user, "inventory") || userHasPageAccess(user, "shopping-list");
@@ -1009,29 +1016,8 @@ function parseDecimalInput(value, fieldName) {
   return { value: n };
 }
 
-function userCanAccessCatalogue(user) {
-  return (
-    userHasPageAccess(user, "inventory") ||
-    userHasPageAccess(user, "shopping-list") ||
-    userHasPageAccess(user, "settings")
-  );
-}
-
-function userCanWriteCatalogue(user) {
-  if (!userCanAccessCatalogue(user)) return false;
-  if (user.teamRole === "viewer") return false;
-  return true;
-}
-
-app.get("/api/units-of-measure", authenticateToken, async (req, res) => {
+app.get("/api/units-of-measure", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to catalogue data." });
-    }
     const units = await unitOfMeasureOps.findAll();
     res.json(units);
   } catch (error) {
@@ -1040,17 +1026,10 @@ app.get("/api/units-of-measure", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/stock-locations", authenticateToken, async (req, res) => {
+app.get("/api/stock-locations", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to stock locations." });
-    }
     const includeArchived = req.query.includeArchived === "true";
-    const locations = await stockLocationOps.findAllByTeam(currentUser.teamId, { includeArchived });
+    const locations = await stockLocationOps.findAllByTeam(req.currentUser.teamId, { includeArchived });
     res.json(locations);
   } catch (error) {
     console.error("Error fetching stock locations:", error);
@@ -1058,15 +1037,8 @@ app.get("/api/stock-locations", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/stock-locations", authenticateToken, async (req, res) => {
+app.post("/api/stock-locations", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to create stock locations." });
-    }
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     if (!name) {
       return res.status(400).json({ message: "Stock location name is required." });
@@ -1075,7 +1047,7 @@ app.post("/api/stock-locations", authenticateToken, async (req, res) => {
       typeof req.body?.address === "string" ? req.body.address.trim() || null : null;
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
     const location = await stockLocationOps.create({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       name,
       address,
       tags,
@@ -1090,17 +1062,10 @@ app.post("/api/stock-locations", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/stock-locations/:id", authenticateToken, async (req, res) => {
+app.get("/api/stock-locations/:id", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to stock locations." });
-    }
     const location = await stockLocationOps.findById(req.params.id);
-    if (!location || location.teamId !== currentUser.teamId) {
+    if (!location || location.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Stock location not found." });
     }
     res.json(location);
@@ -1110,17 +1075,10 @@ app.get("/api/stock-locations/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.patch("/api/stock-locations/:id", authenticateToken, async (req, res) => {
+app.patch("/api/stock-locations/:id", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to update stock locations." });
-    }
     const existing = await stockLocationOps.findById(req.params.id);
-    if (!existing || existing.teamId !== currentUser.teamId) {
+    if (!existing || existing.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Stock location not found." });
     }
     const updates = {};
@@ -1155,24 +1113,17 @@ app.patch("/api/stock-locations/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/stock-locations/:id/properties", authenticateToken, async (req, res) => {
+app.post("/api/stock-locations/:id/properties", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to link properties." });
-    }
     const location = await stockLocationOps.findById(req.params.id);
-    if (!location || location.teamId !== currentUser.teamId) {
+    if (!location || location.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Stock location not found." });
     }
     const propertyId = typeof req.body?.propertyId === "string" ? req.body.propertyId : "";
     if (!propertyId) {
       return res.status(400).json({ message: "propertyId is required." });
     }
-    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const teamProperties = await propertyOps.findAllByTeam(req.currentUser.teamId);
     const property = teamProperties.find((p) => p.id === propertyId);
     if (!property) {
       return res.status(400).json({ message: "Property must belong to the same team." });
@@ -1188,17 +1139,10 @@ app.post("/api/stock-locations/:id/properties", authenticateToken, async (req, r
   }
 });
 
-app.delete("/api/stock-locations/:id/properties/:propertyId", authenticateToken, async (req, res) => {
+app.delete("/api/stock-locations/:id/properties/:propertyId", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to unlink properties." });
-    }
     const location = await stockLocationOps.findById(req.params.id);
-    if (!location || location.teamId !== currentUser.teamId) {
+    if (!location || location.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Stock location not found." });
     }
     await stockLocationOps.unlinkProperty(location.id, req.params.propertyId);
@@ -1209,17 +1153,10 @@ app.delete("/api/stock-locations/:id/properties/:propertyId", authenticateToken,
   }
 });
 
-app.get("/api/supply-items", authenticateToken, async (req, res) => {
+app.get("/api/supply-items", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to supply items." });
-    }
     const includeArchived = req.query.includeArchived === "true";
-    const items = await supplyItemOps.findAllByTeam(currentUser.teamId, { includeArchived });
+    const items = await supplyItemOps.findAllByTeam(req.currentUser.teamId, { includeArchived });
     res.json(items);
   } catch (error) {
     console.error("Error fetching supply items:", error);
@@ -1227,15 +1164,8 @@ app.get("/api/supply-items", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/supply-items", authenticateToken, async (req, res) => {
+app.post("/api/supply-items", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to create supply items." });
-    }
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     if (!name) {
       return res.status(400).json({ message: "Supply item name is required." });
@@ -1259,7 +1189,7 @@ app.post("/api/supply-items", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "Reorder defaults cannot be negative." });
     }
     const item = await supplyItemOps.create({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       name,
       category: typeof req.body?.category === "string" ? req.body.category.trim() : "",
       baseUnitId,
@@ -1276,17 +1206,10 @@ app.post("/api/supply-items", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/supply-items/:id", authenticateToken, async (req, res) => {
+app.get("/api/supply-items/:id", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to supply items." });
-    }
     const item = await supplyItemOps.findById(req.params.id);
-    if (!item || item.teamId !== currentUser.teamId) {
+    if (!item || item.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Supply item not found." });
     }
     res.json(item);
@@ -1296,17 +1219,10 @@ app.get("/api/supply-items/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.patch("/api/supply-items/:id", authenticateToken, async (req, res) => {
+app.patch("/api/supply-items/:id", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to update supply items." });
-    }
     const existing = await supplyItemOps.findById(req.params.id);
-    if (!existing || existing.teamId !== currentUser.teamId) {
+    if (!existing || existing.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "Supply item not found." });
     }
     const updates = {};
@@ -1358,21 +1274,14 @@ app.patch("/api/supply-items/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/skus", authenticateToken, async (req, res) => {
+app.get("/api/skus", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to SKUs." });
-    }
     const includeArchived = req.query.includeArchived === "true";
     const supplyItemId =
       typeof req.query.supplyItemId === "string" ? req.query.supplyItemId : undefined;
     const stockLocationId =
       typeof req.query.stockLocationId === "string" ? req.query.stockLocationId : undefined;
-    const skus = await skuOps.findAllByTeam(currentUser.teamId, {
+    const skus = await skuOps.findAllByTeam(req.currentUser.teamId, {
       includeArchived,
       supplyItemId,
       stockLocationId,
@@ -1384,15 +1293,8 @@ app.get("/api/skus", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/skus", authenticateToken, async (req, res) => {
+app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to create SKUs." });
-    }
     const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
     if (!name) {
       return res.status(400).json({ message: "SKU name is required." });
@@ -1404,11 +1306,11 @@ app.post("/api/skus", authenticateToken, async (req, res) => {
       return res.status(400).json({ message: "supplyItemId and stockLocationId are required." });
     }
     const supplyItem = await supplyItemOps.findById(supplyItemId);
-    if (!supplyItem || supplyItem.teamId !== currentUser.teamId || supplyItem.archivedAt) {
+    if (!supplyItem || supplyItem.teamId !== req.currentUser.teamId || supplyItem.archivedAt) {
       return res.status(400).json({ message: "Invalid or archived supply item." });
     }
     const location = await stockLocationOps.findById(stockLocationId);
-    if (!location || location.teamId !== currentUser.teamId || location.archivedAt) {
+    if (!location || location.teamId !== req.currentUser.teamId || location.archivedAt) {
       return res.status(400).json({ message: "Invalid or archived stock location." });
     }
     const packSize = parseDecimalInput(req.body?.packSize, "packSize");
@@ -1421,9 +1323,9 @@ app.post("/api/skus", authenticateToken, async (req, res) => {
     if (purchasePrice.value < 0) {
       return res.status(400).json({ message: "purchasePrice cannot be negative." });
     }
-    const unitRate = purchasePrice.value / packSize.value;
+    const unitRate = computeUnitRate(purchasePrice.value, packSize.value);
     const sku = await skuOps.create({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       supplyItemId,
       stockLocationId,
       name,
@@ -1443,17 +1345,10 @@ app.post("/api/skus", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/skus/:id", authenticateToken, async (req, res) => {
+app.get("/api/skus/:id", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to SKUs." });
-    }
     const sku = await skuOps.findById(req.params.id);
-    if (!sku || sku.teamId !== currentUser.teamId) {
+    if (!sku || sku.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "SKU not found." });
     }
     res.json(sku);
@@ -1463,17 +1358,10 @@ app.get("/api/skus/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.patch("/api/skus/:id", authenticateToken, async (req, res) => {
+app.patch("/api/skus/:id", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to update SKUs." });
-    }
     const existing = await skuOps.findById(req.params.id);
-    if (!existing || existing.teamId !== currentUser.teamId) {
+    if (!existing || existing.teamId !== req.currentUser.teamId) {
       return res.status(404).json({ message: "SKU not found." });
     }
     const updates = {};
@@ -1510,7 +1398,7 @@ app.patch("/api/skus/:id", authenticateToken, async (req, res) => {
       recomputeRate = true;
     }
     if (recomputeRate) {
-      updates.unitRate = nextPurchasePrice / nextPackSize;
+      updates.unitRate = computeUnitRate(nextPurchasePrice, nextPackSize);
     }
     if (req.body?.archived === true) {
       updates.archivedAt = existing.archivedAt || new Date();
@@ -1531,85 +1419,54 @@ app.patch("/api/skus/:id", authenticateToken, async (req, res) => {
   }
 });
 
-function mapLedgerError(res, error) {
-  if (error instanceof InsufficientStockError) {
-    return res.status(409).json({ message: error.message, code: error.code, details: error.details });
-  }
-  if (error instanceof LedgerValidationError) {
-    return res.status(400).json({ message: error.message, code: error.code, details: error.details });
-  }
-  return null;
-}
-
-app.post("/api/skus/:id/receive", authenticateToken, async (req, res) => {
+app.post("/api/skus/:id/receive", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to receive stock." });
-    }
     const qty = parseDecimalInput(req.body?.quantity, "quantity");
     if (qty.error) return res.status(400).json({ message: qty.error });
     if (!(qty.value > 0)) {
       return res.status(400).json({ message: "quantity must be greater than zero." });
     }
     const result = await receiveStock({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       skuId: req.params.id,
       packQty: qty.value,
-      userId: currentUser.id,
+      userId: req.currentUser.id,
     });
     const sku = await skuOps.findById(req.params.id);
     res.status(201).json({ ...result, sku });
   } catch (error) {
-    if (mapLedgerError(res, error)) return;
+    if (mapStockDomainError(res, error)) return;
     console.error("Error receiving stock:", error);
     res.status(500).json({ message: "Error receiving stock" });
   }
 });
 
-app.post("/api/skus/:id/adjust", authenticateToken, async (req, res) => {
+app.post("/api/skus/:id/adjust", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have permission to adjust stock." });
-    }
     const delta = parseDecimalInput(req.body?.quantityDelta, "quantityDelta");
     if (delta.error) return res.status(400).json({ message: delta.error });
     if (delta.value === 0) {
       return res.status(400).json({ message: "quantityDelta cannot be zero." });
     }
     const result = await adjustStockOnHand({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       skuId: req.params.id,
       quantityDelta: delta.value,
       reason: typeof req.body?.reason === "string" ? req.body.reason : null,
-      userId: currentUser.id,
+      userId: req.currentUser.id,
     });
     const sku = await skuOps.findById(req.params.id);
     res.json({ ...result, sku });
   } catch (error) {
-    if (mapLedgerError(res, error)) return;
+    if (mapStockDomainError(res, error)) return;
     console.error("Error adjusting stock:", error);
     res.status(500).json({ message: "Error adjusting stock" });
   }
 });
 
-app.get("/api/property-stocks", authenticateToken, async (req, res) => {
+app.get("/api/property-stocks", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to property stock." });
-    }
-    const rows = await propertyStockOps.findAllByTeam(currentUser.teamId);
+    const rows = await propertyStockOps.findAllByTeam(req.currentUser.teamId);
     res.json(rows);
   } catch (error) {
     console.error("Error fetching property stocks:", error);
@@ -1617,16 +1474,9 @@ app.get("/api/property-stocks", authenticateToken, async (req, res) => {
   }
 });
 
-app.get("/api/stock-transactions", authenticateToken, async (req, res) => {
+app.get("/api/stock-transactions", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userCanAccessCatalogue(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to stock transactions." });
-    }
-    const rows = await stockTransactionOps.findAllByTeam(currentUser.teamId, {
+    const rows = await stockTransactionOps.findAllByTeam(req.currentUser.teamId, {
       entityType: typeof req.query.entityType === "string" ? req.query.entityType : undefined,
       entityId: typeof req.query.entityId === "string" ? req.query.entityId : undefined,
       skuId: typeof req.query.skuId === "string" ? req.query.skuId : undefined,
@@ -1644,69 +1494,33 @@ app.get("/api/stock-transactions", authenticateToken, async (req, res) => {
   }
 });
 
-function mapReplenishmentError(res, error) {
-  if (error instanceof InsufficientStockError) {
-    return res.status(409).json({ message: error.message, code: error.code, details: error.details });
-  }
-  if (error instanceof LedgerValidationError) {
-    return res.status(400).json({ message: error.message, code: error.code, details: error.details });
-  }
-  if (error instanceof ReplenishmentError) {
-    const status =
-      error.code === "NOT_FOUND" ? 404 : error.code === "VALIDATION" || error.code === "NO_CLIENT" || error.code === "NOT_LINKED" ? 400 : 400;
-    return res.status(status).json({
-      message: error.message,
-      code: error.code,
-      details: error.details,
-    });
-  }
-  return null;
-}
-
-app.post("/api/replenishments", authenticateToken, async (req, res) => {
+app.post("/api/replenishments", authenticateToken, requireInventoryWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "Viewers cannot create replenishments." });
-    }
     const { stockLocationId, propertyId, lines } = req.body || {};
     if (!stockLocationId || !propertyId) {
       return res.status(400).json({ message: "stockLocationId and propertyId are required." });
     }
     const result = await createReplenishment({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       stockLocationId,
       propertyId,
       lines: Array.isArray(lines) ? lines : [],
-      userId: currentUser.id,
+      userId: req.currentUser.id,
     });
     res.status(201).json(result);
   } catch (error) {
-    if (mapReplenishmentError(res, error)) return;
+    if (mapStockDomainError(res, error)) return;
     console.error("Error creating replenishment:", error);
     res.status(500).json({ message: "Error creating replenishment" });
   }
 });
 
-app.get("/api/replenishments", authenticateToken, async (req, res) => {
+app.get("/api/replenishments", authenticateToken, requireInventoryRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const transferGroupId =
       typeof req.query.transferGroupId === "string" ? req.query.transferGroupId : undefined;
-    const rows = await listReplenishments(currentUser.teamId, { limit, transferGroupId });
+    const rows = await listReplenishments(req.currentUser.teamId, { limit, transferGroupId });
     res.json(rows);
   } catch (error) {
     console.error("Error listing replenishments:", error);
@@ -1714,18 +1528,8 @@ app.get("/api/replenishments", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/replenishments/transfers", authenticateToken, async (req, res) => {
+app.post("/api/replenishments/transfers", authenticateToken, requireInventoryWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "Viewers cannot create transfers." });
-    }
     const { fromPropertyId, toPropertyId, stockLocationId, skuId, baseQty } = req.body || {};
     if (!fromPropertyId || !toPropertyId || !stockLocationId || !skuId || baseQty == null) {
       return res.status(400).json({
@@ -1733,17 +1537,17 @@ app.post("/api/replenishments/transfers", authenticateToken, async (req, res) =>
       });
     }
     const result = await createInterPropertyTransfer({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       fromPropertyId,
       toPropertyId,
       stockLocationId,
       skuId,
       baseQty,
-      userId: currentUser.id,
+      userId: req.currentUser.id,
     });
     res.status(201).json(result);
   } catch (error) {
-    if (mapReplenishmentError(res, error)) return;
+    if (mapStockDomainError(res, error)) return;
     console.error("Error creating inter-property transfer:", error);
     res.status(500).json({
       message: "Error creating transfer",
@@ -1753,48 +1557,42 @@ app.post("/api/replenishments/transfers", authenticateToken, async (req, res) =>
   }
 });
 
-app.post("/api/replenishments/returns", authenticateToken, async (req, res) => {
+app.post("/api/replenishments/returns", authenticateToken, requireInventoryWrite, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-    if (!userCanWriteCatalogue(currentUser)) {
-      return res.status(403).json({ message: "Viewers cannot create returns." });
-    }
     const { reversesLineId, baseQty, stockLocationId, skuId } = req.body || {};
     if (!reversesLineId || baseQty == null) {
       return res.status(400).json({ message: "reversesLineId and baseQty are required." });
     }
     const result = await createReturn({
-      teamId: currentUser.teamId,
+      teamId: req.currentUser.teamId,
       reversesLineId,
       baseQty,
       stockLocationId: stockLocationId || undefined,
       skuId: skuId || undefined,
-      userId: currentUser.id,
+      userId: req.currentUser.id,
     });
     res.status(201).json(result);
   } catch (error) {
-    if (mapReplenishmentError(res, error)) return;
+    if (mapStockDomainError(res, error)) return;
     console.error("Error creating return:", error);
     res.status(500).json({ message: "Error creating return" });
   }
 });
 
-app.get("/api/replenishments/:id", authenticateToken, async (req, res) => {
+app.get("/api/replenishments/lines/:id/returnable", authenticateToken, requireInventoryRead, async (req, res) => {
   try {
-    const currentUser = await loadCurrentUser(req);
-    if (!currentUser?.teamId) {
-      return res.status(400).json({ message: "User does not belong to a team." });
-    }
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-    const row = await getReplenishment(currentUser.teamId, req.params.id);
+    const row = await getReturnableQty(req.currentUser.teamId, req.params.id);
+    if (!row) return res.status(404).json({ message: "Line not found." });
+    res.json(row);
+  } catch (error) {
+    console.error("Error fetching returnable qty:", error);
+    res.status(500).json({ message: "Error fetching returnable qty" });
+  }
+});
+
+app.get("/api/replenishments/:id", authenticateToken, requireInventoryRead, async (req, res) => {
+  try {
+    const row = await getReplenishment(req.currentUser.teamId, req.params.id);
     if (!row) return res.status(404).json({ message: "Replenishment not found." });
     res.json(row);
   } catch (error) {

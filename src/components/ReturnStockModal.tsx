@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import type { Replenishment, ReplenishmentLine } from "../types";
 import { replenishmentApi } from "../services/replenishmentApi";
+import { StockFlowModal } from "./StockFlowModal";
 
 type Props = {
   onClose: () => void;
@@ -59,6 +60,26 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     [options, lineId]
   );
 
+  useEffect(() => {
+    if (!lineId) return;
+    let cancelled = false;
+    replenishmentApi
+      .getReturnable(lineId)
+      .then((row) => {
+        if (cancelled) return;
+        const remaining = Number(row.remaining) || 0;
+        setOptions((prev) =>
+          prev.map((o) => (o.line.id === lineId ? { ...o, remaining } : o))
+        );
+      })
+      .catch(() => {
+        /* keep client-computed remaining */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [lineId]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -91,91 +112,74 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div
-        className="modal-content"
-        style={{ maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <h3 style={{ margin: 0 }}>Return stock</h3>
-          <button type="button" className="icon-button close-button" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-        <p style={{ marginTop: 0, color: "#64748b", fontSize: "14px" }}>
-          Return property stock to the stock location and queue an unbilled credit for the next invoice.
-        </p>
-
-        {loadingList ? (
-          <p>Loading replenishment lines…</p>
-        ) : options.length === 0 ? (
+    <StockFlowModal
+      title="Return stock"
+      subtitle="Return property stock to the stock location and queue an unbilled credit for the next invoice."
+      error={error}
+      loading={loading}
+      onClose={onClose}
+    >
+      {loadingList ? (
+        <p>Loading replenishment lines…</p>
+      ) : options.length === 0 ? (
+        <>
           <p>
             No returnable replenishment lines yet. Use <strong>Replenish</strong> to deploy
             stock to a property first; returns credit the next invoice.
           </p>
-        ) : (
-          <form onSubmit={handleSubmit} className="inventory-form">
-            <label>
-              <span>Replenishment line *</span>
-              <select value={lineId} onChange={(e) => setLineId(e.target.value)} required>
-                <option value="">Select line…</option>
-                {options.map(({ line, replenishment, remaining }) => (
-                  <option key={line.id} value={line.id}>
-                    {(line.supplyItem?.name || line.sku?.name || "Item") +
-                      ` · ${replenishment.property?.name || "Property"}` +
-                      ` · remaining ${remaining.toFixed(2)}` +
-                      ` · ${new Date(replenishment.createdAt).toLocaleDateString()}`}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {selected && (
-              <p style={{ fontSize: "13px", color: "#64748b" }}>
-                Original {Number(selected.line.baseQtyDeployed).toFixed(2)} base · remaining{" "}
-                {selected.remaining.toFixed(2)} · bill-back was $
-                {Number(selected.line.billBackAmount).toFixed(2)}
-              </p>
-            )}
-
-            <label>
-              <span>Base qty to return *</span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                value={baseQty}
-                onChange={(e) => setBaseQty(e.target.value)}
-                required
-              />
-            </label>
-
-            {error && (
-              <p style={{ color: "#b91c1c", fontSize: "14px" }} role="alert">
-                {error}
-              </p>
-            )}
-
-            <div className="form-actions">
-              <button type="button" className="secondary" onClick={onClose} disabled={loading}>
-                Cancel
-              </button>
-              <button type="submit" disabled={loading}>
-                {loading ? "Returning…" : "Confirm return"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {!loadingList && options.length === 0 && (
           <div className="form-actions">
             <button type="button" className="secondary" onClick={onClose}>
               Close
             </button>
           </div>
-        )}
-      </div>
-    </div>
+        </>
+      ) : (
+        <form onSubmit={handleSubmit} className="inventory-form">
+          <label>
+            <span>Replenishment line *</span>
+            <select value={lineId} onChange={(e) => setLineId(e.target.value)} required>
+              <option value="">Select line…</option>
+              {options.map(({ line, replenishment, remaining }) => (
+                <option key={line.id} value={line.id}>
+                  {(line.supplyItem?.name || line.sku?.name || "Item") +
+                    ` · ${replenishment.property?.name || "Property"}` +
+                    ` · remaining ${remaining.toFixed(2)}` +
+                    ` · ${new Date(replenishment.createdAt).toLocaleDateString()}`}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {selected && (
+            <p style={{ fontSize: "13px", color: "#64748b" }}>
+              Original {Number(selected.line.baseQtyDeployed).toFixed(2)} base · remaining{" "}
+              {selected.remaining.toFixed(2)} · bill-back was $
+              {Number(selected.line.billBackAmount).toFixed(2)}
+            </p>
+          )}
+
+          <label>
+            <span>Base qty to return *</span>
+            <input
+              type="number"
+              min="0"
+              step="any"
+              value={baseQty}
+              onChange={(e) => setBaseQty(e.target.value)}
+              required
+            />
+          </label>
+
+          <div className="form-actions">
+            <button type="button" className="secondary" onClick={onClose} disabled={loading}>
+              Cancel
+            </button>
+            <button type="submit" disabled={loading}>
+              {loading ? "Returning…" : "Confirm return"}
+            </button>
+          </div>
+        </form>
+      )}
+    </StockFlowModal>
   );
 };
