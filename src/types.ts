@@ -223,3 +223,94 @@ export type TeamData = {
   organization?: OrganizationInfo;
   organizationTeams?: OrganizationTeamSummary[];
 };
+
+/** Catalogue / stock location (Appendix A #3) */
+export type UnitDimension = "count" | "volume" | "mass" | "length" | "other";
+
+export type UnitOfMeasure = {
+  id: string;
+  code: string;
+  name: string;
+  dimension: UnitDimension;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StockLocationPropertyLink = {
+  id: string;
+  propertyId: string;
+  property?: { id: string; name: string; location: string | null };
+};
+
+export type StockLocation = {
+  id: string;
+  teamId: string;
+  name: string;
+  address: string | null;
+  tags: string[];
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  properties?: StockLocationPropertyLink[];
+};
+
+export type StockLocationFormValues = {
+  name: string;
+  address?: string | null;
+  tags?: string[];
+};
+
+export type SupplyItem = {
+  id: string;
+  teamId: string;
+  name: string;
+  category: string;
+  baseUnitId: string;
+  defaultReorderPoint: string;
+  defaultReorderQuantity: string;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  baseUnit?: Pick<UnitOfMeasure, "id" | "code" | "name" | "dimension">;
+};
+
+export type SupplyItemFormValues = {
+  name: string;
+  category?: string;
+  baseUnitId: string;
+  defaultReorderPoint?: number | string;
+  defaultReorderQuantity?: number | string;
+};
+
+export type StockOnHand = {
+  id: string;
+  skuId: string;
+  quantity: string;
+};
+
+export type Sku = {
+  id: string;
+  teamId: string;
+  supplyItemId: string;
+  stockLocationId: string;
+  name: string;
+  supplier: string | null;
+  packSize: string;
+  purchasePrice: string;
+  unitRate: string;
+  archivedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stockOnHand?: StockOnHand;
+  supplyItem?: { id: string; name: string; category: string; baseUnitId: string };
+  stockLocation?: { id: string; name: string };
+};
+
+export type SkuFormValues = {
+  name: string;
+  supplyItemId: string;
+  stockLocationId: string;
+  supplier?: string | null;
+  packSize: number | string;
+  purchasePrice: number | string;
+};

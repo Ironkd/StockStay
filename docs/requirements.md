@@ -1132,7 +1132,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 
 1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
 2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
-3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start
+3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits
 6. **Inter-property transfer** as linked return + replenish (both billable)
@@ -1172,3 +1172,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.2 | 2026-07-12 | Probable | Incorporated validated answers Q1–Q11, Q13–Q14 |
 | 0.3 | 2026-07-12 | Probable | Q12: multi-team schema+UI in v1; inter-property legs always bill/refund |
 | 0.4 | 2026-07-12 | Probable | Pre-alpha gaps from assessment/strategy; timezone reopened as Q1b; Appendix A reordered |
+| 0.5 | 2026-07-23 | Probable | Appendix A #3: StockLocation, SupplyItem, Sku, UnitOfMeasure, StockOnHand, StockLocationProperty (+ thin CRUD APIs); Inventory still current until step 10 |

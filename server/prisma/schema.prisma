@@ -85,6 +85,14 @@ model Organization {
   @@index([stripeCustomerId])
 }
 
+enum UnitDimension {
+  count
+  volume
+  mass
+  length
+  other
+}
+
 model Team {
   id             String   @id @default(uuid())
   organizationId String
@@ -93,13 +101,16 @@ model Team {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  organization Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  memberships  UserMembership[]
-  activeUsers  User[]           @relation("UserActiveTeam")
-  properties   Property[]
-  clients      Client[]
-  invoices     Invoice[]
-  sales        Sale[]
+  organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  memberships    UserMembership[]
+  activeUsers    User[]           @relation("UserActiveTeam")
+  properties     Property[]
+  stockLocations StockLocation[]
+  supplyItems    SupplyItem[]
+  skus           Sku[]
+  clients        Client[]
+  invoices       Invoice[]
+  sales          Sale[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -132,10 +143,114 @@ model Property {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  team  Team        @relation(fields: [teamId], references: [id])
-  items Inventory[]
+  team           Team                    @relation(fields: [teamId], references: [id])
+  items          Inventory[]
+  stockLocations StockLocationProperty[]
 
   @@index([teamId])
+}
+
+model UnitOfMeasure {
+  id        String         @id @default(uuid())
+  code      String         @unique
+  name      String
+  dimension UnitDimension  @default(count)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+
+  supplyItems SupplyItem[]
+}
+
+model StockLocation {
+  id         String    @id @default(uuid())
+  teamId     String
+  name       String
+  address    String?
+  tags       Json      @default("[]")
+  archivedAt DateTime?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  team       Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  properties StockLocationProperty[]
+  skus       Sku[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
+  @@index([archivedAt])
+}
+
+model StockLocationProperty {
+  id              String   @id @default(uuid())
+  stockLocationId String
+  propertyId      String
+  createdAt       DateTime @default(now())
+
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Cascade)
+  property      Property      @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@unique([stockLocationId, propertyId])
+  @@index([stockLocationId])
+  @@index([propertyId])
+}
+
+model SupplyItem {
+  id                      String    @id @default(uuid())
+  teamId                  String
+  name                    String
+  category                String    @default("")
+  baseUnitId              String
+  defaultReorderPoint     Decimal   @default(0) @db.Decimal(18, 6)
+  defaultReorderQuantity  Decimal   @default(0) @db.Decimal(18, 6)
+  archivedAt              DateTime?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  team     Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  baseUnit UnitOfMeasure @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+  skus     Sku[]
+
+  @@unique([teamId, name])
+  @@index([teamId])
+  @@index([baseUnitId])
+  @@index([category])
+  @@index([archivedAt])
+}
+
+model Sku {
+  id              String    @id @default(uuid())
+  teamId          String
+  supplyItemId    String
+  stockLocationId String
+  name            String
+  supplier        String?
+  packSize        Decimal   @db.Decimal(18, 6)
+  purchasePrice   Decimal   @db.Decimal(18, 4)
+  unitRate        Decimal   @db.Decimal(18, 6)
+  archivedAt      DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  supplyItem    SupplyItem    @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+  stockOnHand   StockOnHand?
+
+  @@unique([stockLocationId, name])
+  @@index([teamId])
+  @@index([supplyItemId])
+  @@index([stockLocationId])
+  @@index([archivedAt])
+}
+
+model StockOnHand {
+  id        String   @id @default(uuid())
+  skuId     String   @unique
+  quantity  Decimal  @default(0) @db.Decimal(18, 6)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  sku Sku @relation(fields: [skuId], references: [id], onDelete: Cascade)
 }
 
 model Inventory {

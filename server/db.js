@@ -768,4 +768,327 @@ export const movementOps = {
   },
 };
 
+function decimalToString(value) {
+  if (value == null) return null;
+  if (typeof value === "object" && typeof value.toString === "function") {
+    return value.toString();
+  }
+  return String(value);
+}
+
+function normalizeTags(tags) {
+  if (Array.isArray(tags)) return tags.map((t) => String(t));
+  if (typeof tags === "string") {
+    try {
+      const parsed = JSON.parse(tags);
+      return Array.isArray(parsed) ? parsed.map((t) => String(t)) : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function mapStockLocation(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    tags: normalizeTags(row.tags),
+    properties: Array.isArray(row.properties)
+      ? row.properties.map((link) => ({
+          id: link.id,
+          propertyId: link.propertyId,
+          property: link.property
+            ? { id: link.property.id, name: link.property.name, location: link.property.location }
+            : undefined,
+        }))
+      : undefined,
+  };
+}
+
+function mapSupplyItem(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    defaultReorderPoint: decimalToString(row.defaultReorderPoint),
+    defaultReorderQuantity: decimalToString(row.defaultReorderQuantity),
+    baseUnit: row.baseUnit
+      ? {
+          id: row.baseUnit.id,
+          code: row.baseUnit.code,
+          name: row.baseUnit.name,
+          dimension: row.baseUnit.dimension,
+        }
+      : undefined,
+  };
+}
+
+function mapSku(row) {
+  if (!row) return null;
+  return {
+    ...row,
+    packSize: decimalToString(row.packSize),
+    purchasePrice: decimalToString(row.purchasePrice),
+    unitRate: decimalToString(row.unitRate),
+    stockOnHand: row.stockOnHand
+      ? {
+          id: row.stockOnHand.id,
+          skuId: row.stockOnHand.skuId,
+          quantity: decimalToString(row.stockOnHand.quantity),
+        }
+      : undefined,
+    supplyItem: row.supplyItem
+      ? {
+          id: row.supplyItem.id,
+          name: row.supplyItem.name,
+          category: row.supplyItem.category,
+          baseUnitId: row.supplyItem.baseUnitId,
+        }
+      : undefined,
+    stockLocation: row.stockLocation
+      ? {
+          id: row.stockLocation.id,
+          name: row.stockLocation.name,
+        }
+      : undefined,
+  };
+}
+
+export const unitOfMeasureOps = {
+  async findAll() {
+    return prisma.unitOfMeasure.findMany({ orderBy: { code: "asc" } });
+  },
+
+  async findById(id) {
+    if (!id) return null;
+    return prisma.unitOfMeasure.findUnique({ where: { id } });
+  },
+
+  async findByCode(code) {
+    if (!code) return null;
+    return prisma.unitOfMeasure.findUnique({ where: { code } });
+  },
+};
+
+export const stockLocationOps = {
+  async findAllByTeam(teamId, { includeArchived = false } = {}) {
+    const rows = await prisma.stockLocation.findMany({
+      where: {
+        teamId,
+        ...(includeArchived ? {} : { archivedAt: null }),
+      },
+      include: {
+        properties: { include: { property: true } },
+      },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(mapStockLocation);
+  },
+
+  async findById(id) {
+    if (!id) return null;
+    const row = await prisma.stockLocation.findUnique({
+      where: { id },
+      include: {
+        properties: { include: { property: true } },
+      },
+    });
+    return mapStockLocation(row);
+  },
+
+  async create(data) {
+    const row = await prisma.stockLocation.create({
+      data: {
+        teamId: data.teamId,
+        name: data.name,
+        address: data.address ?? null,
+        tags: normalizeTags(data.tags),
+      },
+      include: {
+        properties: { include: { property: true } },
+      },
+    });
+    return mapStockLocation(row);
+  },
+
+  async update(id, data) {
+    const row = await prisma.stockLocation.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.address !== undefined ? { address: data.address } : {}),
+        ...(data.tags !== undefined ? { tags: normalizeTags(data.tags) } : {}),
+        ...(data.archivedAt !== undefined ? { archivedAt: data.archivedAt } : {}),
+      },
+      include: {
+        properties: { include: { property: true } },
+      },
+    });
+    return mapStockLocation(row);
+  },
+
+  async linkProperty(stockLocationId, propertyId) {
+    const link = await prisma.stockLocationProperty.create({
+      data: { stockLocationId, propertyId },
+      include: { property: true },
+    });
+    return {
+      id: link.id,
+      propertyId: link.propertyId,
+      property: link.property
+        ? { id: link.property.id, name: link.property.name, location: link.property.location }
+        : undefined,
+    };
+  },
+
+  async unlinkProperty(stockLocationId, propertyId) {
+    await prisma.stockLocationProperty.deleteMany({
+      where: { stockLocationId, propertyId },
+    });
+  },
+};
+
+export const supplyItemOps = {
+  async findAllByTeam(teamId, { includeArchived = false } = {}) {
+    const rows = await prisma.supplyItem.findMany({
+      where: {
+        teamId,
+        ...(includeArchived ? {} : { archivedAt: null }),
+      },
+      include: { baseUnit: true },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(mapSupplyItem);
+  },
+
+  async findById(id) {
+    if (!id) return null;
+    const row = await prisma.supplyItem.findUnique({
+      where: { id },
+      include: { baseUnit: true },
+    });
+    return mapSupplyItem(row);
+  },
+
+  async create(data) {
+    const row = await prisma.supplyItem.create({
+      data: {
+        teamId: data.teamId,
+        name: data.name,
+        category: data.category ?? "",
+        baseUnitId: data.baseUnitId,
+        defaultReorderPoint: data.defaultReorderPoint ?? 0,
+        defaultReorderQuantity: data.defaultReorderQuantity ?? 0,
+      },
+      include: { baseUnit: true },
+    });
+    return mapSupplyItem(row);
+  },
+
+  async update(id, data) {
+    const row = await prisma.supplyItem.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.category !== undefined ? { category: data.category } : {}),
+        ...(data.baseUnitId !== undefined ? { baseUnitId: data.baseUnitId } : {}),
+        ...(data.defaultReorderPoint !== undefined
+          ? { defaultReorderPoint: data.defaultReorderPoint }
+          : {}),
+        ...(data.defaultReorderQuantity !== undefined
+          ? { defaultReorderQuantity: data.defaultReorderQuantity }
+          : {}),
+        ...(data.archivedAt !== undefined ? { archivedAt: data.archivedAt } : {}),
+      },
+      include: { baseUnit: true },
+    });
+    return mapSupplyItem(row);
+  },
+};
+
+export const skuOps = {
+  async findAllByTeam(teamId, { includeArchived = false, supplyItemId, stockLocationId } = {}) {
+    const rows = await prisma.sku.findMany({
+      where: {
+        teamId,
+        ...(includeArchived ? {} : { archivedAt: null }),
+        ...(supplyItemId ? { supplyItemId } : {}),
+        ...(stockLocationId ? { stockLocationId } : {}),
+      },
+      include: {
+        stockOnHand: true,
+        supplyItem: true,
+        stockLocation: true,
+      },
+      orderBy: { name: "asc" },
+    });
+    return rows.map(mapSku);
+  },
+
+  async findById(id) {
+    if (!id) return null;
+    const row = await prisma.sku.findUnique({
+      where: { id },
+      include: {
+        stockOnHand: true,
+        supplyItem: true,
+        stockLocation: true,
+      },
+    });
+    return mapSku(row);
+  },
+
+  async create(data) {
+    const row = await prisma.$transaction(async (tx) => {
+      const sku = await tx.sku.create({
+        data: {
+          teamId: data.teamId,
+          supplyItemId: data.supplyItemId,
+          stockLocationId: data.stockLocationId,
+          name: data.name,
+          supplier: data.supplier ?? null,
+          packSize: data.packSize,
+          purchasePrice: data.purchasePrice,
+          unitRate: data.unitRate,
+        },
+      });
+      await tx.stockOnHand.create({
+        data: {
+          skuId: sku.id,
+          quantity: 0,
+        },
+      });
+      return tx.sku.findUnique({
+        where: { id: sku.id },
+        include: {
+          stockOnHand: true,
+          supplyItem: true,
+          stockLocation: true,
+        },
+      });
+    });
+    return mapSku(row);
+  },
+
+  async update(id, data) {
+    const row = await prisma.sku.update({
+      where: { id },
+      data: {
+        ...(data.name !== undefined ? { name: data.name } : {}),
+        ...(data.supplier !== undefined ? { supplier: data.supplier } : {}),
+        ...(data.packSize !== undefined ? { packSize: data.packSize } : {}),
+        ...(data.purchasePrice !== undefined ? { purchasePrice: data.purchasePrice } : {}),
+        ...(data.unitRate !== undefined ? { unitRate: data.unitRate } : {}),
+        ...(data.archivedAt !== undefined ? { archivedAt: data.archivedAt } : {}),
+      },
+      include: {
+        stockOnHand: true,
+        supplyItem: true,
+        stockLocation: true,
+      },
+    });
+    return mapSku(row);
+  },
+};
+
 export { prisma };

@@ -20,6 +20,10 @@ import {
   invitationOps,
   movementOps,
   passwordResetTokenOps,
+  unitOfMeasureOps,
+  stockLocationOps,
+  supplyItemOps,
+  skuOps,
   prisma,
   getMembershipContext,
   provisionOrganizationWithTeam,
@@ -943,6 +947,545 @@ app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error deleting property:", error);
     res.status(500).json({ message: "Error deleting property" });
+  }
+});
+
+// ==================== CATALOGUE / STOCK LOCATION ROUTES ====================
+
+function isUniqueConstraintError(error) {
+  return error?.code === "P2002";
+}
+
+function parseDecimalInput(value, fieldName) {
+  if (value === null || value === undefined || value === "") {
+    return { error: `${fieldName} is required` };
+  }
+  const n = Number(value);
+  if (!Number.isFinite(n)) {
+    return { error: `${fieldName} must be a number` };
+  }
+  return { value: n };
+}
+
+function userCanAccessCatalogue(user) {
+  return (
+    userHasPageAccess(user, "inventory") ||
+    userHasPageAccess(user, "shopping-list") ||
+    userHasPageAccess(user, "settings")
+  );
+}
+
+function userCanWriteCatalogue(user) {
+  if (!userCanAccessCatalogue(user)) return false;
+  if (user.teamRole === "viewer") return false;
+  return true;
+}
+
+app.get("/api/units-of-measure", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to catalogue data." });
+    }
+    const units = await unitOfMeasureOps.findAll();
+    res.json(units);
+  } catch (error) {
+    console.error("Error fetching units of measure:", error);
+    res.status(500).json({ message: "Error fetching units of measure" });
+  }
+});
+
+app.get("/api/stock-locations", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to stock locations." });
+    }
+    const includeArchived = req.query.includeArchived === "true";
+    const locations = await stockLocationOps.findAllByTeam(currentUser.teamId, { includeArchived });
+    res.json(locations);
+  } catch (error) {
+    console.error("Error fetching stock locations:", error);
+    res.status(500).json({ message: "Error fetching stock locations" });
+  }
+});
+
+app.post("/api/stock-locations", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to create stock locations." });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ message: "Stock location name is required." });
+    }
+    const address =
+      typeof req.body?.address === "string" ? req.body.address.trim() || null : null;
+    const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
+    const location = await stockLocationOps.create({
+      teamId: currentUser.teamId,
+      name,
+      address,
+      tags,
+    });
+    res.status(201).json(location);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A stock location with this name already exists." });
+    }
+    console.error("Error creating stock location:", error);
+    res.status(500).json({ message: "Error creating stock location" });
+  }
+});
+
+app.get("/api/stock-locations/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to stock locations." });
+    }
+    const location = await stockLocationOps.findById(req.params.id);
+    if (!location || location.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Stock location not found." });
+    }
+    res.json(location);
+  } catch (error) {
+    console.error("Error fetching stock location:", error);
+    res.status(500).json({ message: "Error fetching stock location" });
+  }
+});
+
+app.patch("/api/stock-locations/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to update stock locations." });
+    }
+    const existing = await stockLocationOps.findById(req.params.id);
+    if (!existing || existing.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Stock location not found." });
+    }
+    const updates = {};
+    if (typeof req.body?.name === "string" && req.body.name.trim()) {
+      updates.name = req.body.name.trim();
+    }
+    if (req.body?.address !== undefined) {
+      updates.address =
+        req.body.address == null || req.body.address === ""
+          ? null
+          : String(req.body.address).trim();
+    }
+    if (req.body?.tags !== undefined) {
+      updates.tags = Array.isArray(req.body.tags) ? req.body.tags : [];
+    }
+    if (req.body?.archived === true) {
+      updates.archivedAt = existing.archivedAt || new Date();
+    } else if (req.body?.archived === false) {
+      updates.archivedAt = null;
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No valid updates provided." });
+    }
+    const updated = await stockLocationOps.update(existing.id, updates);
+    res.json(updated);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A stock location with this name already exists." });
+    }
+    console.error("Error updating stock location:", error);
+    res.status(500).json({ message: "Error updating stock location" });
+  }
+});
+
+app.post("/api/stock-locations/:id/properties", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to link properties." });
+    }
+    const location = await stockLocationOps.findById(req.params.id);
+    if (!location || location.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Stock location not found." });
+    }
+    const propertyId = typeof req.body?.propertyId === "string" ? req.body.propertyId : "";
+    if (!propertyId) {
+      return res.status(400).json({ message: "propertyId is required." });
+    }
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const property = teamProperties.find((p) => p.id === propertyId);
+    if (!property) {
+      return res.status(400).json({ message: "Property must belong to the same team." });
+    }
+    const link = await stockLocationOps.linkProperty(location.id, propertyId);
+    res.status(201).json(link);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "Property is already linked to this stock location." });
+    }
+    console.error("Error linking property to stock location:", error);
+    res.status(500).json({ message: "Error linking property" });
+  }
+});
+
+app.delete("/api/stock-locations/:id/properties/:propertyId", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to unlink properties." });
+    }
+    const location = await stockLocationOps.findById(req.params.id);
+    if (!location || location.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Stock location not found." });
+    }
+    await stockLocationOps.unlinkProperty(location.id, req.params.propertyId);
+    res.json({ message: "Property unlinked" });
+  } catch (error) {
+    console.error("Error unlinking property from stock location:", error);
+    res.status(500).json({ message: "Error unlinking property" });
+  }
+});
+
+app.get("/api/supply-items", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to supply items." });
+    }
+    const includeArchived = req.query.includeArchived === "true";
+    const items = await supplyItemOps.findAllByTeam(currentUser.teamId, { includeArchived });
+    res.json(items);
+  } catch (error) {
+    console.error("Error fetching supply items:", error);
+    res.status(500).json({ message: "Error fetching supply items" });
+  }
+});
+
+app.post("/api/supply-items", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to create supply items." });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ message: "Supply item name is required." });
+    }
+    const baseUnitId = typeof req.body?.baseUnitId === "string" ? req.body.baseUnitId : "";
+    if (!baseUnitId) {
+      return res.status(400).json({ message: "baseUnitId is required." });
+    }
+    const unit = await unitOfMeasureOps.findById(baseUnitId);
+    if (!unit) {
+      return res.status(400).json({ message: "Invalid baseUnitId." });
+    }
+    const reorderPoint = parseDecimalInput(req.body?.defaultReorderPoint ?? 0, "defaultReorderPoint");
+    if (reorderPoint.error) return res.status(400).json({ message: reorderPoint.error });
+    const reorderQty = parseDecimalInput(
+      req.body?.defaultReorderQuantity ?? 0,
+      "defaultReorderQuantity"
+    );
+    if (reorderQty.error) return res.status(400).json({ message: reorderQty.error });
+    if (reorderPoint.value < 0 || reorderQty.value < 0) {
+      return res.status(400).json({ message: "Reorder defaults cannot be negative." });
+    }
+    const item = await supplyItemOps.create({
+      teamId: currentUser.teamId,
+      name,
+      category: typeof req.body?.category === "string" ? req.body.category.trim() : "",
+      baseUnitId,
+      defaultReorderPoint: reorderPoint.value,
+      defaultReorderQuantity: reorderQty.value,
+    });
+    res.status(201).json(item);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A supply item with this name already exists." });
+    }
+    console.error("Error creating supply item:", error);
+    res.status(500).json({ message: "Error creating supply item" });
+  }
+});
+
+app.get("/api/supply-items/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to supply items." });
+    }
+    const item = await supplyItemOps.findById(req.params.id);
+    if (!item || item.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Supply item not found." });
+    }
+    res.json(item);
+  } catch (error) {
+    console.error("Error fetching supply item:", error);
+    res.status(500).json({ message: "Error fetching supply item" });
+  }
+});
+
+app.patch("/api/supply-items/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to update supply items." });
+    }
+    const existing = await supplyItemOps.findById(req.params.id);
+    if (!existing || existing.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Supply item not found." });
+    }
+    const updates = {};
+    if (typeof req.body?.name === "string" && req.body.name.trim()) {
+      updates.name = req.body.name.trim();
+    }
+    if (typeof req.body?.category === "string") {
+      updates.category = req.body.category.trim();
+    }
+    if (typeof req.body?.baseUnitId === "string" && req.body.baseUnitId) {
+      const unit = await unitOfMeasureOps.findById(req.body.baseUnitId);
+      if (!unit) {
+        return res.status(400).json({ message: "Invalid baseUnitId." });
+      }
+      updates.baseUnitId = req.body.baseUnitId;
+    }
+    if (req.body?.defaultReorderPoint !== undefined) {
+      const parsed = parseDecimalInput(req.body.defaultReorderPoint, "defaultReorderPoint");
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      if (parsed.value < 0) {
+        return res.status(400).json({ message: "defaultReorderPoint cannot be negative." });
+      }
+      updates.defaultReorderPoint = parsed.value;
+    }
+    if (req.body?.defaultReorderQuantity !== undefined) {
+      const parsed = parseDecimalInput(req.body.defaultReorderQuantity, "defaultReorderQuantity");
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      if (parsed.value < 0) {
+        return res.status(400).json({ message: "defaultReorderQuantity cannot be negative." });
+      }
+      updates.defaultReorderQuantity = parsed.value;
+    }
+    if (req.body?.archived === true) {
+      updates.archivedAt = existing.archivedAt || new Date();
+    } else if (req.body?.archived === false) {
+      updates.archivedAt = null;
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No valid updates provided." });
+    }
+    const updated = await supplyItemOps.update(existing.id, updates);
+    res.json(updated);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A supply item with this name already exists." });
+    }
+    console.error("Error updating supply item:", error);
+    res.status(500).json({ message: "Error updating supply item" });
+  }
+});
+
+app.get("/api/skus", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to SKUs." });
+    }
+    const includeArchived = req.query.includeArchived === "true";
+    const supplyItemId =
+      typeof req.query.supplyItemId === "string" ? req.query.supplyItemId : undefined;
+    const stockLocationId =
+      typeof req.query.stockLocationId === "string" ? req.query.stockLocationId : undefined;
+    const skus = await skuOps.findAllByTeam(currentUser.teamId, {
+      includeArchived,
+      supplyItemId,
+      stockLocationId,
+    });
+    res.json(skus);
+  } catch (error) {
+    console.error("Error fetching SKUs:", error);
+    res.status(500).json({ message: "Error fetching SKUs" });
+  }
+});
+
+app.post("/api/skus", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to create SKUs." });
+    }
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    if (!name) {
+      return res.status(400).json({ message: "SKU name is required." });
+    }
+    const supplyItemId = typeof req.body?.supplyItemId === "string" ? req.body.supplyItemId : "";
+    const stockLocationId =
+      typeof req.body?.stockLocationId === "string" ? req.body.stockLocationId : "";
+    if (!supplyItemId || !stockLocationId) {
+      return res.status(400).json({ message: "supplyItemId and stockLocationId are required." });
+    }
+    const supplyItem = await supplyItemOps.findById(supplyItemId);
+    if (!supplyItem || supplyItem.teamId !== currentUser.teamId || supplyItem.archivedAt) {
+      return res.status(400).json({ message: "Invalid or archived supply item." });
+    }
+    const location = await stockLocationOps.findById(stockLocationId);
+    if (!location || location.teamId !== currentUser.teamId || location.archivedAt) {
+      return res.status(400).json({ message: "Invalid or archived stock location." });
+    }
+    const packSize = parseDecimalInput(req.body?.packSize, "packSize");
+    if (packSize.error) return res.status(400).json({ message: packSize.error });
+    if (!(packSize.value > 0)) {
+      return res.status(400).json({ message: "packSize must be greater than zero." });
+    }
+    const purchasePrice = parseDecimalInput(req.body?.purchasePrice, "purchasePrice");
+    if (purchasePrice.error) return res.status(400).json({ message: purchasePrice.error });
+    if (purchasePrice.value < 0) {
+      return res.status(400).json({ message: "purchasePrice cannot be negative." });
+    }
+    const unitRate = purchasePrice.value / packSize.value;
+    const sku = await skuOps.create({
+      teamId: currentUser.teamId,
+      supplyItemId,
+      stockLocationId,
+      name,
+      supplier:
+        typeof req.body?.supplier === "string" ? req.body.supplier.trim() || null : null,
+      packSize: packSize.value,
+      purchasePrice: purchasePrice.value,
+      unitRate,
+    });
+    res.status(201).json(sku);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A SKU with this name already exists at this location." });
+    }
+    console.error("Error creating SKU:", error);
+    res.status(500).json({ message: "Error creating SKU" });
+  }
+});
+
+app.get("/api/skus/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanAccessCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have access to SKUs." });
+    }
+    const sku = await skuOps.findById(req.params.id);
+    if (!sku || sku.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "SKU not found." });
+    }
+    res.json(sku);
+  } catch (error) {
+    console.error("Error fetching SKU:", error);
+    res.status(500).json({ message: "Error fetching SKU" });
+  }
+});
+
+app.patch("/api/skus/:id", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "User does not belong to a team." });
+    }
+    if (!userCanWriteCatalogue(currentUser)) {
+      return res.status(403).json({ message: "You do not have permission to update SKUs." });
+    }
+    const existing = await skuOps.findById(req.params.id);
+    if (!existing || existing.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "SKU not found." });
+    }
+    const updates = {};
+    if (typeof req.body?.name === "string" && req.body.name.trim()) {
+      updates.name = req.body.name.trim();
+    }
+    if (req.body?.supplier !== undefined) {
+      updates.supplier =
+        req.body.supplier == null || req.body.supplier === ""
+          ? null
+          : String(req.body.supplier).trim();
+    }
+    let nextPackSize = Number(existing.packSize);
+    let nextPurchasePrice = Number(existing.purchasePrice);
+    let recomputeRate = false;
+    if (req.body?.packSize !== undefined) {
+      const parsed = parseDecimalInput(req.body.packSize, "packSize");
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      if (!(parsed.value > 0)) {
+        return res.status(400).json({ message: "packSize must be greater than zero." });
+      }
+      updates.packSize = parsed.value;
+      nextPackSize = parsed.value;
+      recomputeRate = true;
+    }
+    if (req.body?.purchasePrice !== undefined) {
+      const parsed = parseDecimalInput(req.body.purchasePrice, "purchasePrice");
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      if (parsed.value < 0) {
+        return res.status(400).json({ message: "purchasePrice cannot be negative." });
+      }
+      updates.purchasePrice = parsed.value;
+      nextPurchasePrice = parsed.value;
+      recomputeRate = true;
+    }
+    if (recomputeRate) {
+      updates.unitRate = nextPurchasePrice / nextPackSize;
+    }
+    if (req.body?.archived === true) {
+      updates.archivedAt = existing.archivedAt || new Date();
+    } else if (req.body?.archived === false) {
+      updates.archivedAt = null;
+    }
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ message: "No valid updates provided." });
+    }
+    const updated = await skuOps.update(existing.id, updates);
+    res.json(updated);
+  } catch (error) {
+    if (isUniqueConstraintError(error)) {
+      return res.status(409).json({ message: "A SKU with this name already exists at this location." });
+    }
+    console.error("Error updating SKU:", error);
+    res.status(500).json({ message: "Error updating SKU" });
   }
 });
 
