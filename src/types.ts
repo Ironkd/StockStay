@@ -13,54 +13,14 @@ export type PropertyFormValues = {
   location: string;
   clientId?: string | null;
   markupPercentage?: string | number | null;
-};
-
-export type Category = {
-  id: string;
-  name: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type CategoryFormValues = {
-  name: string;
-};
-
-export type InventoryItem = {
-  id: string;
-  name: string;
-  sku: string;
-  category: string;
-  location: string;
-  propertyId?: string;
-  quantity: number;
-  unit: string;
-  reorderPoint: number;
-  reorderQuantity?: number;
-  priceBoughtFor: number;
-  markupPercentage: number;
-  finalPrice: number;
-  tags: string[];
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type InventoryItemFormValues = {
-  name: string;
-  sku: string;
-  category: string;
-  location: string;
-  propertyId?: string;
-  quantity: number;
-  unit: string;
-  reorderPoint: number;
-  reorderQuantity: number;
-  priceBoughtFor: number;
-  markupPercentage: number;
-  finalPrice: number;
-  tags: string[];
-  notes?: string;
+  /** Stock locations to link on create (server defaults to Central supply if empty) */
+  stockLocationIds?: string[];
+  /** When set, create this client and assign as billing client */
+  newClient?: {
+    name: string;
+    email: string;
+    defaultMarkupPercentage?: number;
+  } | null;
 };
 
 export type BillingFrequency = "weekly" | "biweekly" | "monthly_eom";
@@ -107,35 +67,7 @@ export type InvoiceItem = {
   quantity: number;
   unitPrice: number;
   total: number;
-  // Optional link back to inventory so editing invoices
-  // can update stock levels when needed.
-  inventoryItemId?: string;
   sku?: string;
-};
-
-export type Sale = {
-  id: string;
-  saleNumber: string;
-  clientId: string;
-  clientName: string;
-  date: string;
-  items: SaleItem[];
-  subtotal: number;
-  tax: number;
-  total: number;
-  notes?: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type SaleItem = {
-  id: string;
-  inventoryItemId: string;
-  inventoryItemName: string;
-  sku: string;
-  quantity: number;
-  unitPrice: number;
-  total: number;
 };
 
 // Invoice email branding (stored per team)

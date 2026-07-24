@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { apiRequest } from "../config/api";
 import { authApi } from "../services/authApi";
@@ -10,10 +11,10 @@ import type { Property } from "../types";
 
 const PAGE_KEYS = [
   { key: "home", label: "Home" },
-  { key: "inventory", label: "Inventory" },
+  { key: "inventory", label: "Stock & Properties" },
   { key: "shopping-list", label: "Shopping List" },
   { key: "clients", label: "Clients" },
-  { key: "invoices", label: "Invoices" },
+  { key: "invoices", label: "Billing" },
   { key: "reports", label: "Reports" },
   { key: "settings", label: "Settings" },
 ] as const;
@@ -795,6 +796,20 @@ export const SettingsPage: React.FC = () => {
     <div className="settings-page">
       <h2>Settings</h2>
       {error && <p style={{ color: "#dc2626", marginBottom: "12px" }}>{error}</p>}
+
+      <section className="panel" style={{ marginBottom: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h3 style={{ fontSize: "16px", margin: "0 0 4px" }}>Clients</h3>
+            <p style={{ margin: 0, color: "#64748b", fontSize: "13px" }}>
+              Manage billing clients and their default markup / billing frequency.
+            </p>
+          </div>
+          <Link to="/clients" className="secondary" style={{ textDecoration: "none", padding: "8px 16px", borderRadius: "999px", border: "1px solid rgba(148, 163, 184, 0.6)" }}>
+            Manage clients →
+          </Link>
+        </div>
+      </section>
 
       <section className="panel" style={{ marginBottom: "24px" }}>
         <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Profile</h3>

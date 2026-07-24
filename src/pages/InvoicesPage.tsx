@@ -1,21 +1,17 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useInvoices } from "../hooks/useInvoices";
 import { useClients } from "../hooks/useClients";
-import { useSales } from "../hooks/useSales";
-import { useInventory } from "../hooks/useInventory";
-import { useProperties } from "../hooks/useProperties";
 import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 
 export const InvoicesPage: React.FC = () => {
+  const [searchParams] = useSearchParams();
+  const propertyIdFilter = searchParams.get("propertyId") || "";
   const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
   const { clients } = useClients();
-  const { sales, refresh: refreshSales } = useSales();
-   // Inventory & properties for picking items into invoices
-  const { items: inventoryItems, refresh: refreshInventory } = useInventory();
-  const { getPropertyById } = useProperties();
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
@@ -25,7 +21,7 @@ export const InvoicesPage: React.FC = () => {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
-  
+
   // Section visibility state
   const [sectionVisibility, setSectionVisibility] = useState({
     unbilled: true,
@@ -41,12 +37,7 @@ export const InvoicesPage: React.FC = () => {
     }));
   };
 
-  // Refresh invoices when sales change (to pick up auto-generated invoices)
-  useEffect(() => {
-    refreshInvoices();
-  }, [sales.length]);
-
-  // Refetch when tab becomes visible or when a sale creates an invoice (so invoice shows immediately)
+  // Refetch when tab becomes visible so invoices stay in sync
   useEffect(() => {
     const onRefresh = () => refreshInvoices();
     const onVisibilityChange = () => {
@@ -92,16 +83,21 @@ export const InvoicesPage: React.FC = () => {
     };
   }, [invoices.length]);
 
+  const visibleUnbilledLines = useMemo(() => {
+    if (!propertyIdFilter) return unbilledLines;
+    return unbilledLines.filter((line) => line.property?.id === propertyIdFilter);
+  }, [unbilledLines, propertyIdFilter]);
+
   const unbilledTotals = useMemo(() => {
     let charges = 0;
     let credits = 0;
-    for (const line of unbilledLines) {
+    for (const line of visibleUnbilledLines) {
       const amt = Number(line.billBackAmount) || 0;
       if (amt >= 0) charges += amt;
       else credits += amt;
     }
     return { charges, credits, net: charges + credits };
-  }, [unbilledLines]);
+  }, [visibleUnbilledLines]);
 
   const [formData, setFormData] = useState({
     invoiceNumber: "",
@@ -117,8 +113,9 @@ export const InvoicesPage: React.FC = () => {
   });
 
   const [currentItem, setCurrentItem] = useState({
-    inventoryItemId: "",
-    quantity: 1
+    name: "",
+    quantity: 1,
+    unitPrice: 0
   });
 
   const resetForm = () => {
@@ -134,71 +131,30 @@ export const InvoicesPage: React.FC = () => {
       status: "draft",
       notes: ""
     });
-    setCurrentItem({ inventoryItemId: "", quantity: 1 });
+    setCurrentItem({ name: "", quantity: 1, unitPrice: 0 });
     setEditingInvoice(null);
     setShowForm(false);
   };
 
-  // Inventory helpers for picking items into the invoice
-  const selectedInventoryItem = useMemo(() => {
-    return inventoryItems.find((item) => item.id === currentItem.inventoryItemId);
-  }, [inventoryItems, currentItem.inventoryItemId]);
-
-  const availableInventoryItems = useMemo(() => {
-    return inventoryItems.filter((item) => item.quantity > 0);
-  }, [inventoryItems]);
-
   const addItemToInvoice = () => {
-    if (!currentItem.inventoryItemId || currentItem.quantity <= 0) {
-      alert("Please select an item from the property and enter a quantity");
+    if (!currentItem.name.trim() || currentItem.quantity <= 0) {
+      alert("Please enter an item name and quantity");
       return;
     }
 
-    const inventoryItem = selectedInventoryItem;
-    if (!inventoryItem) {
-      alert("Selected inventory item not found");
-      return;
-    }
+    const newItem: InvoiceItem = {
+      id: crypto.randomUUID(),
+      name: currentItem.name.trim(),
+      quantity: currentItem.quantity,
+      unitPrice: currentItem.unitPrice,
+      total: currentItem.quantity * currentItem.unitPrice,
+    };
+    setFormData({
+      ...formData,
+      items: [...formData.items, newItem]
+    });
 
-    if (currentItem.quantity > inventoryItem.quantity) {
-      alert(
-        `Insufficient stock for ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${currentItem.quantity}`
-      );
-      return;
-    }
-
-    // Check if item already exists on the invoice; if so, accumulate quantity
-    const existingIndex = formData.items.findIndex(
-      (item) => item.inventoryItemId === inventoryItem.id
-    );
-
-    if (existingIndex >= 0) {
-      const updatedItems = [...formData.items];
-      const existing = updatedItems[existingIndex];
-      const newQuantity = existing.quantity + currentItem.quantity;
-      updatedItems[existingIndex] = {
-        ...existing,
-        quantity: newQuantity,
-        total: newQuantity * existing.unitPrice
-      };
-      setFormData({ ...formData, items: updatedItems });
-    } else {
-      const newItem: InvoiceItem = {
-        id: crypto.randomUUID(),
-        name: inventoryItem.name,
-        quantity: currentItem.quantity,
-        unitPrice: inventoryItem.finalPrice,
-        total: currentItem.quantity * inventoryItem.finalPrice,
-        inventoryItemId: inventoryItem.id,
-        sku: inventoryItem.sku
-      };
-      setFormData({
-        ...formData,
-        items: [...formData.items, newItem]
-      });
-    }
-
-    setCurrentItem({ inventoryItemId: "", quantity: 1 });
+    setCurrentItem({ name: "", quantity: 1, unitPrice: 0 });
   };
 
   const removeItemFromInvoice = (itemId: string) => {
@@ -292,9 +248,7 @@ export const InvoicesPage: React.FC = () => {
         await addInvoice(invoiceData);
       }
 
-      // Refresh invoices and inventory so stock levels and UI stay in sync
       await refreshInvoices();
-      await refreshInventory();
 
       // If this invoice was already sent, treat saving edits as sending an updated version.
       if (wasPreviouslySent && editingInvoice) {
@@ -374,10 +328,6 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
-  const isAutoGenerated = (invoice: Invoice) => {
-    return invoice.notes === "Auto-generated from sales";
-  };
-
   const getInvoiceTitle = (invoice: Invoice) => {
     // Show who the invoice is from (company/sender name), not the number
     return senderBranding?.companyName ?? "Invoice";
@@ -395,26 +345,11 @@ export const InvoicesPage: React.FC = () => {
 
   // Render invoice card component
   const renderInvoiceCard = (invoice: Invoice) => {
-    const isAuto = isAutoGenerated(invoice);
     return (
       <div key={invoice.id} className="invoice-card">
         <div className="invoice-header">
           <div>
-            <h4>
-              {getInvoiceTitle(invoice)}
-              {isAuto && (
-                <span
-                  style={{
-                    marginLeft: "8px",
-                    fontSize: "0.75em",
-                    color: "#3b82f6",
-                    fontWeight: "normal"
-                  }}
-                >
-                  (Auto-generated)
-                </span>
-              )}
-            </h4>
+            <h4>{getInvoiceTitle(invoice)}</h4>
             <p>{invoice.clientName} · #{invoice.invoiceNumber}</p>
           </div>
           <div className="invoice-meta">
@@ -634,9 +569,9 @@ export const InvoicesPage: React.FC = () => {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <div>
-          <h2>Invoices</h2>
+          <h2>Billing</h2>
           <p style={{ marginTop: "4px", fontSize: "0.9em", color: "#64748b" }}>
-            Invoices are automatically created and updated from sales. Auto-generated invoices are marked with "(Auto-generated)".
+            Create and manage invoices, and bill back unbilled replenishment charges.
           </p>
           <div className="invoice-totals-bar">
             <span className="invoice-total-item">
@@ -750,27 +685,15 @@ export const InvoicesPage: React.FC = () => {
               <h4>Items</h4>
               <div className="form-grid">
                 <label>
-                  <span>Inventory Item *</span>
-                  <select
-                    value={currentItem.inventoryItemId}
+                  <span>Item name *</span>
+                  <input
+                    type="text"
+                    value={currentItem.name}
                     onChange={(e) =>
-                      setCurrentItem({ ...currentItem, inventoryItemId: e.target.value })
+                      setCurrentItem({ ...currentItem, name: e.target.value })
                     }
-                  >
-                    <option value="">Select an item from property</option>
-                    {availableInventoryItems.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name} (SKU: {item.sku}){" "}
-                        {(() => {
-                          const property = getPropertyById(item.propertyId);
-                          return property
-                            ? `· Property: ${property.name}`
-                            : "· Property: Unassigned";
-                        })()}{" "}
-                        - Available: {item.quantity} {item.unit} @ ${item.finalPrice.toFixed(2)}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="e.g. Cleaning supplies"
+                  />
                 </label>
                 <label>
                   <span>Quantity *</span>
@@ -784,13 +707,22 @@ export const InvoicesPage: React.FC = () => {
                       })
                     }
                     min={1}
-                    max={selectedInventoryItem?.quantity || 1}
                   />
-                  {selectedInventoryItem && (
-                    <small style={{ color: "#64748b", marginTop: "4px", display: "block" }}>
-                      Available: {selectedInventoryItem.quantity} {selectedInventoryItem.unit}
-                    </small>
-                  )}
+                </label>
+                <label>
+                  <span>Unit price *</span>
+                  <input
+                    type="number"
+                    value={currentItem.unitPrice}
+                    onChange={(e) =>
+                      setCurrentItem({
+                        ...currentItem,
+                        unitPrice: Number(e.target.value)
+                      })
+                    }
+                    min={0}
+                    step={0.01}
+                  />
                 </label>
                 <label>
                   <span>Action</span>
@@ -798,7 +730,7 @@ export const InvoicesPage: React.FC = () => {
                     type="button"
                     onClick={addItemToInvoice}
                     className="secondary"
-                    disabled={!currentItem.inventoryItemId || currentItem.quantity <= 0}
+                    disabled={!currentItem.name.trim() || currentItem.quantity <= 0}
                   >
                     Add Item
                   </button>
@@ -819,14 +751,7 @@ export const InvoicesPage: React.FC = () => {
                   <tbody>
                     {formData.items.map((item) => (
                       <tr key={item.id}>
-                        <td>
-                          {item.name}
-                          {item.sku && (
-                            <span style={{ display: "block", fontSize: "0.8em", color: "#64748b" }}>
-                              SKU: {item.sku}
-                            </span>
-                          )}
-                        </td>
+                        <td>{item.name}</td>
                         <td>{item.quantity}</td>
                         <td>${item.unitPrice.toFixed(2)}</td>
                         <td>${item.total.toFixed(2)}</td>
@@ -887,7 +812,7 @@ export const InvoicesPage: React.FC = () => {
           onClick={() => toggleSection("unbilled")}
         >
           <h3 style={{ margin: 0 }}>
-            Unbilled charges &amp; credits ({unbilledLines.length})
+            Unbilled charges &amp; credits ({visibleUnbilledLines.length})
           </h3>
           <button
             type="button"
@@ -906,8 +831,9 @@ export const InvoicesPage: React.FC = () => {
             <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
               These lines will be included on the next scheduled invoice for each client
               (scheduled billing comes in a later release). Credits are returns with negative amounts.
+              {propertyIdFilter && " Filtered to the selected property."}
             </p>
-            {unbilledLines.length === 0 ? (
+            {visibleUnbilledLines.length === 0 ? (
               <div className="empty-state">No unbilled charges or credits.</div>
             ) : (
               <>
@@ -929,7 +855,7 @@ export const InvoicesPage: React.FC = () => {
                       </tr>
                     </thead>
                     <tbody>
-                      {unbilledLines.map((line) => (
+                      {visibleUnbilledLines.map((line) => (
                         <tr key={line.id}>
                           <td>{line.isCredit ? "Credit" : "Charge"}</td>
                           <td>{line.property?.client?.name || "—"}</td>
@@ -953,7 +879,7 @@ export const InvoicesPage: React.FC = () => {
 
       <section className="panel sold-by-month-panel">
         <div className="sold-by-month-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => toggleSection("soldByMonth")}>
-          <h3 style={{ margin: 0 }}>Sold by month · Who received what</h3>
+          <h3 style={{ margin: 0 }}>Billed by month · Who received what</h3>
           <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
             <div style={{ display: "flex", gap: "8px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
               <label>
@@ -1011,7 +937,7 @@ export const InvoicesPage: React.FC = () => {
           <>
             {soldByMonth.length === 0 ? (
           <div className="empty-state">
-            No invoices in {monthNames[selectedMonth - 1]} {selectedYear}. Create invoices to see sold items per client here.
+            No invoices in {monthNames[selectedMonth - 1]} {selectedYear}. Create invoices to see billed items per client here.
           </div>
         ) : (
           <div className="sold-by-month-clients">

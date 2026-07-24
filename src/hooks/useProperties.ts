@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Property, PropertyFormValues } from "../types";
 import { propertiesApi } from "../services/propertiesApi";
+import { clientsApi } from "../services/clientsApi";
 
 const normalizeProperty = (w: Property): Property => ({
   ...w,
@@ -32,8 +33,28 @@ export const useProperties = () => {
   const addProperty = async (values: PropertyFormValues) => {
     try {
       setError(null);
-      const created = await propertiesApi.create(values);
+      let clientId = values.clientId || null;
+      if (values.newClient?.name && values.newClient?.email) {
+        const createdClient = await clientsApi.create({
+          name: values.newClient.name,
+          email: values.newClient.email,
+          phone: "",
+          address: "",
+          company: "",
+          notes: "",
+          defaultMarkupPercentage: values.newClient.defaultMarkupPercentage ?? 0,
+          billingFrequency: "monthly_eom",
+        });
+        clientId = createdClient.id;
+      }
+      const { newClient: _nc, ...rest } = values;
+      const created = await propertiesApi.create({
+        ...rest,
+        clientId,
+        newClient: undefined,
+      });
       setProperties((prev) => [...prev, normalizeProperty(created)]);
+      return created;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add property");
       throw err;
@@ -43,10 +64,31 @@ export const useProperties = () => {
   const updateProperty = async (id: string, values: PropertyFormValues) => {
     try {
       setError(null);
-      const updated = await propertiesApi.update(id, values);
+      let clientId = values.clientId || null;
+      if (values.newClient?.name && values.newClient?.email) {
+        const createdClient = await clientsApi.create({
+          name: values.newClient.name,
+          email: values.newClient.email,
+          phone: "",
+          address: "",
+          company: "",
+          notes: "",
+          defaultMarkupPercentage: values.newClient.defaultMarkupPercentage ?? 0,
+          billingFrequency: "monthly_eom",
+        });
+        clientId = createdClient.id;
+      }
+      const { newClient: _nc, stockLocationIds: _sl, ...rest } = values;
+      const updated = await propertiesApi.update(id, {
+        ...rest,
+        clientId,
+        newClient: undefined,
+        stockLocationIds: undefined,
+      });
       setProperties((prev) =>
         prev.map((w) => (w.id === id ? normalizeProperty(updated) : w))
       );
+      return updated;
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to update property");
       throw err;

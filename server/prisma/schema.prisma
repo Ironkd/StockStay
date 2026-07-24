@@ -113,7 +113,6 @@ model Team {
   replenishments Replenishment[]
   clients        Client[]
   invoices       Invoice[]
-  sales          Sale[]
 
   @@index([organizationId])
   @@index([ownerId])
@@ -150,7 +149,6 @@ model Property {
 
   team           Team                    @relation(fields: [teamId], references: [id])
   client         Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  items          Inventory[]
   stockLocations StockLocationProperty[]
   propertyStocks PropertyStock[]
   replenishments Replenishment[]
@@ -323,47 +321,6 @@ model StockTransaction {
   @@index([createdByUserId])
 }
 
-model Inventory {
-  id               String   @id @default(uuid())
-  name             String
-  sku              String   @default("")
-  category         String   @default("")
-  location         String   @default("")
-  propertyId       String?
-  quantity         Float    @default(0)
-  unit             String   @default("")
-  reorderPoint     Float    @default(0)
-  reorderQuantity  Float    @default(0)
-  priceBoughtFor   Float?
-  markupPercentage Float?
-  finalPrice       Float?
-  tags             String   @default("[]") // JSON array
-  notes            String   @default("")
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
-
-  property Property? @relation(fields: [propertyId], references: [id])
-
-  @@index([propertyId])
-  @@index([category])
-}
-
-model InventoryMovement {
-  id              String   @id @default(uuid())
-  teamId          String?
-  inventoryItemId String
-  quantityDelta   Float // positive = in, negative = out
-  movementType    String // adjustment, invoice, sale, transfer_in, transfer_out
-  referenceType   String? // invoice, sale, transfer
-  referenceId     String?
-  referenceLabel  String?
-  createdAt       DateTime @default(now())
-
-  @@index([teamId])
-  @@index([inventoryItemId])
-  @@index([createdAt])
-}
-
 model Client {
   id                       String          @id @default(uuid())
   teamId                   String?
@@ -471,7 +428,6 @@ model Invoice {
   total         Float    @default(0)
   status        String   @default("draft") // draft, sent, paid, overdue
   notes         String   @default("")
-  saleId        String?  @unique // when set, this invoice was created from a sale
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -479,29 +435,6 @@ model Invoice {
 
   @@index([clientId])
   @@index([invoiceNumber])
-  @@index([saleId])
-  @@index([teamId])
-}
-
-model Sale {
-  id         String   @id @default(uuid())
-  teamId     String?
-  saleNumber String   @default("")
-  clientId   String?
-  clientName String   @default("")
-  date       String // ISO date string
-  items      String // JSON array of sale items
-  subtotal   Float    @default(0)
-  tax        Float    @default(0)
-  total      Float    @default(0)
-  notes      String   @default("")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-
-  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
-
-  @@index([clientId])
-  @@index([date])
   @@index([teamId])
 }
 

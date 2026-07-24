@@ -1,41 +1,60 @@
-import React, { useEffect, useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useInventory } from "../hooks/useInventory";
-import { useProperties } from "../hooks/useProperties";
-import type { InventoryItem } from "../types";
+import { propertyStocksApi } from "../services/catalogueApi";
+import type { PropertyStock } from "../types";
 
 export const ShoppingListPage: React.FC = () => {
-  const { items, loading, error, refresh } = useInventory();
-  const { getPropertyById } = useProperties();
+  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
 
-  // Refetch when user returns to this tab so items drop off after adding stock elsewhere
+  const refresh = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      const data = await propertyStocksApi.getAll();
+      setPropertyStocks(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load stock");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  // Refetch when user returns to this tab so items drop off after replenishing elsewhere
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
     };
     document.addEventListener("visibilitychange", onVisibilityChange);
     return () => document.removeEventListener("visibilitychange", onVisibilityChange);
-  }, [refresh]);
+  }, []);
 
   const byCategory = useMemo(() => {
-    const lowStock = items.filter(
-      (item) => item.quantity <= item.reorderPoint
-    ) as InventoryItem[];
-    const groups: Record<string, InventoryItem[]> = {};
-    for (const item of lowStock) {
-      const cat = item.category?.trim() || "Uncategorized";
+    const lowStock = propertyStocks.filter(
+      (row) => Number(row.quantity) <= Number(row.reorderPoint)
+    );
+    const groups: Record<string, PropertyStock[]> = {};
+    for (const row of lowStock) {
+      const cat = row.supplyItem?.category?.trim() || "Uncategorized";
       if (!groups[cat]) groups[cat] = [];
-      groups[cat].push(item);
+      groups[cat].push(row);
     }
     for (const cat of Object.keys(groups)) {
-      groups[cat].sort((a, b) => a.name.localeCompare(b.name));
+      groups[cat].sort((a, b) =>
+        (a.supplyItem?.name || "").localeCompare(b.supplyItem?.name || "")
+      );
     }
     const order = Object.keys(groups).sort((a, b) =>
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
     return { groups, order };
-  }, [items]);
+  }, [propertyStocks]);
 
   if (loading) {
     return (
@@ -65,20 +84,21 @@ export const ShoppingListPage: React.FC = () => {
       <div className="shopping-list-header">
         <h2>Shopping List</h2>
         <p className="shopping-list-subtitle">
-          Items at or below reorder point, grouped by category. When you add stock in Inventory, items drop off the list automatically.
+          Property stock at or below reorder point, grouped by category. Replenish from a
+          stock location to clear items off the list.
         </p>
         <button
           type="button"
           className="clear-button"
-          onClick={() => navigate("/inventory")}
+          onClick={() => navigate("/stock")}
         >
-          View Inventory
+          View Stock
         </button>
       </div>
 
       {totalLowStock === 0 ? (
         <div className="empty-state">
-          No items on the shopping list. All stock is above reorder point.
+          No items on the shopping list. All property stock is above reorder point.
         </div>
       ) : (
         <div className="shopping-list-by-category">
@@ -88,27 +108,35 @@ export const ShoppingListPage: React.FC = () => {
               <div key={category} className="shopping-list-category">
                 <h3 className="shopping-list-category-title">{category}</h3>
                 <ul className="shopping-list-items">
-                  {list.map((item) => {
+                  {list.map((row) => {
+                    const quantity = Number(row.quantity);
+                    const reorderPoint = Number(row.reorderPoint);
+                    const reorderQuantity = Number(row.reorderQuantity);
                     const need = Math.max(
                       0,
-                      Math.ceil(item.reorderPoint - item.quantity)
+                      reorderQuantity > 0 ? reorderQuantity : reorderPoint - quantity
                     );
-                    const isOut = item.quantity === 0;
+                    const isOut = quantity <= 0;
                     return (
-                      <li key={item.id} className="shopping-list-item">
+                      <li key={row.id} className="shopping-list-item">
                         <span className="shopping-list-item-name">
-                          {item.name}
-                          {item.sku ? ` (${item.sku})` : ""}
+                          {row.supplyItem?.name || "Unknown item"}
                         </span>
                         <span className="shopping-list-item-meta">
-                          <span className="shopping-list-property">
-                            {getPropertyById(item.propertyId)?.name ?? "No property"}
+                          <span
+                            className="shopping-list-property"
+                            role="link"
+                            tabIndex={0}
+                            onClick={() =>
+                              row.propertyId && navigate(`/properties/${row.propertyId}`)
+                            }
+                            style={{ cursor: row.propertyId ? "pointer" : undefined }}
+                          >
+                            {row.property?.name ?? "No property"}
                           </span>
                           {" · "}
-                          Current: {item.quantity} {item.unit}
-                          {item.reorderPoint > 0 && (
-                            <> · Reorder at {item.reorderPoint}</>
-                          )}
+                          Current: {quantity}
+                          {reorderPoint > 0 && <> · Reorder at {reorderPoint}</>}
                           {need > 0 && (
                             <span
                               className={
@@ -118,7 +146,7 @@ export const ShoppingListPage: React.FC = () => {
                               }
                             >
                               {" "}
-                              · Need {need} {item.unit}
+                              · Need {need}
                             </span>
                           )}
                         </span>

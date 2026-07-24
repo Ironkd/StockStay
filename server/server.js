@@ -13,12 +13,9 @@ import {
   organizationOps,
   membershipOps,
   propertyOps,
-  inventoryOps,
   clientOps,
   invoiceOps,
-  saleOps,
   invitationOps,
-  movementOps,
   passwordResetTokenOps,
   unitOfMeasureOps,
   stockLocationOps,
@@ -27,6 +24,7 @@ import {
   prisma,
   getMembershipContext,
   provisionOrganizationWithTeam,
+  ensureDefaultStockLocation,
 } from "./db.js";
 import {
   receiveStock,
@@ -835,10 +833,6 @@ const {
   requireInventoryWrite,
 } = createCatalogueAuth({ loadCurrentUser, userHasPageAccess });
 
-// Inventory read is allowed for both "inventory" and "shopping-list" (Shopping List page needs to fetch inventory)
-const userCanReadInventory = (user) =>
-  userHasPageAccess(user, "inventory") || userHasPageAccess(user, "shopping-list");
-
 // ==================== PROPERTY ROUTES ====================
 
 // Get current team's properties
@@ -915,7 +909,7 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
       });
     }
 
-    const { name, location, clientId, markupPercentage } = req.body;
+    const { name, location, clientId, markupPercentage, stockLocationIds } = req.body;
     if (!name || typeof name !== "string") {
       return res.status(400).json({ message: "Property name is required." });
     }
@@ -936,6 +930,29 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
           ? null
           : markupPercentage,
     });
+
+    // Link to stock locations (default: ensure Central supply exists and link it)
+    let locationIds = Array.isArray(stockLocationIds)
+      ? stockLocationIds.filter((id) => typeof id === "string" && id)
+      : [];
+    if (locationIds.length === 0) {
+      const defaultLoc = await ensureDefaultStockLocation(currentUser.teamId);
+      if (defaultLoc?.id) locationIds = [defaultLoc.id];
+    }
+    for (const locId of locationIds) {
+      const loc = await stockLocationOps.findById(locId);
+      if (!loc || loc.teamId !== currentUser.teamId || loc.archivedAt) {
+        continue;
+      }
+      try {
+        await stockLocationOps.linkProperty(locId, property.id);
+      } catch (linkErr) {
+        // Ignore unique conflicts (already linked)
+        if (!isUniqueConstraintError(linkErr)) {
+          console.warn("Failed to link property to stock location:", linkErr);
+        }
+      }
+    }
 
     res.status(201).json(property);
   } catch (error) {
@@ -1029,6 +1046,9 @@ app.get("/api/units-of-measure", authenticateToken, requireCatalogueRead, async 
 app.get("/api/stock-locations", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
     const includeArchived = req.query.includeArchived === "true";
+    if (!includeArchived) {
+      await ensureDefaultStockLocation(req.currentUser.teamId);
+    }
     const locations = await stockLocationOps.findAllByTeam(req.currentUser.teamId, { includeArchived });
     res.json(locations);
   } catch (error) {
@@ -1323,7 +1343,7 @@ app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res)
     if (purchasePrice.value < 0) {
       return res.status(400).json({ message: "purchasePrice cannot be negative." });
     }
-    const unitRate = computeUnitRate(purchasePrice.value, packSize.value);
+    const unitRate = computeUnitRate(purchasePrice.value, packSize.value).toString();
     const sku = await skuOps.create({
       teamId: req.currentUser.teamId,
       supplyItemId,
@@ -1398,7 +1418,7 @@ app.patch("/api/skus/:id", authenticateToken, requireCatalogueWrite, async (req,
       recomputeRate = true;
     }
     if (recomputeRate) {
-      updates.unitRate = computeUnitRate(nextPurchasePrice, nextPackSize);
+      updates.unitRate = computeUnitRate(nextPurchasePrice, nextPackSize).toString();
     }
     if (req.body?.archived === true) {
       updates.archivedAt = existing.archivedAt || new Date();
@@ -1711,437 +1731,6 @@ app.patch("/api/billing/extra-user", authenticateToken, async (req, res) => {
   }
 });
 
-// ==================== INVENTORY ROUTES ====================
-
-app.get("/api/inventory", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userCanReadInventory(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    // Only return items in this user's team's properties (not all items in the DB).
-    // When team has no properties, return [] (never pass null — findAll(null) returns all DB items).
-    const teamPropertyIds =
-      currentUser?.teamId ?
-        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
-      : [];
-    let items =
-      teamPropertyIds.length === 0
-        ? []
-        : await inventoryOps.findAll(teamPropertyIds);
-
-    // If the user has property restrictions, only return items from allowed properties
-    if (
-      currentUser &&
-      Array.isArray(currentUser.allowedPropertyIds) &&
-      currentUser.allowedPropertyIds.length > 0
-    ) {
-      items = items.filter(
-        (item) =>
-          item.propertyId &&
-          currentUser.allowedPropertyIds.includes(item.propertyId)
-      );
-    }
-
-    res.json(items);
-  } catch (error) {
-    console.error("Error fetching inventory:", error);
-    res.status(500).json({ message: "Error fetching inventory" });
-  }
-});
-
-// Helper: item is in one of the current user's team's properties
-async function inventoryItemBelongsToTeam(item, currentUser) {
-  if (!currentUser?.teamId || !item?.propertyId) return false;
-  const properties = await propertyOps.findAllByTeam(currentUser.teamId);
-  return properties.some((w) => w.id === item.propertyId);
-}
-
-/** Log inventory movement for reports (ins/outs). Non-blocking. */
-async function logMovement(teamId, inventoryItemId, quantityDelta, movementType, referenceType = null, referenceId = null, referenceLabel = null) {
-  if (!teamId || !inventoryItemId || quantityDelta === 0) return;
-  try {
-    await movementOps.create({
-      teamId,
-      inventoryItemId,
-      quantityDelta: Number(quantityDelta),
-      movementType,
-      referenceType: referenceType || null,
-      referenceId: referenceId || null,
-      referenceLabel: referenceLabel || null,
-    });
-  } catch (err) {
-    console.warn("[Reports] Failed to log movement:", err?.message);
-  }
-}
-
-app.get("/api/inventory/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userCanReadInventory(currentUser)) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    const item = await inventoryOps.findById(req.params.id);
-
-    if (!item) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    // Item must be in this user's team's properties
-    if (!(await inventoryItemBelongsToTeam(item, currentUser))) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    // Enforce property-level restrictions (allowedPropertyIds)
-    if (
-      currentUser &&
-      Array.isArray(currentUser.allowedPropertyIds) &&
-      currentUser.allowedPropertyIds.length > 0 &&
-      (!item.propertyId ||
-        !currentUser.allowedPropertyIds.includes(item.propertyId))
-    ) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    res.json(item);
-  } catch (error) {
-    console.error("Error fetching item:", error);
-    res.status(500).json({ message: "Error fetching item" });
-  }
-});
-
-app.post("/api/inventory", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    // Team-scoped limit: only count items in this team's properties
-    const teamPropertyIds =
-      currentUser?.teamId ?
-        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
-      : [];
-    const inventoryCount = await inventoryOps.countByPropertyIds(teamPropertyIds);
-    if (
-      currentUser &&
-      typeof currentUser.maxInventoryItems === "number" &&
-      inventoryCount >= currentUser.maxInventoryItems
-    ) {
-      return res.status(403).json({
-        message: `Inventory item limit reached (${currentUser.maxInventoryItems}).`,
-      });
-    }
-
-    // New item must be in one of this team's properties
-    const propertyId = req.body.propertyId;
-    if (propertyId && teamPropertyIds.length > 0 && !teamPropertyIds.includes(propertyId)) {
-      return res.status(403).json({
-        message: "You can only add items to properties in your team.",
-      });
-    }
-
-    // Warehouse-level restrictions – user can only create items in allowed properties
-    if (
-      currentUser &&
-      Array.isArray(currentUser.allowedPropertyIds) &&
-      currentUser.allowedPropertyIds.length > 0
-    ) {
-      if (
-        !propertyId ||
-        !currentUser.allowedPropertyIds.includes(propertyId)
-      ) {
-        return res.status(403).json({
-          message: "You are not allowed to use this property for new items.",
-        });
-      }
-    }
-
-    const name = req.body.name;
-    const sku = req.body.sku != null ? req.body.sku : "";
-    const existing = propertyId
-      ? await inventoryOps.findInPropertyByNameAndSku(propertyId, name, sku)
-      : null;
-
-    let item;
-    if (existing) {
-      const addQty = Number(req.body.quantity) || 0;
-      item = await inventoryOps.update(existing.id, {
-        quantity: existing.quantity + addQty,
-      });
-    } else {
-      item = await inventoryOps.create({
-        ...req.body,
-      });
-    }
-
-    res.status(201).json(item);
-  } catch (error) {
-    console.error("Error creating item:", error);
-    res.status(500).json({ message: "Error creating item" });
-  }
-});
-
-app.post("/api/inventory/bulk", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    const teamPropertyIds =
-      currentUser?.teamId ?
-        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
-      : [];
-    const incomingCount = Array.isArray(req.body.items) ? req.body.items.length : 0;
-    const inventoryCount = await inventoryOps.countByPropertyIds(teamPropertyIds);
-
-    if (
-      currentUser &&
-      typeof currentUser.maxInventoryItems === "number" &&
-      inventoryCount + incomingCount > currentUser.maxInventoryItems
-    ) {
-      return res.status(403).json({
-        message: `Bulk import would exceed your inventory item limit (${currentUser.maxInventoryItems}).`,
-      });
-    }
-
-    // Bulk items must be in this team's properties
-    if (Array.isArray(req.body.items) && teamPropertyIds.length > 0) {
-      const invalidItem = req.body.items.find(
-        (item) =>
-          !item.propertyId || !teamPropertyIds.includes(item.propertyId)
-      );
-      if (invalidItem) {
-        return res.status(403).json({
-          message: "Bulk import includes properties that are not in your team.",
-        });
-      }
-    }
-
-    // Ensure all imported items stay within allowed properties (if restricted)
-    if (
-      currentUser &&
-      Array.isArray(currentUser.allowedPropertyIds) &&
-      currentUser.allowedPropertyIds.length > 0 &&
-      Array.isArray(req.body.items)
-    ) {
-      const invalidItem = req.body.items.find(
-        (item) =>
-          !item.propertyId ||
-          !currentUser.allowedPropertyIds.includes(item.propertyId)
-      );
-      if (invalidItem) {
-        return res.status(403).json({
-          message:
-            "Bulk import includes items for properties you are not allowed to access.",
-        });
-      }
-    }
-
-    const items = await Promise.all(
-      req.body.items.map(async (item) => {
-        const whId = item.propertyId;
-        const name = item.name;
-        const sku = item.sku != null ? item.sku : "";
-        const existing = whId
-          ? await inventoryOps.findInPropertyByNameAndSku(whId, name, sku)
-          : null;
-        if (existing) {
-          const addQty = Number(item.quantity) || 0;
-          return inventoryOps.update(existing.id, {
-            quantity: existing.quantity + addQty,
-          });
-        }
-        return inventoryOps.create(item);
-      })
-    );
-
-    res.status(201).json(items);
-  } catch (error) {
-    console.error("Error creating items:", error);
-    res.status(500).json({ message: "Error creating items" });
-  }
-});
-
-app.put("/api/inventory/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Inventory." });
-    }
-
-    const existingItem = await inventoryOps.findById(req.params.id);
-
-    if (!existingItem) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    if (!(await inventoryItemBelongsToTeam(existingItem, currentUser))) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    // Enforce property-level restrictions for updates
-    if (
-      currentUser &&
-      Array.isArray(currentUser.allowedPropertyIds) &&
-      currentUser.allowedPropertyIds.length > 0
-    ) {
-      const targetPropertyId =
-        typeof req.body.propertyId !== "undefined"
-          ? req.body.propertyId
-          : existingItem.propertyId;
-
-      if (
-        !targetPropertyId ||
-        !currentUser.allowedPropertyIds.includes(targetPropertyId)
-      ) {
-        return res.status(403).json({
-          message: "You are not allowed to modify items in this property.",
-        });
-      }
-    }
-
-    const updatedItem = await inventoryOps.update(req.params.id, req.body);
-    const qtyDelta = updatedItem.quantity - existingItem.quantity;
-    if (qtyDelta !== 0 && currentUser?.teamId) {
-      await logMovement(
-        currentUser.teamId,
-        req.params.id,
-        qtyDelta,
-        "adjustment",
-        "adjustment",
-        null,
-        qtyDelta > 0 ? "Quantity added" : "Quantity removed"
-      );
-    }
-    res.json(updatedItem);
-  } catch (error) {
-    console.error("Error updating item:", error);
-    res.status(500).json({ message: "Error updating item" });
-  }
-});
-
-app.delete("/api/inventory/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-    const item = await inventoryOps.findById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-    if (!(await inventoryItemBelongsToTeam(item, currentUser))) {
-      return res.status(404).json({ message: "Item not found" });
-    }
-
-    await inventoryOps.delete(req.params.id);
-    res.json({ message: "Item deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting item:", error);
-    res.status(500).json({ message: "Error deleting item" });
-  }
-});
-
-app.delete("/api/inventory", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-    const teamPropertyIds =
-      currentUser?.teamId ?
-        (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
-      : [];
-    const result = await inventoryOps.deleteByPropertyIds(teamPropertyIds);
-    res.json({
-      message: `Deleted ${result.count ?? 0} item(s) from your team's inventory.`,
-    });
-  } catch (error) {
-    console.error("Error clearing inventory:", error);
-    res.status(500).json({ message: "Error clearing inventory" });
-  }
-});
-
-app.post("/api/inventory/transfer", authenticateToken, async (req, res) => {
-  return res.status(410).json({
-    message:
-      "Property-to-property transfer via legacy inventory is retired. Use POST /api/replenishments/transfers (pass-through stock location).",
-    code: "GONE",
-  });
-});
-
-// ==================== REPORTS ROUTES ====================
-
-app.get("/api/reports/movements", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Reports." });
-    }
-    if (!currentUser?.teamId) {
-      return res.json([]);
-    }
-    const { inventoryItemId, fromDate, toDate, movementType, limit } = req.query;
-    const movements = await movementOps.findByTeam(currentUser.teamId, {
-      inventoryItemId: inventoryItemId || undefined,
-      fromDate: fromDate || undefined,
-      toDate: toDate || undefined,
-      movementType: movementType || undefined,
-      limit: limit ? Math.min(parseInt(limit, 10) || 500, 1000) : 500,
-    });
-    const itemIds = [...new Set(movements.map((m) => m.inventoryItemId))];
-    const itemMap = {};
-    for (const id of itemIds) {
-      const item = await inventoryOps.findById(id);
-      if (item) itemMap[id] = { name: item.name, unit: item.unit || "" };
-    }
-    const withNames = movements.map((m) => ({
-      ...m,
-      itemName: itemMap[m.inventoryItemId]?.name || "—",
-      unit: itemMap[m.inventoryItemId]?.unit || "",
-    }));
-    res.json(withNames);
-  } catch (error) {
-    console.error("Reports movements error:", error);
-    res.status(500).json({ message: "Error loading movements" });
-  }
-});
-
-app.get("/api/reports/summary", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-    if (!userHasPageAccess(currentUser, "inventory")) {
-      return res.status(403).json({ message: "You do not have access to Reports." });
-    }
-    const teamProperties =
-      currentUser?.teamId
-        ? (await propertyOps.findAllByTeam(currentUser.teamId)).map((w) => w.id)
-        : [];
-    // When team has no properties, return zeros; never pass null (findAll(null) returns all DB items).
-    const items =
-      teamProperties.length === 0
-        ? []
-        : await inventoryOps.findAll(teamProperties);
-    const lowStock = items.filter((i) => i.quantity <= (i.reorderPoint || 0) && i.reorderPoint > 0).length;
-    const outOfStock = items.filter((i) => i.quantity <= 0).length;
-    const totalValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.priceBoughtFor || 0), 0);
-    const retailValue = items.reduce((sum, i) => sum + (i.quantity || 0) * (i.finalPrice || 0), 0);
-    res.json({
-      totalItems: items.length,
-      lowStockCount: lowStock,
-      outOfStockCount: outOfStock,
-      totalCostValue: Math.round(totalValue * 100) / 100,
-      totalRetailValue: Math.round(retailValue * 100) / 100,
-    });
-  } catch (error) {
-    console.error("Reports summary error:", error);
-    res.status(500).json({ message: "Error loading report summary" });
-  }
-});
-
 // ==================== CLIENTS ROUTES ====================
 
 app.get("/api/clients", authenticateToken, async (req, res) => {
@@ -2352,71 +1941,6 @@ app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
 
     const invoiceData = req.body;
 
-    // If items are being updated and contain inventory-linked lines, adjust stock
-    if (
-      invoiceData.items &&
-      Array.isArray(invoiceData.items) &&
-      JSON.stringify(invoiceData.items) !== JSON.stringify(existingInvoice.items)
-    ) {
-      // First restore inventory for old items that were linked to inventory
-      for (const oldItem of existingInvoice.items || []) {
-        if (!oldItem.inventoryItemId) continue;
-        const inventoryItem = await inventoryOps.findById(oldItem.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(oldItem.inventoryItemId, {
-            quantity: inventoryItem.quantity + oldItem.quantity,
-          });
-        }
-      }
-
-      // Validate new items
-      for (const item of invoiceData.items) {
-        if (!item.inventoryItemId) continue;
-        const inventoryItem = await inventoryOps.findById(item.inventoryItemId);
-        if (!inventoryItem) {
-          // Restore old quantities
-          for (const oldItem of existingInvoice.items || []) {
-            if (!oldItem.inventoryItemId) continue;
-            const invItem = await inventoryOps.findById(oldItem.inventoryItemId);
-            if (invItem) {
-              await inventoryOps.update(oldItem.inventoryItemId, {
-                quantity: invItem.quantity - oldItem.quantity,
-              });
-            }
-          }
-          return res.status(400).json({
-            message: `Inventory item ${item.name || item.inventoryItemId} not found`,
-          });
-        }
-        if (item.quantity > inventoryItem.quantity) {
-          // Restore old quantities
-          for (const oldItem of existingInvoice.items || []) {
-            if (!oldItem.inventoryItemId) continue;
-            const invItem = await inventoryOps.findById(oldItem.inventoryItemId);
-            if (invItem) {
-              await inventoryOps.update(oldItem.inventoryItemId, {
-                quantity: invItem.quantity - oldItem.quantity,
-              });
-            }
-          }
-          return res.status(400).json({
-            message: `Insufficient stock for ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${item.quantity}`,
-          });
-        }
-      }
-
-      // Apply new quantities
-      for (const item of invoiceData.items) {
-        if (!item.inventoryItemId) continue;
-        const inventoryItem = await inventoryOps.findById(item.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(item.inventoryItemId, {
-            quantity: inventoryItem.quantity - item.quantity,
-          });
-        }
-      }
-    }
-
     const updatedInvoice = await invoiceOps.update(req.params.id, invoiceData);
     res.json(updatedInvoice);
   } catch (error) {
@@ -2491,449 +2015,6 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error sending invoice:", error);
     res.status(500).json({ message: "Error sending invoice." });
-  }
-});
-
-// ==================== SALES ROUTES ====================
-
-// Build invoice payload from a single sale (for one active invoice per sale)
-function buildInvoiceFromSale(sale, saleId = null) {
-  const saleNumber = sale.saleNumber != null && String(sale.saleNumber).trim() !== "" ? String(sale.saleNumber) : "0";
-  const invoiceItems = (sale.items || []).map((item) => ({
-    id: item.id || crypto.randomUUID(),
-    name: item.inventoryItemName || item.name || "Item",
-    quantity: Number(item.quantity) || 0,
-    unitPrice: Number(item.unitPrice) || 0,
-    total: (Number(item.total) ?? Number(item.quantity) * Number(item.unitPrice)) || 0,
-    inventoryItemId: item.inventoryItemId,
-    sku: item.sku,
-  }));
-  const dueDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0];
-  const dateStr = sale.date && String(sale.date).trim() ? String(sale.date).trim() : new Date().toISOString().split("T")[0];
-  const subtotal = Number(sale.subtotal) ?? 0;
-  const tax = Number(sale.tax) ?? 0;
-  const total = Number(sale.total) ?? 0;
-  return {
-    invoiceNumber: `INV-SALE-${saleNumber}`,
-    clientId: sale.clientId || null,
-    clientName: (sale.clientName && String(sale.clientName).trim()) ? String(sale.clientName).trim() : "",
-    date: dateStr,
-    dueDate,
-    items: invoiceItems,
-    subtotal,
-    tax,
-    total,
-    status: "draft",
-    notes: sale.notes ? `From Sale #${saleNumber}. ${sale.notes}` : `From Sale #${saleNumber}`,
-    saleId: saleId || null,
-  };
-}
-
-// Helper function to sync invoice with all sales for a client (legacy aggregated invoice).
-// Must be called with teamId so we only read this team's sales/invoices (tenant isolation).
-const syncInvoiceForClient = async (teamId, clientId) => {
-  if (!clientId || !teamId) return;
-
-  const allSales = await saleOps.findAll(teamId);
-  const clientSales = allSales.filter((sale) => sale.clientId === clientId);
-
-  const allInvoices = await invoiceOps.findAll(teamId);
-  const autoInvoice = allInvoices.find(
-    (inv) => inv.clientId === clientId && inv.notes === "Auto-generated from sales"
-  );
-
-  if (clientSales.length === 0) {
-    // If no sales, remove auto-generated invoice if it exists
-    if (autoInvoice) {
-      await invoiceOps.delete(autoInvoice.id);
-    }
-    return;
-  }
-
-  // Find the client to get client name
-  const client = await clientOps.findById(clientId);
-  if (!client) return;
-
-  // Aggregate all sales into invoice items
-  const itemMap = new Map();
-  let totalSubtotal = 0;
-  let totalTax = 0;
-  let latestSaleDate = "";
-
-  for (const sale of clientSales) {
-    // Track the latest sale date
-    if (!latestSaleDate || sale.date > latestSaleDate) {
-      latestSaleDate = sale.date;
-    }
-
-    // Aggregate items from this sale
-    for (const saleItem of sale.items || []) {
-      const key = `${saleItem.inventoryItemId}-${saleItem.unitPrice}`;
-      if (itemMap.has(key)) {
-        const existingItem = itemMap.get(key);
-        existingItem.quantity += saleItem.quantity;
-        existingItem.total = existingItem.quantity * existingItem.unitPrice;
-      } else {
-        itemMap.set(key, {
-          id: crypto.randomUUID(),
-          name: saleItem.inventoryItemName,
-          quantity: saleItem.quantity,
-          unitPrice: saleItem.unitPrice,
-          total: saleItem.quantity * saleItem.unitPrice,
-        });
-      }
-    }
-
-    // Aggregate tax (use the tax rate from the most recent sale)
-    totalSubtotal += sale.subtotal || 0;
-    totalTax += (sale.subtotal || 0) * ((sale.tax || 0) / 100);
-  }
-
-  const invoiceItems = Array.from(itemMap.values());
-  const subtotal = invoiceItems.reduce((sum, item) => sum + item.total, 0);
-  const taxRate = totalSubtotal > 0 ? (totalTax / totalSubtotal) * 100 : 0;
-  const tax = (subtotal * taxRate) / 100;
-  const total = subtotal + tax;
-
-  // Generate month-based invoice number (e.g., "INV-2026-01" for January 2026)
-  const saleDate = new Date(latestSaleDate);
-  const year = saleDate.getFullYear();
-  const month = String(saleDate.getMonth() + 1).padStart(2, "0");
-  const monthBasedInvoiceNumber = `INV-${year}-${month}`;
-
-  if (autoInvoice) {
-    // Update existing auto-generated invoice
-    await invoiceOps.update(autoInvoice.id, {
-      invoiceNumber: monthBasedInvoiceNumber,
-      date: latestSaleDate,
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      items: invoiceItems,
-      subtotal: subtotal,
-      tax: tax,
-      total: total,
-    });
-  } else {
-    // Create new auto-generated invoice
-    await invoiceOps.create({
-      invoiceNumber: monthBasedInvoiceNumber,
-      clientId: clientId,
-      clientName: client.name,
-      date: latestSaleDate,
-      dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().split("T")[0],
-      items: invoiceItems,
-      subtotal: subtotal,
-      tax: tax,
-      total: total,
-      status: "draft",
-      notes: "Auto-generated from sales",
-    });
-  }
-};
-
-app.get("/api/sales", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "sales")) {
-      return res.status(403).json({ message: "You do not have access to Sales." });
-    }
-    if (!currentUser?.teamId) {
-      return res.status(403).json({ message: "You must belong to a team to access sales. No data is shared between users without a team." });
-    }
-
-    const sales = await saleOps.findAll(currentUser.teamId);
-    res.json(sales);
-  } catch (error) {
-    console.error("Error fetching sales:", error);
-    res.status(500).json({ message: "Error fetching sales" });
-  }
-});
-
-app.get("/api/sales/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "sales")) {
-      return res.status(403).json({ message: "You do not have access to Sales." });
-    }
-    if (!currentUser?.teamId) {
-      return res.status(403).json({ message: "You must belong to a team to access this resource." });
-    }
-    const sale = await saleOps.findById(req.params.id);
-
-    if (!sale || sale.teamId !== currentUser?.teamId) {
-      return res.status(404).json({ message: "Sale not found" });
-    }
-
-    res.json(sale);
-  } catch (error) {
-    console.error("Error fetching sale:", error);
-    res.status(500).json({ message: "Error fetching sale" });
-  }
-});
-
-app.post("/api/sales", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "sales")) {
-      return res.status(403).json({ message: "You do not have access to Sales." });
-    }
-    if (!currentUser?.teamId) {
-      return res.status(403).json({ message: "You must belong to a team to create sales." });
-    }
-    const saleData = { ...req.body, teamId: currentUser.teamId };
-
-    if (!Array.isArray(saleData.items) || saleData.items.length === 0) {
-      return res.status(400).json({
-        message: "Please add at least one item to the sale.",
-      });
-    }
-
-    // Validate that all items have sufficient inventory
-    for (const saleItem of saleData.items) {
-      const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-      if (!inventoryItem) {
-        return res.status(400).json({
-          message: `Inventory item ${saleItem.inventoryItemName || saleItem.inventoryItemId} not found`,
-        });
-      }
-      if (saleItem.quantity > inventoryItem.quantity) {
-        return res.status(400).json({
-          message: `Insufficient stock for ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${saleItem.quantity}`,
-        });
-      }
-    }
-
-    // Create the sale
-    const newSale = await saleOps.create(saleData);
-
-    // Update inventory quantities
-    for (const saleItem of saleData.items || []) {
-      const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-      if (inventoryItem) {
-        await inventoryOps.update(saleItem.inventoryItemId, {
-          quantity: inventoryItem.quantity - saleItem.quantity,
-        });
-      }
-    }
-
-    if (currentUser?.teamId && newSale?.id) {
-      for (const saleItem of saleData.items || []) {
-        if (!saleItem.inventoryItemId) continue;
-        await logMovement(
-          currentUser.teamId,
-          saleItem.inventoryItemId,
-          -Number(saleItem.quantity),
-          "sale",
-          "sale",
-          newSale.id,
-          `Sale #${newSale.saleNumber || newSale.id}`
-        );
-      }
-    }
-
-    // Create one active (draft) invoice for this sale so it shows in Invoices immediately
-    let newInvoice = null;
-    const mergedSale = { ...saleData, ...newSale };
-    const invoicePayload = buildInvoiceFromSale(mergedSale, newSale.id);
-    const invoiceData = {
-      teamId: currentUser.teamId,
-      invoiceNumber: invoicePayload.invoiceNumber,
-      clientId: invoicePayload.clientId,
-      clientName: invoicePayload.clientName,
-      date: invoicePayload.date,
-      dueDate: invoicePayload.dueDate,
-      items: invoicePayload.items,
-      subtotal: invoicePayload.subtotal,
-      tax: invoicePayload.tax,
-      total: invoicePayload.total,
-      status: invoicePayload.status,
-      notes: invoicePayload.notes,
-      saleId: invoicePayload.saleId,
-    };
-    try {
-      newInvoice = await invoiceOps.create(invoiceData);
-    } catch (invoiceError) {
-      console.error("Error creating invoice from sale (sale was saved):", invoiceError.message || invoiceError);
-      try {
-        const { saleId: _s, ...dataWithoutSaleId } = invoiceData;
-        newInvoice = await invoiceOps.create(dataWithoutSaleId);
-      } catch (retryError) {
-        console.error("Retry creating invoice without saleId failed:", retryError.message || retryError);
-      }
-    }
-
-    res.status(201).json({ sale: newSale, invoice: newInvoice });
-  } catch (error) {
-    console.error("Error creating sale:", error);
-    res.status(500).json({ message: "Error creating sale" });
-  }
-});
-
-app.put("/api/sales/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "sales")) {
-      return res.status(403).json({ message: "You do not have access to Sales." });
-    }
-    if (!currentUser?.teamId) {
-      return res.status(403).json({ message: "You must belong to a team to access this resource." });
-    }
-    const oldSale = await saleOps.findById(req.params.id);
-
-    if (!oldSale || oldSale.teamId !== currentUser?.teamId) {
-      return res.status(404).json({ message: "Sale not found" });
-    }
-
-    const saleData = req.body;
-
-    // If items are being updated, restore old quantities and validate new ones
-    if (saleData.items && JSON.stringify(saleData.items) !== JSON.stringify(oldSale.items)) {
-      // Restore old inventory quantities
-      for (const oldItem of oldSale.items || []) {
-        const inventoryItem = await inventoryOps.findById(oldItem.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(oldItem.inventoryItemId, {
-            quantity: inventoryItem.quantity + oldItem.quantity,
-          });
-        }
-      }
-
-      // Validate new quantities
-      for (const saleItem of saleData.items) {
-        const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-        if (!inventoryItem) {
-          // Restore old quantities
-          for (const oldItem of oldSale.items || []) {
-            const invItem = await inventoryOps.findById(oldItem.inventoryItemId);
-            if (invItem) {
-              await inventoryOps.update(oldItem.inventoryItemId, {
-                quantity: invItem.quantity - oldItem.quantity,
-              });
-            }
-          }
-          return res.status(400).json({
-            message: `Inventory item ${saleItem.inventoryItemName || saleItem.inventoryItemId} not found`,
-          });
-        }
-        if (saleItem.quantity > inventoryItem.quantity) {
-          // Restore old quantities
-          for (const oldItem of oldSale.items || []) {
-            const invItem = await inventoryOps.findById(oldItem.inventoryItemId);
-            if (invItem) {
-              await inventoryOps.update(oldItem.inventoryItemId, {
-                quantity: invItem.quantity - oldItem.quantity,
-              });
-            }
-          }
-          return res.status(400).json({
-            message: `Insufficient stock for ${inventoryItem.name}. Available: ${inventoryItem.quantity}, Requested: ${saleItem.quantity}`,
-          });
-        }
-      }
-
-      // Update inventory with new quantities
-      for (const saleItem of saleData.items) {
-        const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(saleItem.inventoryItemId, {
-            quantity: inventoryItem.quantity - saleItem.quantity,
-          });
-        }
-      }
-    }
-
-    const updatedSale = await saleOps.update(req.params.id, saleData);
-
-    // Update the linked invoice for this sale (if saleId column exists and invoice exists)
-    let linkedInvoice = null;
-    try {
-      linkedInvoice = await invoiceOps.findBySaleId(oldSale.id);
-    } catch (findErr) {
-      console.warn("Could not find linked invoice (saleId column may be missing):", findErr.message);
-    }
-    if (linkedInvoice) {
-      try {
-        const invoicePayload = buildInvoiceFromSale(updatedSale, oldSale.id);
-        await invoiceOps.update(linkedInvoice.id, invoicePayload);
-      } catch (updateErr) {
-        console.warn("Could not update linked invoice:", updateErr.message);
-      }
-    }
-
-    res.json(updatedSale);
-  } catch (error) {
-    console.error("Error updating sale:", error);
-    res.status(500).json({ message: "Error updating sale" });
-  }
-});
-
-app.delete("/api/sales/:id", authenticateToken, async (req, res) => {
-  try {
-    const currentUser = await loadCurrentUser(req);
-
-    if (!userHasPageAccess(currentUser, "sales")) {
-      return res.status(403).json({ message: "You do not have access to Sales." });
-    }
-    if (!currentUser?.teamId) {
-      return res.status(403).json({ message: "You must belong to a team to access this resource." });
-    }
-    const sale = await saleOps.findById(req.params.id);
-
-    if (!sale) {
-      return res.status(404).json({ message: "Sale not found" });
-    }
-    if (sale.teamId != null && sale.teamId !== currentUser?.teamId) {
-      return res.status(404).json({ message: "Sale not found" });
-    }
-
-    // Unlink any invoice that references this sale first (avoids FK / constraint issues)
-    let linkedInvoice = null;
-    try {
-      linkedInvoice = await invoiceOps.findBySaleId(req.params.id);
-    } catch (findErr) {
-      console.warn("Could not find linked invoice (saleId column may be missing):", findErr.message);
-    }
-    if (linkedInvoice) {
-      try {
-        await invoiceOps.update(linkedInvoice.id, { saleId: null });
-      } catch (unlinkErr) {
-        console.warn("Could not unlink invoice from sale:", unlinkErr.message);
-      }
-    }
-
-    // Restore inventory quantities (best-effort per item so one failure doesn't block delete)
-    for (const saleItem of sale.items || []) {
-      if (!saleItem?.inventoryItemId) continue;
-      try {
-        const inventoryItem = await inventoryOps.findById(saleItem.inventoryItemId);
-        if (inventoryItem) {
-          await inventoryOps.update(saleItem.inventoryItemId, {
-            quantity: inventoryItem.quantity + (saleItem.quantity ?? 0),
-          });
-        }
-      } catch (restoreErr) {
-        console.warn("Could not restore inventory for item:", saleItem.inventoryItemId, restoreErr.message);
-      }
-    }
-
-    await saleOps.delete(req.params.id);
-
-    if (linkedInvoice) {
-      try {
-        await invoiceOps.delete(linkedInvoice.id);
-      } catch (invoiceErr) {
-        console.warn("Could not delete linked invoice:", invoiceErr.message);
-      }
-    }
-
-    res.json({ message: "Sale deleted successfully" });
-  } catch (error) {
-    console.error("Error deleting sale:", error);
-    const message = error?.message || error?.meta?.cause || "Error deleting sale";
-    res.status(500).json({ message });
   }
 });
 

@@ -237,9 +237,37 @@ export const membershipOps = {
   },
 };
 
+export const DEFAULT_STOCK_LOCATION_NAME = "Central supply";
+
+/**
+ * Ensure the team has at least one stock location (default: "Central supply").
+ * Idempotent for empty teams; does not create a second default if any location exists.
+ */
+export async function ensureDefaultStockLocation(teamId) {
+  if (!teamId) return null;
+  const existing = await prisma.stockLocation.findFirst({
+    where: { teamId, archivedAt: null },
+    orderBy: { createdAt: "asc" },
+  });
+  if (existing) return mapStockLocation(existing);
+  const row = await prisma.stockLocation.create({
+    data: {
+      teamId,
+      name: DEFAULT_STOCK_LOCATION_NAME,
+      address: null,
+      tags: [],
+    },
+    include: {
+      properties: { include: { property: true } },
+    },
+  });
+  return mapStockLocation(row);
+}
+
 /**
  * Create Organization + Team + owner membership and set activeTeamId.
- * @returns {{ organization, team, membership }}
+ * Also creates the default "Central supply" stock location.
+ * @returns {{ organization, team, membership, stockLocation }}
  */
 export async function provisionOrganizationWithTeam({
   ownerUserId,
@@ -262,7 +290,8 @@ export async function provisionOrganizationWithTeam({
     teamRole: "owner",
   });
   await userOps.update(ownerUserId, { activeTeamId: team.id });
-  return { organization, team, membership };
+  const stockLocation = await ensureDefaultStockLocation(team.id);
+  return { organization, team, membership, stockLocation };
 }
 
 /**
@@ -438,120 +467,6 @@ export const propertyOps = {
   },
 };
 
-// Inventory operations
-/**
- * Legacy Inventory item CRUD (pre-catalogue).
- * StockOnHand / PropertyStock quantities must only be mutated via stockLedger.js.
- */
-export const inventoryOps = {
-  async findAll(propertyFilter = null) {
-    let where;
-    if (!propertyFilter) {
-      where = {};
-    } else if (propertyFilter.length === 0) {
-      // Team has no properties yet: show unassigned items so inventory isn't "empty" and new items can appear
-      where = { propertyId: null };
-    } else {
-      where = {
-        OR: [
-          { propertyId: { in: propertyFilter } },
-          { propertyId: null },
-        ],
-      };
-    }
-    const items = await prisma.inventory.findMany({ where, orderBy: { createdAt: 'desc' } });
-    return items.map((item) => ({
-      ...item,
-      tags: parseJson(item.tags, []),
-    }));
-  },
-
-  async findById(id) {
-    const item = await prisma.inventory.findUnique({ where: { id } });
-    if (!item) return null;
-    return {
-      ...item,
-      tags: parseJson(item.tags, []),
-    };
-  },
-
-  /** Find an existing product in a property by name and sku (same property = same product). */
-  async findInPropertyByNameAndSku(propertyId, name, sku) {
-    if (!propertyId) return null;
-    const item = await prisma.inventory.findFirst({
-      where: {
-        propertyId,
-        name: name || "",
-        sku: sku != null && sku !== undefined ? String(sku) : "",
-      },
-    });
-    if (!item) return null;
-    return {
-      ...item,
-      tags: parseJson(item.tags, []),
-    };
-  },
-
-  async create(data) {
-    const item = await prisma.inventory.create({
-      data: {
-        ...data,
-        tags: stringifyJson(data.tags || []),
-      },
-    });
-    return {
-      ...item,
-      tags: parseJson(item.tags, []),
-    };
-  },
-
-  async update(id, data) {
-    const item = await prisma.inventory.update({
-      where: { id },
-      data: {
-        ...data,
-        tags: data.tags !== undefined ? stringifyJson(data.tags) : undefined,
-      },
-    });
-    return {
-      ...item,
-      tags: parseJson(item.tags, []),
-    };
-  },
-
-  async delete(id) {
-    return await prisma.inventory.delete({ where: { id } });
-  },
-
-  async deleteAll() {
-    return await prisma.inventory.deleteMany();
-  },
-
-  /** Delete only items in the given property IDs (for team-scoped clear). */
-  async deleteByPropertyIds(propertyIds) {
-    if (!Array.isArray(propertyIds) || propertyIds.length === 0) {
-      return { count: 0 };
-    }
-    return await prisma.inventory.deleteMany({
-      where: { propertyId: { in: propertyIds } },
-    });
-  },
-
-  async count() {
-    return await prisma.inventory.count();
-  },
-
-  /** Count items in the given property IDs (for team-scoped limits). */
-  async countByPropertyIds(propertyIds) {
-    if (!Array.isArray(propertyIds) || propertyIds.length === 0) {
-      return 0;
-    }
-    return await prisma.inventory.count({
-      where: { propertyId: { in: propertyIds } },
-    });
-  },
-};
-
 // Client operations (team-scoped)
 export const clientOps = {
   async findAll(teamId) {
@@ -596,16 +511,6 @@ export const invoiceOps = {
     };
   },
 
-  async findBySaleId(saleId) {
-    if (!saleId) return null;
-    const invoice = await prisma.invoice.findUnique({ where: { saleId } });
-    if (!invoice) return null;
-    return {
-      ...invoice,
-      items: parseJson(invoice.items, []),
-    };
-  },
-
   async create(data) {
     const invoice = await prisma.invoice.create({
       data: {
@@ -635,58 +540,6 @@ export const invoiceOps = {
 
   async delete(id) {
     return await prisma.invoice.delete({ where: { id } });
-  },
-};
-
-// Sale operations (team-scoped)
-export const saleOps = {
-  async findAll(teamId) {
-    const where = teamId != null ? { teamId } : {};
-    const sales = await prisma.sale.findMany({ where, orderBy: { createdAt: 'desc' } });
-    return sales.map((sale) => ({
-      ...sale,
-      items: parseJson(sale.items, []),
-    }));
-  },
-
-  async findById(id) {
-    const sale = await prisma.sale.findUnique({ where: { id } });
-    if (!sale) return null;
-    return {
-      ...sale,
-      items: parseJson(sale.items, []),
-    };
-  },
-
-  async create(data) {
-    const sale = await prisma.sale.create({
-      data: {
-        ...data,
-        items: stringifyJson(data.items || []),
-      },
-    });
-    return {
-      ...sale,
-      items: parseJson(sale.items, []),
-    };
-  },
-
-  async update(id, data) {
-    const sale = await prisma.sale.update({
-      where: { id },
-      data: {
-        ...data,
-        items: data.items !== undefined ? stringifyJson(data.items) : undefined,
-      },
-    });
-    return {
-      ...sale,
-      items: parseJson(sale.items, []),
-    };
-  },
-
-  async delete(id) {
-    return await prisma.sale.delete({ where: { id } });
   },
 };
 
@@ -761,30 +614,6 @@ export const invitationOps = {
       allowedPages: parseJson(invitation.allowedPages),
       allowedPropertyIds: parseJson(invitation.allowedPropertyIds),
     };
-  },
-};
-
-// Inventory movement (for ins/outs reports)
-export const movementOps = {
-  async create(data) {
-    return await prisma.inventoryMovement.create({ data });
-  },
-
-  async findByTeam(teamId, opts = {}) {
-    const { inventoryItemId, fromDate, toDate, movementType, limit = 500 } = opts;
-    const where = { teamId: teamId || undefined };
-    if (inventoryItemId) where.inventoryItemId = inventoryItemId;
-    if (movementType) where.movementType = movementType;
-    if (fromDate || toDate) {
-      where.createdAt = {};
-      if (fromDate) where.createdAt.gte = new Date(fromDate);
-      if (toDate) where.createdAt.lte = new Date(toDate);
-    }
-    return await prisma.inventoryMovement.findMany({
-      where,
-      orderBy: { createdAt: 'desc' },
-      take: Math.min(limit, 1000),
-    });
   },
 };
 

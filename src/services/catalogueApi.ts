@@ -8,7 +8,15 @@ import type {
   PropertyStock,
   StockTransaction,
   LedgerPostResult,
+  UnitOfMeasure,
 } from "../types";
+
+/** Units of measure for supply items (also exported from stockLocationsApi as unitsOfMeasureApi). */
+export const unitsApi = {
+  getAll: async (): Promise<UnitOfMeasure[]> => {
+    return apiRequest<UnitOfMeasure[]>("/units-of-measure");
+  },
+};
 
 /** Catalogue clients — used by stock flows today; receive/UI admin coming soon. */
 export const supplyItemsApi = {

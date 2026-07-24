@@ -11,7 +11,9 @@ import { PricingPage } from "./pages/PricingPage";
 import { TermsPage } from "./pages/TermsPage";
 import { PrivacyPage } from "./pages/PrivacyPage";
 import { HomePage } from "./pages/HomePage";
-import { InventoryPage } from "./pages/InventoryPage";
+import { StockPage } from "./pages/StockPage";
+import { PropertiesPage } from "./pages/PropertiesPage";
+import { PropertyDetailPage } from "./pages/PropertyDetailPage";
 import { ShoppingListPage } from "./pages/ShoppingListPage";
 import { ClientsPage } from "./pages/ClientsPage";
 import { InvoicesPage } from "./pages/InvoicesPage";
@@ -52,11 +54,32 @@ export const App: React.FC = () => {
             }
           />
           <Route
-            path="/inventory"
+            path="/stock"
             element={
               <ProtectedRoute pageKey="inventory">
                 <Layout>
-                  <InventoryPage />
+                  <StockPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route path="/inventory" element={<Navigate to="/stock" replace />} />
+          <Route
+            path="/properties"
+            element={
+              <ProtectedRoute pageKey="inventory">
+                <Layout>
+                  <PropertiesPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/properties/:id"
+            element={
+              <ProtectedRoute pageKey="inventory">
+                <Layout>
+                  <PropertyDetailPage />
                 </Layout>
               </ProtectedRoute>
             }
@@ -84,7 +107,7 @@ export const App: React.FC = () => {
             }
           />
           <Route
-            path="/invoices"
+            path="/billing"
             element={
               <ProtectedRoute pageKey="invoices">
                 <Layout>
@@ -93,7 +116,8 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
-          <Route path="/sales" element={<Navigate to="/inventory" replace />} />
+          <Route path="/invoices" element={<Navigate to="/billing" replace />} />
+          <Route path="/sales" element={<Navigate to="/stock" replace />} />
           <Route
             path="/settings"
             element={

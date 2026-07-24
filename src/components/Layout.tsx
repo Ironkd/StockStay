@@ -66,10 +66,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
 
   const navItems: Array<{ path: string; label: string; icon: string; pageKey: string; proOnly?: boolean }> = [
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
-    { path: "/inventory", label: "Stock", icon: "📦", pageKey: "inventory" },
+    { path: "/stock", label: "Stock", icon: "📦", pageKey: "inventory" },
+    { path: "/properties", label: "Properties", icon: "🏘️", pageKey: "inventory" },
     { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
-    { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
-    { path: "/invoices", label: "Invoices", icon: "🧾", pageKey: "invoices" },
+    { path: "/billing", label: "Billing", icon: "🧾", pageKey: "invoices" },
     { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
     { path: "/settings", label: "Settings", icon: "⚙️", pageKey: "settings" }
   ];

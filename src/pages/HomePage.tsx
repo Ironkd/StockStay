@@ -1,80 +1,70 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   BarChart,
   Bar,
-  LineChart,
-  Line,
-  PieChart,
-  Pie,
-  Cell,
   XAxis,
   YAxis,
   CartesianGrid,
   Tooltip,
   Legend,
-  ResponsiveContainer
+  ResponsiveContainer,
 } from "recharts";
-import { useInventory } from "../hooks/useInventory";
+import { propertyStocksApi, skusApi } from "../services/catalogueApi";
+import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
-
-const COLORS = ["#3b82f6", "#ef4444", "#f59e0b", "#10b981"];
+import type { PropertyStock, Sku, UnbilledLine } from "../types";
 
 export const HomePage: React.FC = () => {
-  const { items } = useInventory();
   const { invoices } = useInvoices();
+  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
+  const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
+  const [skus, setSkus] = useState<Sku[]>([]);
   const navigate = useNavigate();
 
-  const stats = useMemo(() => {
-    const totalItems = items.length;
-    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
-    const totalStockValue = items.reduce(
-      (sum, item) =>
-        sum + item.quantity * (item.finalPrice ?? item.priceBoughtFor ?? 0),
-      0
-    );
-    const lowStock = items.filter(
-      (item) => item.quantity > 0 && item.quantity <= item.reorderPoint
-    ).length;
-    const outOfStock = items.filter((item) => item.quantity === 0).length;
-    const inStock = totalItems - lowStock - outOfStock;
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([
+      propertyStocksApi.getAll(),
+      replenishmentApi.listUnbilled(),
+      skusApi.getAll(),
+    ])
+      .then(([stocks, unbilled, allSkus]) => {
+        if (cancelled) return;
+        setPropertyStocks(stocks);
+        setUnbilledLines(unbilled);
+        setSkus(allSkus);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPropertyStocks([]);
+        setUnbilledLines([]);
+        setSkus([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-    // Category distribution
-    const categoryData = items.reduce((acc, item) => {
-      const cat = item.category || "Uncategorized";
-      acc[cat] = (acc[cat] || 0) + item.quantity;
+  const stats = useMemo(() => {
+    const lowPropertyStock = propertyStocks.filter(
+      (ps) => Number(ps.quantity) <= Number(ps.reorderPoint)
+    );
+
+    // Property stock by supply item category (top 5 by quantity)
+    const categoryData = propertyStocks.reduce((acc, ps) => {
+      const cat = ps.supplyItem?.category?.trim() || "Uncategorized";
+      acc[cat] = (acc[cat] || 0) + Number(ps.quantity);
       return acc;
     }, {} as Record<string, number>);
-
     const categoryChart = Object.entries(categoryData)
       .map(([name, value]) => ({ name, value }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    // Location distribution
-    const locationData = items.reduce((acc, item) => {
-      const loc = item.location || "Unspecified";
-      acc[loc] = (acc[loc] || 0) + 1;
-      return acc;
-    }, {} as Record<string, number>);
-
-    const locationChart = Object.entries(locationData)
-      .map(([name, value]) => ({ name, count: value }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 6);
-
-    // Low stock items
-    const lowStockItems = items
-      .filter((item) => item.quantity > 0 && item.quantity <= item.reorderPoint)
-      .sort((a, b) => a.quantity - b.quantity)
-      .slice(0, 10);
-
-    // Stock status pie chart
-    const stockStatusData = [
-      { name: "In Stock", value: inStock },
-      { name: "Low Stock", value: lowStock },
-      { name: "Out of Stock", value: outOfStock }
-    ].filter((item) => item.value > 0);
+    const hasStockOnHand = skus.some(
+      (s) => s.stockOnHand && Number(s.stockOnHand.quantity) > 0
+    );
 
     // Overdue invoices
     const today = new Date();
@@ -99,162 +89,76 @@ export const HomePage: React.FC = () => {
     const overdueTotal = overdueInvoices.reduce((sum, inv) => sum + inv.total, 0);
 
     return {
-      totalItems,
-      totalQuantity,
-      totalStockValue,
-      lowStock,
-      outOfStock,
-      inStock,
+      lowPropertyStockCount: lowPropertyStock.length,
+      unbilledCount: unbilledLines.length,
+      hasStockOnHand,
       categoryChart,
-      locationChart,
-      lowStockItems,
-      stockStatusData,
       overdueInvoices,
       overdueTotal,
-      overdueCount: overdueInvoices.length
+      overdueCount: overdueInvoices.length,
     };
-  }, [items, invoices]);
+  }, [propertyStocks, unbilledLines, skus, invoices]);
 
   return (
     <div className="home-page">
       <h2>Dashboard</h2>
 
-      {/* Stats Cards */}
+      {/* Task-oriented stat cards */}
       <div className="stats-grid">
-        <div className="stat-card">
-          <div className="stat-icon">📦</div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.totalItems}</div>
-            <div className="stat-label">Total Items</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">📊</div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.totalQuantity}</div>
-            <div className="stat-label">Total Quantity</div>
-          </div>
-        </div>
-        <div className="stat-card">
-          <div className="stat-icon">💰</div>
-          <div className="stat-content">
-            <div className="stat-value">
-              ${stats.totalStockValue.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-            </div>
-            <div className="stat-label">Total Stock Value</div>
-          </div>
-        </div>
-        <div 
+        <div
           className="stat-card warning clickable-stat-card"
-          onClick={() => navigate("/inventory?status=low-stock")}
+          onClick={() => navigate("/properties")}
           style={{ cursor: "pointer" }}
         >
           <div className="stat-icon">⚠️</div>
           <div className="stat-content">
-            <div className="stat-value">{stats.lowStock}</div>
-            <div className="stat-label">Low Stock</div>
+            <div className="stat-value">{stats.lowPropertyStockCount}</div>
+            <div className="stat-label">Properties Low on Stock</div>
           </div>
         </div>
-        <div 
-          className="stat-card danger clickable-stat-card"
-          onClick={() => navigate("/inventory?status=out-of-stock")}
+        <div
+          className="stat-card clickable-stat-card"
+          onClick={() => navigate("/billing")}
           style={{ cursor: "pointer" }}
         >
-          <div className="stat-icon">🚨</div>
+          <div className="stat-icon">🧾</div>
           <div className="stat-content">
-            <div className="stat-value">{stats.outOfStock}</div>
-            <div className="stat-label">Out of Stock</div>
+            <div className="stat-value">{stats.unbilledCount}</div>
+            <div className="stat-label">Unbilled Lines</div>
           </div>
         </div>
+        {!stats.hasStockOnHand && (
+          <div
+            className="stat-card danger clickable-stat-card"
+            onClick={() => navigate("/stock")}
+            style={{ cursor: "pointer" }}
+          >
+            <div className="stat-icon">📦</div>
+            <div className="stat-content">
+              <div className="stat-value">0</div>
+              <div className="stat-label">No Packs On Hand — Receive Stock</div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Charts Row */}
       <div className="charts-row">
         <div className="chart-panel">
-          <h3>Stock Status</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie
-                data={stats.stockStatusData}
-                cx="50%"
-                cy="50%"
-                labelLine={false}
-                label={({ name, percent }) =>
-                  `${name} ${(percent * 100).toFixed(0)}%`
-                }
-                outerRadius={80}
-                fill="#8884d8"
-                dataKey="value"
-              >
-                {stats.stockStatusData.map((entry, index) => (
-                  <Cell
-                    key={`cell-${index}`}
-                    fill={COLORS[index % COLORS.length]}
-                  />
-                ))}
-              </Pie>
-              <Tooltip />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-panel">
-          <h3>Top Categories by Quantity</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={stats.categoryChart}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="value" fill="#3b82f6" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="charts-row">
-        <div className="chart-panel">
-          <h3>Items by Location</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={stats.locationChart}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="name" />
-              <YAxis />
-              <Tooltip />
-              <Legend />
-              <Bar dataKey="count" fill="#10b981" />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="chart-panel">
-          <h3>Low Stock Items</h3>
-          {stats.lowStockItems.length > 0 ? (
-            <div className="low-stock-list">
-              <table className="inventory-table">
-                <thead>
-                  <tr>
-                    <th>Name</th>
-                    <th>SKU</th>
-                    <th>Quantity</th>
-                    <th>Reorder Point</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {stats.lowStockItems.map((item) => (
-                    <tr key={item.id} className="low-stock-row">
-                      <td>{item.name}</td>
-                      <td>{item.sku}</td>
-                      <td className="quantity-cell">{item.quantity}</td>
-                      <td>{item.reorderPoint}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+          <h3>Property Stock by Category</h3>
+          {stats.categoryChart.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={stats.categoryChart}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="name" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="value" fill="#3b82f6" name="Qty on hand" />
+              </BarChart>
+            </ResponsiveContainer>
           ) : (
-            <div className="empty-state">No low stock items</div>
+            <div className="empty-state">No property stock yet</div>
           )}
         </div>
 
