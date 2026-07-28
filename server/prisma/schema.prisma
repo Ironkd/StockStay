@@ -309,12 +309,17 @@ model StockTransaction {
   referenceType     String?
   referenceId       String?
   reason            String?
+  /** Business date (e.g. purchase date on receipts); null → use createdAt */
+  effectiveAt       DateTime?
+  /** Pack purchase price recorded on receipt; null for non-receipt types */
+  unitPrice         Decimal?              @db.Decimal(18, 4)
   createdByUserId   String?
   createdAt         DateTime              @default(now())
 
   team Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
 
   @@index([teamId, createdAt])
+  @@index([teamId, effectiveAt])
   @@index([entityType, entityId])
   @@index([postingId])
   @@index([referenceType, referenceId])

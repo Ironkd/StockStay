@@ -1446,10 +1446,27 @@ app.post("/api/skus/:id/receive", authenticateToken, requireCatalogueWrite, asyn
     if (!(qty.value > 0)) {
       return res.status(400).json({ message: "quantity must be greater than zero." });
     }
+    let purchasePrice = req.body?.purchasePrice;
+    if (purchasePrice !== undefined && purchasePrice !== null && purchasePrice !== "") {
+      const parsed = parseDecimalInput(purchasePrice, "purchasePrice");
+      if (parsed.error) return res.status(400).json({ message: parsed.error });
+      if (parsed.value < 0) {
+        return res.status(400).json({ message: "purchasePrice cannot be negative." });
+      }
+      purchasePrice = parsed.value;
+    } else {
+      purchasePrice = undefined;
+    }
+    const purchasedAt =
+      typeof req.body?.purchasedAt === "string" && req.body.purchasedAt.trim()
+        ? req.body.purchasedAt.trim()
+        : undefined;
     const result = await receiveStock({
       teamId: req.currentUser.teamId,
       skuId: req.params.id,
       packQty: qty.value,
+      purchasePrice,
+      purchasedAt,
       userId: req.currentUser.id,
     });
     const sku = await skuOps.findById(req.params.id);

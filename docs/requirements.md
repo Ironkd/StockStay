@@ -1,9 +1,9 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 0.8 (Appendix A #6 inter-property transfer)  
+**Version:** 0.9 (Receive purchase price + date)  
 **Status:** Ready for implementation planning (timezone for billing periods still open)  
 **Audience:** David (product owner), development agents, QA  
-**Last updated:** 2026-07-23
+**Last updated:** 2026-07-28
 
 ---
 
@@ -538,10 +538,10 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | | |
 |---|---|
 | **Preconditions** | SKU exists at location; user has stock access |
-| **Steps** | Select SKU → enter pack quantity received → confirm |
-| **Postconditions** | StockOnHand incremented; StockTransaction (type: receipt) created |
-| **Audit** | StockTransaction with positive delta |
-| **Billing** | None — receiving stock is not billable to client |
+| **Steps** | Select SKU → enter pack quantity → enter **purchase price** (defaults to current SKU price) → enter **purchase date** (defaults to today) → confirm |
+| **Postconditions** | StockOnHand incremented; SKU `purchasePrice` / `unitRate` updated; StockTransaction (type: receipt) created with `unitPrice` + `effectiveAt` |
+| **Audit** | StockTransaction with positive delta, pack price paid, and business purchase date |
+| **Billing** | None — receiving stock is not billable to client. Future replenish bill-backs use the updated unit rate (past ReplenishmentLines unchanged — BR-5). |
 
 #### SL-5: Adjust stock at location
 
@@ -1178,3 +1178,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.6 | 2026-07-23 | Probable | Appendix A #4: PropertyStock + StockTransaction ledger (`stockLedger.js`) with Decimal break-pack, FOR UPDATE locks, postingId, receive/adjust APIs |
 | 0.7 | 2026-07-23 | Probable | Appendix A #5: Replenishment + return + unbilled credits queue; Client/Property markup fields; legacy Transfer/bill-to UI removed |
 | 0.8 | 2026-07-23 | Probable | Appendix A #6: Inter-property transfer as linked return + replenish (`transferGroupId`); Stock Transfer UI |
+| 0.9 | 2026-07-28 | Probable | SL-4 Receive: purchase price (defaults to last) + purchase date; updates SKU unitRate; receipt audit on StockTransaction |

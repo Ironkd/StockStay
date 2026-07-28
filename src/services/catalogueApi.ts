@@ -86,11 +86,18 @@ export const skusApi = {
     });
   },
 
-  /** Pack receive into StockOnHand (ledger). Catalogue admin UI will use this. */
-  receive: async (id: string, quantity: number | string): Promise<LedgerPostResult> => {
+  /** Pack receive into StockOnHand (ledger). Updates SKU purchase price / unit rate. */
+  receive: async (
+    id: string,
+    values: {
+      quantity: number | string;
+      purchasePrice?: number | string;
+      purchasedAt?: string;
+    }
+  ): Promise<LedgerPostResult> => {
     return apiRequest<LedgerPostResult>(`/skus/${id}/receive`, {
       method: "POST",
-      body: JSON.stringify({ quantity }),
+      body: JSON.stringify(values),
     });
   },
 

@@ -6,9 +6,11 @@
 import crypto from "crypto";
 import { Prisma } from "@prisma/client";
 import { prisma } from "./db.js";
+import { computeUnitRate, moneyStr } from "./decimalUtil.js";
 
 const Decimal = Prisma.Decimal;
 const QTY_DP = 6;
+const MONEY_DP = 4;
 
 export class InsufficientStockError extends Error {
   constructor(message, details = {}) {
@@ -222,12 +224,16 @@ async function applyEntriesInTx(tx, entries, { postingId, userId, referenceType,
         referenceType: referenceType ?? null,
         referenceId: referenceId ?? null,
         reason: entry.reason ?? null,
+        effectiveAt: entry.effectiveAt ?? null,
+        unitPrice: entry.unitPrice ?? null,
         createdByUserId: userId ?? null,
       },
     });
     created.push({
       ...txn,
       quantityDelta: decimalToString(txn.quantityDelta),
+      unitPrice: txn.unitPrice != null ? moneyStr(txn.unitPrice) : null,
+      effectiveAt: txn.effectiveAt ? txn.effectiveAt.toISOString() : null,
     });
   }
 
@@ -267,6 +273,8 @@ export async function postEntries(entries, options = {}) {
       quantityDelta: delta,
       transactionType: e.transactionType,
       reason: e.reason ?? null,
+      effectiveAt: e.effectiveAt ?? null,
+      unitPrice: e.unitPrice != null ? toDecimal(e.unitPrice, "unitPrice") : null,
     };
   });
 
@@ -296,6 +304,8 @@ export async function receiveStock({
   teamId,
   skuId,
   packQty,
+  purchasePrice,
+  purchasedAt,
   userId,
   referenceType,
   referenceId,
@@ -304,19 +314,71 @@ export async function receiveStock({
   if (!(qty.gt(0))) {
     throw new LedgerValidationError("Receive quantity must be greater than zero");
   }
-  const { stockOnHand } = await resolveStockOnHandForSku(teamId, skuId);
-  return postEntries(
-    [
-      {
-        teamId,
-        entityType: "stock_on_hand",
-        entityId: stockOnHand.id,
-        quantityDelta: qty,
-        transactionType: "receipt",
-      },
-    ],
-    { userId, referenceType, referenceId }
+
+  const { sku, stockOnHand } = await resolveStockOnHandForSku(teamId, skuId);
+
+  const priceRaw =
+    purchasePrice === undefined || purchasePrice === null || purchasePrice === ""
+      ? sku.purchasePrice
+      : purchasePrice;
+  const price = toDecimal(priceRaw, "purchasePrice").toDecimalPlaces(
+    MONEY_DP,
+    Decimal.ROUND_HALF_UP
   );
+  if (price.lt(0)) {
+    throw new LedgerValidationError("purchasePrice cannot be negative");
+  }
+
+  let effectiveAt = null;
+  if (purchasedAt != null && purchasedAt !== "") {
+    const parsed = new Date(purchasedAt);
+    if (Number.isNaN(parsed.getTime())) {
+      throw new LedgerValidationError("purchasedAt must be a valid date");
+    }
+    const maxFuture = new Date();
+    maxFuture.setDate(maxFuture.getDate() + 1);
+    maxFuture.setHours(23, 59, 59, 999);
+    if (parsed.getTime() > maxFuture.getTime()) {
+      throw new LedgerValidationError("purchasedAt cannot be more than 1 day in the future");
+    }
+    effectiveAt = parsed;
+  } else {
+    effectiveAt = new Date();
+  }
+
+  const unitRate = computeUnitRate(price, sku.packSize);
+
+  const postingId = crypto.randomUUID();
+  return prisma.$transaction(async (tx) => {
+    await tx.sku.update({
+      where: { id: sku.id },
+      data: {
+        purchasePrice: price,
+        unitRate,
+      },
+    });
+
+    return applyEntriesInTx(
+      tx,
+      [
+        {
+          teamId,
+          entityType: "stock_on_hand",
+          entityId: stockOnHand.id,
+          quantityDelta: qty,
+          transactionType: "receipt",
+          unitPrice: price,
+          effectiveAt,
+        },
+      ],
+      {
+        postingId,
+        userId,
+        referenceType: referenceType ?? null,
+        referenceId: referenceId ?? null,
+      }
+    );
+  });
 }
 
 export async function adjustStockOnHand({
@@ -480,6 +542,8 @@ export const stockTransactionOps = {
     return rows.map((r) => ({
       ...r,
       quantityDelta: decimalToString(r.quantityDelta),
+      unitPrice: r.unitPrice != null ? moneyStr(r.unitPrice) : null,
+      effectiveAt: r.effectiveAt ? r.effectiveAt.toISOString() : null,
     }));
   },
 };

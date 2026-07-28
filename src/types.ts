@@ -290,6 +290,10 @@ export type StockTransaction = {
   referenceType: string | null;
   referenceId: string | null;
   reason: string | null;
+  /** Business date (purchase date on receipts) */
+  effectiveAt?: string | null;
+  /** Pack purchase price on receipt */
+  unitPrice?: string | null;
   createdByUserId: string | null;
   createdAt: string;
 };

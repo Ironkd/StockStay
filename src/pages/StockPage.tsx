@@ -49,6 +49,8 @@ export const StockPage: React.FC = () => {
   const [showReceiveModal, setShowReceiveModal] = useState(false);
   const [receiveSkuId, setReceiveSkuId] = useState("");
   const [receiveQty, setReceiveQty] = useState("");
+  const [receivePrice, setReceivePrice] = useState("");
+  const [receiveDate, setReceiveDate] = useState("");
 
   const [showSupplyItemModal, setShowSupplyItemModal] = useState(false);
   const [supplyItemName, setSupplyItemName] = useState("");
@@ -184,12 +186,31 @@ export const StockPage: React.FC = () => {
     }
   };
 
+  const localDateInputValue = (d = new Date()) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
   const openReceiveModal = (skuId?: string) => {
-    setReceiveSkuId(skuId || "");
+    const id = skuId || skus[0]?.id || "";
+    const sku = skus.find((s) => s.id === id);
+    setReceiveSkuId(id);
     setReceiveQty("");
+    setReceivePrice(sku ? String(Number(sku.purchasePrice)) : "");
+    setReceiveDate(localDateInputValue());
     setError("");
     setShowReceiveModal(true);
   };
+
+  const receiveSku = skus.find((s) => s.id === receiveSkuId);
+  const receiveUnitRatePreview = (() => {
+    const price = Number(receivePrice);
+    const pack = receiveSku ? Number(receiveSku.packSize) : 0;
+    if (!(price >= 0) || !(pack > 0) || Number.isNaN(price)) return null;
+    return price / pack;
+  })();
 
   const handleReceive = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -202,13 +223,40 @@ export const StockPage: React.FC = () => {
       setError("Enter a quantity greater than zero.");
       return;
     }
+    const price = Number(receivePrice);
+    if (receivePrice === "" || Number.isNaN(price) || price < 0) {
+      setError("Purchase price must be zero or greater.");
+      return;
+    }
+    if (!receiveDate) {
+      setError("Purchase date is required.");
+      return;
+    }
+    const purchased = new Date(`${receiveDate}T12:00:00`);
+    if (Number.isNaN(purchased.getTime())) {
+      setError("Purchase date is invalid.");
+      return;
+    }
+    const maxFuture = new Date();
+    maxFuture.setDate(maxFuture.getDate() + 1);
+    maxFuture.setHours(23, 59, 59, 999);
+    if (purchased.getTime() > maxFuture.getTime()) {
+      setError("Purchase date cannot be more than 1 day in the future.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
-      await skusApi.receive(receiveSkuId, qty);
+      await skusApi.receive(receiveSkuId, {
+        quantity: qty,
+        purchasePrice: price,
+        purchasedAt: receiveDate,
+      });
       setShowReceiveModal(false);
       setReceiveSkuId("");
       setReceiveQty("");
+      setReceivePrice("");
+      setReceiveDate("");
       await refreshSkus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to receive packs");
@@ -672,19 +720,33 @@ export const StockPage: React.FC = () => {
                         <tr>
                           <th>Type</th>
                           <th>Qty delta</th>
+                          <th>Price / date</th>
                           <th>Reason</th>
-                          <th>Date</th>
+                          <th>Recorded</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {transactions.map((t) => (
-                          <tr key={t.id}>
-                            <td>{t.transactionType.replace(/_/g, " ")}</td>
-                            <td>{Number(t.quantityDelta) > 0 ? "+" : ""}{Number(t.quantityDelta).toFixed(2)}</td>
-                            <td>{t.reason || "—"}</td>
-                            <td>{new Date(t.createdAt).toLocaleString()}</td>
-                          </tr>
-                        ))}
+                        {transactions.map((t) => {
+                          const businessDate = t.effectiveAt || t.createdAt;
+                          const priceBits =
+                            t.transactionType === "receipt" && t.unitPrice != null
+                              ? `$${Number(t.unitPrice).toFixed(2)}/pack · ${new Date(businessDate).toLocaleDateString()}`
+                              : t.effectiveAt
+                                ? new Date(t.effectiveAt).toLocaleDateString()
+                                : "—";
+                          return (
+                            <tr key={t.id}>
+                              <td>{t.transactionType.replace(/_/g, " ")}</td>
+                              <td>
+                                {Number(t.quantityDelta) > 0 ? "+" : ""}
+                                {Number(t.quantityDelta).toFixed(2)}
+                              </td>
+                              <td>{priceBits}</td>
+                              <td>{t.reason || "—"}</td>
+                              <td>{new Date(t.createdAt).toLocaleString()}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -733,12 +795,24 @@ export const StockPage: React.FC = () => {
 
       {showReceiveModal && (
         <div className="modal-overlay" onClick={() => !busy && setShowReceiveModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
+          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px" }}>
             <h3 style={{ marginTop: 0 }}>Receive packs</h3>
+            <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
+              Record what you paid for this purchase. The SKU’s unit rate updates for future replenish bill-back.
+            </p>
             <form className="inventory-form" onSubmit={handleReceive}>
               <label>
                 <span>SKU *</span>
-                <select value={receiveSkuId} onChange={(e) => setReceiveSkuId(e.target.value)} required>
+                <select
+                  value={receiveSkuId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setReceiveSkuId(id);
+                    const sku = skus.find((s) => s.id === id);
+                    if (sku) setReceivePrice(String(Number(sku.purchasePrice)));
+                  }}
+                  required
+                >
                   <option value="">Select SKU…</option>
                   {skus.map((s) => (
                     <option key={s.id} value={s.id}>
@@ -759,6 +833,34 @@ export const StockPage: React.FC = () => {
                   required
                 />
               </label>
+              <label>
+                <span>Purchase price (per pack) *</span>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={receivePrice}
+                  onChange={(e) => setReceivePrice(e.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                <span>Purchase date *</span>
+                <input
+                  type="date"
+                  value={receiveDate}
+                  onChange={(e) => setReceiveDate(e.target.value)}
+                  required
+                />
+              </label>
+              {receiveUnitRatePreview != null && receiveSku && (
+                <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 8px" }}>
+                  Unit rate: ${receiveUnitRatePreview.toFixed(4)} / base unit
+                  {receiveSku.packSize
+                    ? ` (pack size ${Number(receiveSku.packSize)})`
+                    : ""}
+                </p>
+              )}
               {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
               <div className="form-actions">
                 <button type="button" className="secondary" onClick={() => setShowReceiveModal(false)} disabled={busy}>
