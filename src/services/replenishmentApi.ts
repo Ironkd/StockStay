@@ -53,6 +53,15 @@ export const replenishmentApi = {
     });
   },
 
+  listUnreverted: async (
+    propertyId: string,
+    supplyItemId: string
+  ): Promise<{ lines: Array<{ id: string; remaining: string }>; totalRemaining: string }> => {
+    return apiRequest(
+      `/replenishments/unreverted${toQuery({ propertyId, supplyItemId })}`
+    );
+  },
+
   listUnbilled: async (): Promise<UnbilledLine[]> => {
     return apiRequest<UnbilledLine[]>("/unbilled-lines");
   },

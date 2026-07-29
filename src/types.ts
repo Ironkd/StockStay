@@ -225,14 +225,17 @@ export type SupplyItemFormValues = {
 export type StockOnHand = {
   id: string;
   skuId: string;
+  stockLocationId: string;
   quantity: string;
+  lastPurchasePrice?: string | null;
+  lastUnitRate?: string | null;
+  stockLocation?: { id: string; name: string };
 };
 
 export type Sku = {
   id: string;
   teamId: string;
   supplyItemId: string;
-  stockLocationId: string;
   name: string;
   supplier: string | null;
   packSize: string;
@@ -241,15 +244,18 @@ export type Sku = {
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
+  /** Present when listed/filtered for a single stock location */
   stockOnHand?: StockOnHand;
+  /** All location balances when listing the full catalogue */
+  stockOnHands?: StockOnHand[];
   supplyItem?: { id: string; name: string; category: string; baseUnitId: string };
-  stockLocation?: { id: string; name: string };
 };
 
 export type SkuFormValues = {
   name: string;
   supplyItemId: string;
-  stockLocationId: string;
+  /** Optional: also create a zero SOH row at this location */
+  stockLocationId?: string;
   supplier?: string | null;
   packSize: number | string;
   purchasePrice: number | string;
@@ -265,18 +271,53 @@ export type StockTransactionType =
   | "replenishment_in"
   | "invoice";
 
-export type PropertyStock = {
+/** Low-stock threshold per Supply Item at a stock location (base units). */
+export type LocationSupplyThreshold = {
   id: string;
-  teamId: string;
-  propertyId: string;
+  stockLocationId: string;
   supplyItemId: string;
-  quantity: string;
   reorderPoint: string;
   reorderQuantity: string;
+  onHandBase?: string;
+  isLow?: boolean;
+  suggestedBuyBase?: string;
   createdAt: string;
   updatedAt: string;
-  property?: { id: string; name: string };
-  supplyItem?: { id: string; name: string; category: string; baseUnitId: string };
+  stockLocation?: { id: string; name: string };
+  supplyItem?: {
+    id: string;
+    name: string;
+    category: string;
+    baseUnitId: string;
+    defaultReorderPoint?: string;
+    defaultReorderQuantity?: string;
+    baseUnit?: { id: string; code: string; name: string };
+  };
+};
+
+export type LocationLowStockRow = {
+  id: string;
+  stockLocationId: string;
+  supplyItemId: string;
+  reorderPoint: string;
+  reorderQuantity: string;
+  onHandBase: string;
+  suggestedBuyBase: string;
+  stockLocation?: { id: string; name: string };
+  supplyItem?: {
+    id: string;
+    name: string;
+    category: string;
+    baseUnitId: string;
+    baseUnit?: { id: string; code: string; name: string };
+  };
+};
+
+export type StockTransactionActor = {
+  id: string;
+  name: string;
+  firstName: string | null;
+  lastName: string | null;
 };
 
 export type StockTransaction = {
@@ -295,6 +336,7 @@ export type StockTransaction = {
   /** Pack purchase price on receipt */
   unitPrice?: string | null;
   createdByUserId: string | null;
+  createdByUser?: StockTransactionActor | null;
   createdAt: string;
 };
 
@@ -387,6 +429,7 @@ export type CreateTransferInput = {
 
 export type TransferResult = {
   transferGroupId: string;
-  return: Replenishment;
+  return: Replenishment | null;
+  returns?: Replenishment[];
   replenish: Replenishment;
 };

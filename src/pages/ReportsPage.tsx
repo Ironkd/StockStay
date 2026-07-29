@@ -1,7 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { propertyStocksApi, skusApi, stockTransactionsApi } from "../services/catalogueApi";
-import { propertiesApi } from "../services/propertiesApi";
-import type { PropertyStock, Sku, StockTransaction, Property } from "../types";
+import {
+  locationSupplyThresholdsApi,
+  skusApi,
+  stockTransactionsApi,
+} from "../services/catalogueApi";
+import { stockLocationsApi } from "../services/stockLocationsApi";
+import type {
+  LocationSupplyThreshold,
+  Sku,
+  StockLocation,
+  StockTransaction,
+} from "../types";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
@@ -46,41 +55,63 @@ function downloadCsv(filename: string, rows: string[][]) {
   URL.revokeObjectURL(url);
 }
 
-function getStockStatus(row: PropertyStock): "OK" | "Low stock" | "Out of stock" {
-  const quantity = Number(row.quantity);
-  const reorderPoint = Number(row.reorderPoint);
-  if (quantity <= 0) return "Out of stock";
-  if (reorderPoint > 0 && quantity <= reorderPoint) return "Low stock";
+type LocationOnHandRow = {
+  key: string;
+  stockLocationId: string;
+  locationName: string;
+  supplyItemId: string;
+  supplyItemName: string;
+  category: string;
+  onHandBase: number;
+  reorderPoint: number;
+  status: "OK" | "Low stock" | "Out of stock";
+};
+
+function statusFor(onHand: number, reorderPoint: number): LocationOnHandRow["status"] {
+  if (onHand <= 0) return "Out of stock";
+  if (reorderPoint > 0 && onHand <= reorderPoint) return "Low stock";
   return "OK";
 }
 
 export const ReportsPage: React.FC = () => {
-  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
-  const [properties, setProperties] = useState<Property[]>([]);
+  const [locations, setLocations] = useState<StockLocation[]>([]);
   const [skus, setSkus] = useState<Sku[]>([]);
+  const [thresholdsByLocation, setThresholdsByLocation] = useState<
+    Map<string, LocationSupplyThreshold[]>
+  >(new Map());
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
 
-  const [propertyFilter, setPropertyFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
-  const [stockStatusFilter, setStockStatusFilter] = useState(""); // "", "low", "out"
+  const [stockStatusFilter, setStockStatusFilter] = useState("");
 
   const [transactionTypeFilter, setTransactionTypeFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
   useEffect(() => {
-    Promise.all([propertyStocksApi.getAll(), propertiesApi.getAll(), skusApi.getAll()])
-      .then(([stocks, props, allSkus]) => {
-        setPropertyStocks(stocks);
-        setProperties(props);
+    Promise.all([stockLocationsApi.getAll(), skusApi.getAll()])
+      .then(async ([locs, allSkus]) => {
+        setLocations(locs);
         setSkus(allSkus);
+        const entries = await Promise.all(
+          locs.map(async (loc) => {
+            try {
+              const rows = await locationSupplyThresholdsApi.listByLocation(loc.id);
+              return [loc.id, rows] as const;
+            } catch {
+              return [loc.id, [] as LocationSupplyThreshold[]] as const;
+            }
+          })
+        );
+        setThresholdsByLocation(new Map(entries));
       })
       .catch(() => {
-        setPropertyStocks([]);
-        setProperties([]);
+        setLocations([]);
         setSkus([]);
+        setThresholdsByLocation(new Map());
       })
       .finally(() => setLoadingStocks(false));
   }, []);
@@ -99,77 +130,163 @@ export const ReportsPage: React.FC = () => {
       .finally(() => setLoadingTransactions(false));
   }, [transactionTypeFilter, fromDate, toDate]);
 
-  // Lookup maps for resolving transaction entityId -> a readable label
-  const propertyStockById = useMemo(() => {
-    const map = new Map<string, PropertyStock>();
-    for (const ps of propertyStocks) map.set(ps.id, ps);
-    return map;
-  }, [propertyStocks]);
-
   const skuByStockOnHandId = useMemo(() => {
-    const map = new Map<string, Sku>();
+    const map = new Map<string, { sku: Sku; locationName: string }>();
     for (const sku of skus) {
-      if (sku.stockOnHand) map.set(sku.stockOnHand.id, sku);
+      const hands = sku.stockOnHands?.length
+        ? sku.stockOnHands
+        : sku.stockOnHand
+          ? [sku.stockOnHand]
+          : [];
+      for (const soh of hands) {
+        map.set(soh.id, {
+          sku,
+          locationName: soh.stockLocation?.name || "Location",
+        });
+      }
     }
     return map;
   }, [skus]);
 
   const describeEntity = (row: StockTransaction): string => {
     if (row.entityType === "property_stock") {
-      const ps = propertyStockById.get(row.entityId);
-      if (ps) return `${ps.supplyItem?.name || "Item"} @ ${ps.property?.name || "Property"}`;
-      return "Property stock";
+      return "Property stock (archived)";
     }
-    const sku = skuByStockOnHandId.get(row.entityId);
-    if (sku) return `${sku.name} @ ${sku.stockLocation?.name || "Location"}`;
+    const hit = skuByStockOnHandId.get(row.entityId);
+    if (hit) return `${hit.sku.name} @ ${hit.locationName}`;
     return "Stock on hand";
   };
 
-  const allCategories = useMemo(
-    () =>
-      [...new Set(propertyStocks.map((ps) => (ps.supplyItem?.category || "").trim()).filter(Boolean))].sort(),
-    [propertyStocks]
-  );
+  const locationOnHandRows = useMemo((): LocationOnHandRow[] => {
+    const agg = new Map<
+      string,
+      {
+        stockLocationId: string;
+        locationName: string;
+        supplyItemId: string;
+        supplyItemName: string;
+        category: string;
+        onHandBase: number;
+      }
+    >();
 
-  const propertyStockRows = useMemo(() => {
-    let rows = propertyStocks.map((ps) => ({
-      ...ps,
-      status: getStockStatus(ps),
-    }));
-    if (propertyFilter) rows = rows.filter((r) => r.propertyId === propertyFilter);
-    if (categoryFilter) rows = rows.filter((r) => (r.supplyItem?.category || "").trim() === categoryFilter);
+    for (const sku of skus) {
+      const supplyItemId = sku.supplyItemId || sku.supplyItem?.id;
+      if (!supplyItemId) continue;
+      const hands = sku.stockOnHands?.length
+        ? sku.stockOnHands
+        : sku.stockOnHand
+          ? [sku.stockOnHand]
+          : [];
+      for (const soh of hands) {
+        const locId = soh.stockLocationId;
+        const key = `${locId}::${supplyItemId}`;
+        const packs = Number(soh.quantity) || 0;
+        const packSize = Number(sku.packSize) || 0;
+        const base = packs * packSize;
+        const existing = agg.get(key);
+        if (existing) {
+          existing.onHandBase += base;
+        } else {
+          agg.set(key, {
+            stockLocationId: locId,
+            locationName:
+              soh.stockLocation?.name ||
+              locations.find((l) => l.id === locId)?.name ||
+              "Location",
+            supplyItemId,
+            supplyItemName: sku.supplyItem?.name || "Supply item",
+            category: (sku.supplyItem?.category || "").trim(),
+            onHandBase: base,
+          });
+        }
+      }
+    }
+
+    for (const [locId, thresholds] of thresholdsByLocation) {
+      for (const t of thresholds) {
+        const key = `${locId}::${t.supplyItemId}`;
+        if (!agg.has(key)) {
+          agg.set(key, {
+            stockLocationId: locId,
+            locationName:
+              t.stockLocation?.name ||
+              locations.find((l) => l.id === locId)?.name ||
+              "Location",
+            supplyItemId: t.supplyItemId,
+            supplyItemName: t.supplyItem?.name || "Supply item",
+            category: (t.supplyItem?.category || "").trim(),
+            onHandBase: Number(t.onHandBase) || 0,
+          });
+        }
+      }
+    }
+
+    let rows: LocationOnHandRow[] = Array.from(agg.entries()).map(([key, row]) => {
+      const thresholds = thresholdsByLocation.get(row.stockLocationId) || [];
+      const thr = thresholds.find((t) => t.supplyItemId === row.supplyItemId);
+      const reorderPoint = Number(thr?.reorderPoint) || 0;
+      return {
+        key,
+        ...row,
+        reorderPoint,
+        status: statusFor(row.onHandBase, reorderPoint),
+      };
+    });
+
+    if (locationFilter) rows = rows.filter((r) => r.stockLocationId === locationFilter);
+    if (categoryFilter) rows = rows.filter((r) => r.category === categoryFilter);
     if (stockStatusFilter === "low") rows = rows.filter((r) => r.status === "Low stock");
     if (stockStatusFilter === "out") rows = rows.filter((r) => r.status === "Out of stock");
-    return rows;
-  }, [propertyStocks, propertyFilter, categoryFilter, stockStatusFilter]);
+    return rows.sort((a, b) =>
+      `${a.locationName}${a.supplyItemName}`.localeCompare(
+        `${b.locationName}${b.supplyItemName}`,
+        undefined,
+        { sensitivity: "base" }
+      )
+    );
+  }, [skus, locations, thresholdsByLocation, locationFilter, categoryFilter, stockStatusFilter]);
+
+  const allCategories = useMemo(
+    () =>
+      [...new Set(locationOnHandRows.map((r) => r.category).filter(Boolean))].sort(),
+    [locationOnHandRows]
+  );
 
   return (
     <div className="reports-page">
       <h1 className="page-title">Reports</h1>
 
-      {/* Property stock on hand */}
       <section className="report-section">
         <div className="report-section-header">
-          <h2>Property stock on hand</h2>
-          {propertyStockRows.length > 0 && (
+          <h2>Location stock on hand</h2>
+          {locationOnHandRows.length > 0 && (
             <button
               type="button"
               className="secondary export-report-btn"
               onClick={() => {
                 const rows = [
-                  ["Property", "Supply item", "Category", "Quantity", "Reorder point", "Reorder qty", "Status", "Last updated"],
-                  ...propertyStockRows.map((r) => [
-                    r.property?.name || "—",
-                    r.supplyItem?.name || "—",
-                    r.supplyItem?.category || "—",
-                    r.quantity,
-                    r.reorderPoint,
-                    r.reorderQuantity,
+                  [
+                    "Location",
+                    "Supply item",
+                    "Category",
+                    "On hand (base)",
+                    "Reorder point",
+                    "Status",
+                  ],
+                  ...locationOnHandRows.map((r) => [
+                    r.locationName,
+                    r.supplyItemName,
+                    r.category || "—",
+                    r.onHandBase.toFixed(2),
+                    r.reorderPoint.toFixed(2),
                     r.status,
-                    formatDate(r.updatedAt),
                   ]),
                 ];
-                downloadCsv(`property-stock-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+                downloadCsv(
+                  `location-stock-${new Date().toISOString().slice(0, 10)}.csv`,
+                  rows
+                );
               }}
             >
               Export (CSV)
@@ -177,19 +294,22 @@ export const ReportsPage: React.FC = () => {
           )}
         </div>
         <p className="report-description">
-          Current property stock quantities. Filter by property, category, or stock status.
+          Supply-item totals at stock locations (sum of packs × pack size). Low stock uses
+          location reorder thresholds.
         </p>
         <div className="report-filters">
           <label>
-            <span>Property</span>
+            <span>Location</span>
             <select
-              value={propertyFilter}
-              onChange={(e) => setPropertyFilter(e.target.value)}
+              value={locationFilter}
+              onChange={(e) => setLocationFilter(e.target.value)}
               className="report-filter-select"
             >
-              <option value="">All properties</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>{p.name}</option>
+              <option value="">All locations</option>
+              {locations.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
               ))}
             </select>
           </label>
@@ -202,7 +322,9 @@ export const ReportsPage: React.FC = () => {
             >
               <option value="">All categories</option>
               {allCategories.map((c) => (
-                <option key={c} value={c}>{c}</option>
+                <option key={c} value={c}>
+                  {c}
+                </option>
               ))}
             </select>
           </label>
@@ -220,47 +342,52 @@ export const ReportsPage: React.FC = () => {
           </label>
         </div>
         {loadingStocks ? (
-          <p>Loading property stock…</p>
+          <p>Loading location stock…</p>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">
               <thead>
                 <tr>
-                  <th>Property</th>
+                  <th>Location</th>
                   <th>Supply item</th>
                   <th>Category</th>
-                  <th>Quantity</th>
+                  <th>On hand (base)</th>
                   <th>Reorder point</th>
                   <th>Status</th>
-                  <th>Last updated</th>
                 </tr>
               </thead>
               <tbody>
-                {propertyStockRows.map((r) => (
-                  <tr key={r.id}>
-                    <td>{r.property?.name || "—"}</td>
-                    <td>{r.supplyItem?.name || "—"}</td>
-                    <td>{r.supplyItem?.category || "—"}</td>
-                    <td>{Number(r.quantity).toFixed(2)}</td>
-                    <td>{Number(r.reorderPoint).toFixed(2)}</td>
+                {locationOnHandRows.map((r) => (
+                  <tr key={r.key}>
+                    <td>{r.locationName}</td>
+                    <td>{r.supplyItemName}</td>
+                    <td>{r.category || "—"}</td>
+                    <td>{r.onHandBase.toFixed(2)}</td>
+                    <td>{r.reorderPoint.toFixed(2)}</td>
                     <td>
-                      <span className={r.status === "Out of stock" ? "movement-out" : r.status === "Low stock" ? "report-low" : ""}>
+                      <span
+                        className={
+                          r.status === "Out of stock"
+                            ? "movement-out"
+                            : r.status === "Low stock"
+                              ? "report-low"
+                              : ""
+                        }
+                      >
                         {r.status}
                       </span>
                     </td>
-                    <td>{formatDate(r.updatedAt)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        {!loadingStocks && propertyStockRows.length === 0 && (
-          <p className="report-empty">No property stock matches the filters.</p>
+        {!loadingStocks && locationOnHandRows.length === 0 && (
+          <p className="report-empty">No location stock matches the filters.</p>
         )}
       </section>
 
-      {/* Recent stock transactions */}
       <section className="report-section">
         <div className="report-section-header">
           <h2>Recent stock transactions</h2>
@@ -277,10 +404,15 @@ export const ReportsPage: React.FC = () => {
                     t.entityType,
                     describeEntity(t),
                     t.quantityDelta,
-                    t.referenceType ? `${t.referenceType}:${t.referenceId ?? ""}` : (t.reason ?? "—"),
+                    t.referenceType
+                      ? `${t.referenceType}:${t.referenceId ?? ""}`
+                      : t.reason ?? "—",
                   ]),
                 ];
-                downloadCsv(`stock-transactions-${new Date().toISOString().slice(0, 10)}.csv`, rows);
+                downloadCsv(
+                  `stock-transactions-${new Date().toISOString().slice(0, 10)}.csv`,
+                  rows
+                );
               }}
             >
               Export (CSV)
@@ -289,6 +421,7 @@ export const ReportsPage: React.FC = () => {
         </div>
         <p className="report-description">
           Ledger of stock movements: receipts, adjustments, and replenishment in/out.
+          Historical property_stock rows are labeled archived.
         </p>
         <div className="report-filters">
           <label>
@@ -327,7 +460,10 @@ export const ReportsPage: React.FC = () => {
         {loadingTransactions ? (
           <p>Loading transactions…</p>
         ) : transactions.length === 0 ? (
-          <p className="report-empty">No transactions found. Receive stock, replenish properties, or adjust quantities to see history.</p>
+          <p className="report-empty">
+            No transactions found. Receive stock, replenish properties, or adjust quantities to
+            see history.
+          </p>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">
@@ -347,12 +483,16 @@ export const ReportsPage: React.FC = () => {
                     <td>{transactionTypeLabel[t.transactionType] ?? t.transactionType}</td>
                     <td>{describeEntity(t)}</td>
                     <td>
-                      <span className={Number(t.quantityDelta) >= 0 ? "movement-in" : "movement-out"}>
+                      <span
+                        className={
+                          Number(t.quantityDelta) >= 0 ? "movement-in" : "movement-out"
+                        }
+                      >
                         {Number(t.quantityDelta) >= 0 ? "+" : ""}
                         {t.quantityDelta}
                       </span>
                     </td>
-                    <td>{t.referenceType ? `${t.referenceType}` : (t.reason ?? "—")}</td>
+                    <td>{t.referenceType ? `${t.referenceType}` : t.reason ?? "—"}</td>
                   </tr>
                 ))}
               </tbody>

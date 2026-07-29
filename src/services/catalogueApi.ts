@@ -5,7 +5,8 @@ import type {
   SupplyItemFormValues,
   Sku,
   SkuFormValues,
-  PropertyStock,
+  LocationSupplyThreshold,
+  LocationLowStockRow,
   StockTransaction,
   LedgerPostResult,
   UnitOfMeasure,
@@ -86,10 +87,18 @@ export const skusApi = {
     });
   },
 
-  /** Pack receive into StockOnHand (ledger). Updates SKU purchase price / unit rate. */
+  /** Ensure a zero StockOnHand row exists for this SKU at a location. */
+  stockAtLocation: async (id: string, stockLocationId: string): Promise<Sku> => {
+    return apiRequest<Sku>(`/skus/${id}/stock-locations/${stockLocationId}`, {
+      method: "POST",
+    });
+  },
+
+  /** Pack receive into StockOnHand (ledger). Updates location last rate + catalogue defaults. */
   receive: async (
     id: string,
     values: {
+      stockLocationId: string;
       quantity: number | string;
       purchasePrice?: number | string;
       purchasedAt?: string;
@@ -103,7 +112,11 @@ export const skusApi = {
 
   adjust: async (
     id: string,
-    values: { quantityDelta: number | string; reason?: string }
+    values: {
+      stockLocationId: string;
+      quantityDelta: number | string;
+      reason?: string;
+    }
   ): Promise<LedgerPostResult> => {
     return apiRequest<LedgerPostResult>(`/skus/${id}/adjust`, {
       method: "POST",
@@ -112,15 +125,39 @@ export const skusApi = {
   },
 };
 
-export const propertyStocksApi = {
-  getAll: async (): Promise<PropertyStock[]> => {
-    return apiRequest<PropertyStock[]>("/property-stocks");
+export const locationSupplyThresholdsApi = {
+  listByLocation: async (locationId: string): Promise<LocationSupplyThreshold[]> => {
+    return apiRequest<LocationSupplyThreshold[]>(
+      `/stock-locations/${locationId}/supply-thresholds`
+    );
+  },
+
+  upsert: async (
+    locationId: string,
+    values: {
+      supplyItemId: string;
+      reorderPoint: number | string;
+      reorderQuantity: number | string;
+    }
+  ): Promise<LocationSupplyThreshold> => {
+    return apiRequest<LocationSupplyThreshold>(
+      `/stock-locations/${locationId}/supply-thresholds`,
+      {
+        method: "PUT",
+        body: JSON.stringify(values),
+      }
+    );
+  },
+
+  listLowStock: async (): Promise<LocationLowStockRow[]> => {
+    return apiRequest<LocationLowStockRow[]>("/location-low-stock");
   },
 };
 
 export const stockTransactionsApi = {
   getAll: async (opts?: {
     skuId?: string;
+    stockLocationId?: string;
     entityType?: string;
     entityId?: string;
     postingId?: string;
@@ -132,6 +169,7 @@ export const stockTransactionsApi = {
     return apiRequest<StockTransaction[]>(
       `/stock-transactions${toQuery({
         skuId: opts?.skuId,
+        stockLocationId: opts?.stockLocationId,
         entityType: opts?.entityType,
         entityId: opts?.entityId,
         postingId: opts?.postingId,

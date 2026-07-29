@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 0.9 (Receive purchase price + date)  
+**Version:** 1.1 (Location low stock; properties billing-only)  
 **Status:** Ready for implementation planning (timezone for billing periods still open)  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-07-28
@@ -29,7 +29,7 @@ Stock Stay is an **inventory management tool for short-term rental (STR) propert
 The core value proposition:
 
 - Track what the PM has on hand at central supply locations
-- Track what each property has, expressed in practical units (pods, bottles, grams)
+- Alert when a **supply item** is low at a stock location (not per brand/pack SKU)
 - Automatically calculate **client bill-back** when stock is deployed to a property
 - Generate **scheduled invoices** for clients and export them for accounting software
 
@@ -68,8 +68,9 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | Stock location fields | **Name + address + tags** are sufficient. |
 | Plan limits | Caps supported for stock locations, supply items, and SKUs (and existing limits). Values are **configurable** and UI/marketing must read the same live config. |
 | Invoice delivery | **PDF**, **email HTML**, and **CSV export** are all required in v1. Accounting export = CSV only (QBO/Xero-specific formats deferred). |
-| Consumption tracking | **Not in v1**. Billing is driven by stock location ↔ property movements (replenish and return), including legs of inter-property transfers. |
+| Consumption tracking | **Not in v1**. Billing is driven by stock location ↔ property movements (replenish and return), including legs of inter-property transfers. Properties are **billing destinations**, not inventory monitors — no property on-hand balance or property-level low-stock. |
 | Break-pack | Replenishment can deploy **partial units** from a sealed SKU (e.g. 20 loose pods from a 100-pack → decrement 0.2 packs at stock location). |
+| Location low stock | Per **Supply Item × Stock Location** via `LocationSupplyThreshold` (base units). On-hand for the alert = sum of `StockOnHand.quantity × Sku.packSize` across that item’s SKUs at the location. |
 | v1 scope | Include **Organization** model above Team. Client portal, payment gateway, consumption, and ad-hoc replenishment invoicing = deferred. |
 
 ---
@@ -81,7 +82,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | Schema name | UI label | Definition |
 |-------------|----------|------------|
 | **SupplyItem** | Supply Item | Canonical product the PM tracks ("Coffee Pod"). Quantity at properties is expressed in the item's **base unit** (e.g. pods, ml, g). |
-| **SKU** | SKU | A specific purchasable package linked to a Supply Item (e.g. "Kirkland Pacific Bold — Pack of 100 @ $48"). Holds pack size, purchase price, and computed **unit rate** ($0.48/pod). |
+| **SKU** | SKU | A specific purchasable package linked to a Supply Item (e.g. "Kirkland Pacific Bold — Pack of 100 @ $48"). Team-shared catalogue row; holds pack size and default purchase price / **unit rate**. Quantity lives on StockOnHand per location. |
 | **StockLocation** | Stock Location | PM's central supply shelf/warehouse. Holds SKU inventory before replenishment. UI alias: "Central Supply". |
 | **Replenishment** | Replenishment | Moving stock from a Stock Location to a Property. **Chargeable event** for client bill-back. Avoid "sale" or "allocation" in UI. |
 | **Client** | Client | Billing contact for a property. Not assumed to be the property owner. One client may be billed for multiple properties. |
@@ -90,7 +91,9 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | **Property** | Property | STR rental unit. |
 | **StockTransaction** | — (audit/history) | Immutable ledger entry for any quantity change. Replaces current `InventoryMovement`. |
 | **StockOnHand** | — | Quantity of a SKU at a stock location. |
-| **PropertyStock** | — | Quantity of a Supply Item at a property (in base units). |
+| **StockOnHand** | — | Pack quantity of a SKU at a stock location. Unique per (skuId, stockLocationId). |
+| **LocationSupplyThreshold** | — | Reorder point / quantity for a Supply Item at a stock location (base units). Low stock when on-hand base ≤ reorderPoint and reorderPoint > 0. |
+| **ReplenishmentLine** | — | Billable truth for property deployments; returns and transfers allocate against unreverted lines. |
 | **Invoice** | Invoice | Bill to client for replenishments. Distinct from SaaS subscription billing. |
 
 ### 2.2 Names to retire or avoid
@@ -101,7 +104,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | Master Item | Redundant | **Supply Item** |
 | Allocation | Accounting jargon | **Replenishment** |
 | Sale | Deprecated; wrong mental model | **Replenishment** + **Invoice** |
-| Inventory (as a single concept) | Overloaded | **SupplyItem**, **StockOnHand**, **PropertyStock** |
+| Inventory (as a single concept) | Overloaded | **SupplyItem**, **StockOnHand**, **LocationSupplyThreshold** |
 | InventoryMovement | Implementation detail | **StockTransaction** |
 
 **Keeping as-is:** `Client`, `SKU`.
@@ -289,7 +292,8 @@ erDiagram
   Team ||--o{ Client : has
   Client ||--o{ Property : billed_for
   StockLocation }o--o{ Property : supplies
-  SupplyItem ||--o{ PropertyStock : tracks_at_property
+  SupplyItem ||--o{ LocationSupplyThreshold : reorder_at_location
+  StockLocation ||--o{ LocationSupplyThreshold : has_thresholds
   SKU ||--o{ StockOnHand : stocked_at
   SKU }o--|| SupplyItem : sku_of
   UnitOfMeasure ||--o{ SupplyItem : base_unit
@@ -300,7 +304,7 @@ erDiagram
   Invoice ||--o{ InvoiceLine : contains
   Invoice ||--|| Client : billed_to
   InvoiceLine }o--o| ReplenishmentLine : sourced_from
-  StockTransaction ||--|| StockOnHand : or_PropertyStock
+  StockTransaction ||--|| StockOnHand : updates
 ```
 
 ### 4.2 Entity definitions
@@ -365,25 +369,37 @@ Canonical product concept. Tracked at properties in **base units**.
 
 #### SKU
 
-Purchasable package variant linked to a Supply Item. Stock is held at Stock Locations at the **pack level**; replenishment may break packs.
+Purchasable package variant linked to a Supply Item. **Team-shared** catalogue definition (same as Supply Items). Quantity is tracked separately per location on StockOnHand.
 
 | Field (conceptual) | Notes |
 |--------------------|-------|
 | supplyItemId | FK to SupplyItem |
-| stockLocationId | FK to StockLocation (SKU is location-specific) |
-| name | e.g. "Kirkland Pacific Bold" |
+| name | e.g. "Kirkland Pacific Bold" (unique per team) |
 | supplier | Optional (Costco, Amazon, etc.) |
 | packSize | Base units per pack (e.g. 100) |
-| purchasePrice | Cost per pack |
-| unitRate | Computed: purchasePrice / packSize |
+| purchasePrice | Catalogue default cost per pack |
+| unitRate | Catalogue default: purchasePrice / packSize |
 
 #### StockOnHand
 
-Current quantity of a SKU at a stock location (in **pack units**, may be fractional after break-pack).
+Current quantity of a SKU **at a stock location** (in **pack units**, may be fractional after break-pack). Unique on `(skuId, stockLocationId)`.
 
-#### PropertyStock
+| Field (conceptual) | Notes |
+|--------------------|-------|
+| skuId, stockLocationId | Shelf identity |
+| quantity | Packs on hand |
+| lastPurchasePrice | Last receipt price at this location (nullable until first receive) |
+| lastUnitRate | Last receipt unit rate at this location; preferred for bill-back |
 
-Current quantity of a Supply Item at a property (in **base units**).
+#### LocationSupplyThreshold
+
+Reorder thresholds for a **Supply Item at a stock location** (base units). Not per SKU.
+
+| Field (conceptual) | Notes |
+|--------------------|-------|
+| stockLocationId, supplyItemId | Unique pair |
+| reorderPoint | Alert when summed on-hand base ≤ this and this > 0 |
+| reorderQuantity | Suggested buy qty for shopping list (else shortfall to point) |
 
 #### Replenishment
 
@@ -415,14 +431,14 @@ Line item within a replenishment.
 
 #### StockTransaction
 
-Immutable ledger entry. **Every** quantity change creates one row. No direct edits to StockOnHand or PropertyStock balances.
+Immutable ledger entry. **Every** quantity change creates one row. No direct edits to StockOnHand balances. Historical `property_stock` entityType rows may exist from earlier builds but **new posts must not use that type**.
 
 | Field (conceptual) | Notes |
 |--------------------|-------|
 | teamId | Tenant scope |
-| entityType | stock_on_hand / property_stock |
+| entityType | `stock_on_hand` (active); `property_stock` (historical only) |
 | entityId | FK to the balance record |
-| quantityDelta | Signed; base units for property stock, pack units for stock on hand |
+| quantityDelta | Signed pack units for stock on hand |
 | transactionType | receipt / adjustment / replenishment_out / replenishment_in / transfer / invoice |
 | referenceType, referenceId | Link to Replenishment, Invoice, etc. |
 
@@ -467,7 +483,7 @@ Client invoice. Target model normalizes line items (today lines are JSON blobs).
 
 2. **Stock Location ↔ Property:** Many-to-many. Tags on stock locations enable arbitrary grouping and filtered views ("all locations for Property X", "all properties for Location Y").
 
-3. **SKU ↔ Supply Item:** Multiple SKUs can map to one Supply Item (equivalent products). SKUs are scoped to a stock location.
+3. **SKU ↔ Supply Item:** Multiple SKUs can map to one Supply Item (equivalent products). SKUs are **team-shared**; on-hand quantity is per stock location via StockOnHand.
 
 4. **Break-pack replenishment:**
    - User enters quantity in **base units** (e.g. 20 pods).
@@ -476,7 +492,7 @@ Client invoice. Target model normalizes line items (today lines are JSON blobs).
 
 5. **Bill-back calculation:**
    ```
-   unitRate = sku.purchasePrice / sku.packSize
+   unitRate = stockOnHand.lastUnitRate ?? sku.unitRate
    effectiveMarkup = property.markupPercentage ?? client.defaultMarkupPercentage ?? 0
    billBackAmount = baseQtyDeployed × unitRate × (1 + effectiveMarkup / 100)
    ```
@@ -488,7 +504,7 @@ Client invoice. Target model normalizes line items (today lines are JSON blobs).
    - **Stock Location → Property B** = replenishment (bill Property B's billing client)
    - If the source property is linked to multiple stock locations, the user **must choose** which location the item passes through (and which SKU when converting into location stock).
 
-8. **Ledger integrity:** Quantity balances are updated **only** via StockTransaction posting. No route may update `StockOnHand.quantity` or `PropertyStock.quantity` directly.
+8. **Ledger integrity:** Quantity balances are updated **only** via StockTransaction posting. No route may update `StockOnHand.quantity` directly.
 
 9. **Deletion policy:** Entities with transaction or invoice history are **archived**, not hard-deleted. (Greenfield: no legacy data migration required.)
 
@@ -537,11 +553,11 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 
 | | |
 |---|---|
-| **Preconditions** | SKU exists at location; user has stock access |
-| **Steps** | Select SKU → enter pack quantity → enter **purchase price** (defaults to current SKU price) → enter **purchase date** (defaults to today) → confirm |
-| **Postconditions** | StockOnHand incremented; SKU `purchasePrice` / `unitRate` updated; StockTransaction (type: receipt) created with `unitPrice` + `effectiveAt` |
+| **Preconditions** | SKU exists (team catalogue); stock location selected; user has stock access |
+| **Steps** | Select SKU → enter pack quantity → enter **purchase price** (defaults to location last price, else catalogue default) → enter **purchase date** (defaults to today) → confirm |
+| **Postconditions** | StockOnHand for `(sku, location)` created if needed and incremented; SOH `lastPurchasePrice` / `lastUnitRate` updated; SKU catalogue defaults refreshed; StockTransaction (type: receipt) created with `unitPrice` + `effectiveAt` |
 | **Audit** | StockTransaction with positive delta, pack price paid, and business purchase date |
-| **Billing** | None — receiving stock is not billable to client. Future replenish bill-backs use the updated unit rate (past ReplenishmentLines unchanged — BR-5). |
+| **Billing** | None — receiving stock is not billable to client. Future replenish bill-backs use the location’s last unit rate (past ReplenishmentLines unchanged — BR-5). |
 
 #### SL-5: Adjust stock at location
 
@@ -558,9 +574,9 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | | |
 |---|---|
 | **Preconditions** | User has inventory or stock-locations page access |
-| **Steps** | Browse locations; filter by tag; view SKUs below reorder point |
-| **Postconditions** | Read-only display |
-| **Audit** | None |
+| **Steps** | Browse locations; view supply-item groups; set `LocationSupplyThreshold` reorder on a group; see low badge when on-hand base ≤ reorderPoint (and point > 0) |
+| **Postconditions** | Read-only + editable thresholds; Home / Shopping List show location supply-item lows |
+| **Audit** | Threshold updatedAt |
 | **Billing** | None |
 
 ---
@@ -582,9 +598,9 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 
 | | |
 |---|---|
-| **Preconditions** | Supply Item exists; Stock Location selected |
-| **Steps** | Enter SKU name, supplier, pack size, purchase price → system computes unit rate → save |
-| **Postconditions** | SKU record created; StockOnHand initialized at 0 |
+| **Preconditions** | Supply Item exists |
+| **Steps** | Enter SKU name, supplier, pack size, purchase price → system computes unit rate → save. Optionally stock at a location (create zero StockOnHand) in the same flow. |
+| **Postconditions** | Team-shared SKU record created; StockOnHand only if explicitly stocked at a location |
 | **Audit** | Created timestamp |
 | **Billing** | None |
 
@@ -612,10 +628,10 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | | |
 |---|---|
 | **Preconditions** | Supply Item exists |
-| **Steps** | Create additional SKUs with same supplyItemId at same or different locations |
-| **Postconditions** | Replenishment workflow can choose any linked SKU |
+| **Steps** | Create additional team-shared SKUs with same supplyItemId; stock each at one or more locations via StockOnHand |
+| **Postconditions** | Replenishment workflow can choose any SKU that has StockOnHand at the selected location |
 | **Audit** | None |
-| **Billing** | Bill-back uses the **actual SKU's unit rate** at time of replenishment |
+| **Billing** | Bill-back uses **location last unit rate** (else catalogue SKU unit rate) at time of replenishment |
 
 ---
 
@@ -632,25 +648,19 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | **Audit** | Created/updated timestamp |
 | **Billing** | clientId determines scheduled invoice target |
 
-#### PROP-2: View property stock
+#### PROP-2: View property (billing destination)
 
 | | |
 |---|---|
 | **Preconditions** | User has access to property (allowedPropertyIds check) |
-| **Steps** | Select property → view supply items with quantities in base units |
-| **Postconditions** | Read-only display; low-stock indicators |
+| **Steps** | Select property → view linked locations, unbilled lines, recent moves |
+| **Postconditions** | No property on-hand inventory UI; replenish / return / transfer for billing |
 | **Audit** | None |
-| **Billing** | None |
+| **Billing** | Unbilled lines drive invoices |
 
-#### PROP-3: Set reorder points per property
+#### PROP-3: ~~Set reorder points per property~~ (removed)
 
-| | |
-|---|---|
-| **Preconditions** | Supply Item exists at property |
-| **Steps** | Set reorderPoint and reorderQuantity for PropertyStock |
-| **Postconditions** | Low-stock alerts and shopping list reflect new thresholds |
-| **Audit** | Updated timestamp |
-| **Billing** | None |
+Property-level reorder / PropertyStock monitoring is **out of v1**. Use **SL-6** location supply-item thresholds instead.
 
 ---
 
@@ -663,18 +673,18 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | **Actor** | Team Owner or Member with inventory access |
 | **Preconditions** | Property and stock location linked; SKU has **sufficient StockOnHand** (hard block if insufficient) |
 | **Steps** | See [Section 5b UI walkthrough](#5b-end-to-end-ui-walkthrough) |
-| **Postconditions** | Replenishment + lines created; StockOnHand decremented; PropertyStock incremented; bill-back recorded as unbilled |
-| **Audit** | StockTransaction rows (replenishment_out at location, replenishment_in at property) |
+| **Postconditions** | Replenishment + lines created; StockOnHand decremented (pack units); bill-back recorded as unbilled via ReplenishmentLine |
+| **Audit** | StockTransaction rows (replenishment_out at location only) |
 | **Billing** | ReplenishmentLine.billBackAmount queued for next invoice on client's schedule |
 
 #### REP-2: Reverse replenishment (property → stock location)
 
 | | |
 |---|---|
-| **Preconditions** | Original replenishment exists; property has sufficient PropertyStock |
-| **Steps** | Initiate return → specify base qty → confirm |
-| **Postconditions** | Opposite stock movements; credit recorded as unbilled negative line |
-| **Audit** | StockTransaction rows |
+| **Preconditions** | Original replenishment line exists with remaining unreverted base qty |
+| **Steps** | Initiate return against a replenish line → specify base qty → confirm |
+| **Postconditions** | StockOnHand incremented; credit recorded as unbilled negative line (`reversesLineId`) |
+| **Audit** | StockTransaction rows (replenishment_in at location) |
 | **Billing** | Credit applied on the **next invoice** for that client (no separate credit-note document) |
 
 #### REP-3: Inter-property transfer (via stock location)
@@ -682,7 +692,7 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 | | |
 |---|---|
 | **Actor** | Team Owner or Member with inventory access |
-| **Preconditions** | Both properties in same team; at least one stock location for the pass-through; sufficient PropertyStock at source; after first leg, sufficient StockOnHand for second leg (hard block if not) |
+| **Preconditions** | Both properties in same team; at least one stock location for the pass-through; sufficient **unreverted replenishment** at source (FIFO allocate lines); after return legs, sufficient StockOnHand for destination replenish (hard block if not) |
 | **Steps** | Select source property, destination property, supply item, quantity, and **pass-through stock location** (required if multiple). Select SKU when converting into/out of location stock. System posts two normal transactions in sequence. |
 | **Postconditions** | Two ledger legs: (1) Property A → Stock Location (return), (2) Stock Location → Property B (replenishment). No direct property↔property quantity change. |
 | **Audit** | Same StockTransaction types as a standalone return + standalone replenishment, preferably linked by a shared transfer reference ID |
@@ -778,26 +788,28 @@ This section is the canonical example for validation. All implementation of cata
 ### Phase 1: Setting up the catalogue
 
 1. PM navigates to **Catalogue** and creates a Supply Item: **"Coffee Pod"** (base unit: **pod**).
-2. PM adds **SKU A** under Coffee Pod at Central Supply stock location:
+2. PM adds **SKU A** under Coffee Pod (team-shared):
    - Name: Kirkland Pacific Bold
    - Purchase price: $48.00
    - Pack size: 100
    - System displays unit rate: **$0.48 / pod**
+   - Stocks it at **Central Supply** (StockOnHand = 0) and receives packs when purchased
 3. PM adds **SKU B**:
    - Name: Solimo Medium Roast
    - Purchase price: $32.00
    - Pack size: 80
    - System displays unit rate: **$0.40 / pod**
+   - Same SKU can later be stocked at additional locations without recreating the catalogue row
 
 ### Phase 2: Replenishing a property
 
-1. PM sees **Property A** is low on Coffee Pods (PropertyStock below reorder point).
+1. PM sees **Coffee Pods** low at Central Supply (location low-stock / shopping list).
 2. PM starts a **Replenishment**. App asks: *"Which stock location are you pulling from?"*
 3. PM selects **Central Supply** and chooses **SKU A (Kirkland)** from the shelf.
 4. PM enters **20 pods** to deploy to Property A.
 5. System automatically:
    - Decrements **0.2 packs** from Central Supply StockOnHand (20 ÷ 100)
-   - Adds **20 pods** to Property A PropertyStock for Coffee Pod
+   - Records bill-back on ReplenishmentLine (unbilled); no property on-hand balance
    - Records bill-back: $0.48 × 20 = **$9.60** on ReplenishmentLine (status: unbilled)
 
 ### Phase 3: Scheduled client billing
@@ -823,8 +835,7 @@ sequenceDiagram
   PM->>Prop: Start Replenishment
   PM->>SL: Select SKU, enter 20 pods
   SL->>Ledger: Decrement 0.2 packs
-  Prop->>Ledger: Increment 20 pods
-  Ledger->>Bill: Record bill-back $9.60
+  Ledger->>Bill: Record bill-back $9.60 on ReplenishmentLine
   Note over Bill: Client billing period ends
   Bill->>Bill: Aggregate unbilled replenishments per Client
   Bill->>Client: Create draft Invoice broken down by property
@@ -886,7 +897,7 @@ Rules that implementation must not guess:
 | Rule | Detail |
 |------|--------|
 | **BR-1 Billable events** | **Location → Property** (replenishment) **bills** the property's client. **Property → Location** (return) **credits** the property's client. Receipt into a stock location from purchase, and stock adjustments, are not client-billable. |
-| **BR-2 Bill-back pricing** | `billBackAmount = baseQtyDeployed × unitRate × (1 + effectiveMarkup/100)` where `unitRate = purchasePrice / packSize` and `effectiveMarkup = property.markupPercentage ?? client.defaultMarkupPercentage ?? 0`. Credits use the same formula against the **source** property's effective markup and the SKU unit rate used for the return leg. |
+| **BR-2 Bill-back pricing** | `billBackAmount = baseQtyDeployed × unitRate × (1 + effectiveMarkup/100)` where `unitRate = stockOnHand.lastUnitRate ?? sku.unitRate` and `effectiveMarkup = property.markupPercentage ?? client.defaultMarkupPercentage ?? 0`. Credits use the same formula against the **source** property's effective markup and the unit rate used for the return leg. |
 | **BR-3 Break-pack math** | Stock location decrement (packs) = `baseQtyDeployed / sku.packSize`. Fractional packs allowed. |
 | **BR-4 Property stock increment** | Always in base units of the Supply Item. |
 | **BR-5 Unit rate snapshot** | ReplenishmentLine / credit lines store unit rate and effective markup at time of transaction (later price/markup changes do not alter past lines). |
@@ -905,7 +916,7 @@ Rules that implementation must not guess:
 | **BR-18 Invoice artifacts** | Sending an invoice requires PDF + email HTML; CSV export is available separately. |
 | **BR-19 Multi-team** | Users may belong to multiple teams; v1 ships membership schema and team-switching UI. |
 | **BR-20 Plan downgrade** | When an org/team moves to a lower plan (or trial ends) and current usage exceeds new limits: block creating *new* over-limit resources; existing excess resources remain readable/editable but creation is gated until usage is within limits (or user upgrades). Exact UX copy TBD; never silently delete customer data. |
-| **BR-21 Concurrent stock posts** | Ledger posts that change StockOnHand or PropertyStock must use row-level locking (or equivalent serializable transaction) so two concurrent replenishments cannot both pass the sufficiency check. |
+| **BR-21 Concurrent stock posts** | Ledger posts that change StockOnHand must use row-level locking (or equivalent serializable transaction) so two concurrent replenishments cannot both pass the sufficiency check. |
 | **BR-22 Schema integrity** | Prefer DB enums for fixed vocabularies; unique constraints where business identity requires them (e.g. `@@unique([teamId, invoiceNumber])`); formal Prisma relations + explicit `onDelete` for all FKs. |
 | **BR-23 Signup** | New users can sign up and start without completing payment. Collect minimal required fields only. |
 
@@ -947,7 +958,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | E2-9 | As a PM, I want to receive purchased stock at a stock location, so that central inventory is accurate. | `[new]` |
 | E2-10 | As a PM, I want to adjust stock at a location with a reason, so that I can correct discrepancies. | `[modify]` |
 | E2-11 | As a PM, I want to archive supply items and SKUs with history, so that past replenishments remain traceable. | `[new]` |
-| E2-12 | As a PM, I want to see low-stock SKUs at a location, so that I know what to reorder. | `[modify]` |
+| E2-12 | As a PM, I want to see low-stock supply items at a location, so that I know what to reorder. | `[modify]` |
 
 ### E3: Property setup
 
@@ -955,9 +966,9 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 |----|-------|-----|
 | E3-1 | As a team owner, I want to create properties within my plan limit, so that I track each rental unit. | `[existing]` |
 | E3-2 | As a PM, I want to assign a billing client to each property, so that scheduled invoices target the right contact. | `[new]` |
-| E3-3 | As a PM, I want to view property stock by supply item in base units, so that I see what each property has. | `[modify]` |
-| E3-4 | As a PM, I want to set reorder points per property per supply item, so that low-stock alerts are property-specific. | `[modify]` |
-| E3-5 | As a PM, I want low-stock indicators to prompt replenishment, so that properties don't run out. | `[modify]` |
+| E3-3 | As a PM, I want to view a property as a billing destination (unbilled + moves), so that I manage client charges without tracking property inventory. | `[modify]` |
+| E3-4 | ~~Set reorder points per property~~ — **removed**; use location supply-item thresholds (SL-6). | `[remove]` |
+| E3-5 | As a PM, I want location low-stock indicators to prompt buying / replenish judgment, so that shelves don't run out. | `[modify]` |
 | E3-6 | As a PM, I want to transfer stock between properties via a stock location, so that each leg bills or refunds the correct property's client. | `[modify]` |
 | E3-7 | As a PM, I want to set markup per property (defaulting from the client), so that bill-back reflects my pricing. | `[new]` |
 
@@ -1133,7 +1144,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
 2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
-4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (PropertyStock + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5)
+4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (StockOnHand + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5; PropertyStock dropped in 1.1)
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
 6. **Inter-property transfer** as linked return + replenish (both billable) — **Done** (`createInterPropertyTransfer` + `POST /api/replenishments/transfers`; shared `transferGroupId`; Stock-page Transfer UI)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
@@ -1179,3 +1190,5 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.7 | 2026-07-23 | Probable | Appendix A #5: Replenishment + return + unbilled credits queue; Client/Property markup fields; legacy Transfer/bill-to UI removed |
 | 0.8 | 2026-07-23 | Probable | Appendix A #6: Inter-property transfer as linked return + replenish (`transferGroupId`); Stock Transfer UI |
 | 0.9 | 2026-07-28 | Probable | SL-4 Receive: purchase price (defaults to last) + purchase date; updates SKU unitRate; receipt audit on StockTransaction |
+| 1.0 | 2026-07-28 | Probable | SKUs team-shared; StockOnHand per (sku, location) with lastPurchasePrice/lastUnitRate; bill-back prefers location last rate |
+| 1.1 | 2026-07-28 | Probable | Drop PropertyStock; properties billing-only; LocationSupplyThreshold low stock per supply item@location; transfers allocate unreverted replenish lines |

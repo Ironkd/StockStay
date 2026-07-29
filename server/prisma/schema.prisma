@@ -108,7 +108,6 @@ model Team {
   stockLocations StockLocation[]
   supplyItems    SupplyItem[]
   skus           Sku[]
-  propertyStocks PropertyStock[]
   stockTransactions StockTransaction[]
   replenishments Replenishment[]
   clients        Client[]
@@ -150,7 +149,6 @@ model Property {
   team           Team                    @relation(fields: [teamId], references: [id])
   client         Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   stockLocations StockLocationProperty[]
-  propertyStocks PropertyStock[]
   replenishments Replenishment[]
 
   @@index([teamId])
@@ -178,10 +176,11 @@ model StockLocation {
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
 
-  team       Team                    @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  properties StockLocationProperty[]
-  skus       Sku[]
-  replenishments Replenishment[]
+  team               Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  properties         StockLocationProperty[]
+  stockOnHands       StockOnHand[]
+  supplyThresholds   LocationSupplyThreshold[]
+  replenishments     Replenishment[]
 
   @@unique([teamId, name])
   @@index([teamId])
@@ -214,10 +213,10 @@ model SupplyItem {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
-  team     Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  baseUnit UnitOfMeasure @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
-  skus     Sku[]
-  propertyStocks PropertyStock[]
+  team               Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  baseUnit           UnitOfMeasure             @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+  skus               Sku[]
+  locationThresholds LocationSupplyThreshold[]
   replenishmentLines ReplenishmentLine[]
 
   @@unique([teamId, name])
@@ -228,40 +227,45 @@ model SupplyItem {
 }
 
 model Sku {
-  id              String    @id @default(uuid())
-  teamId          String
-  supplyItemId    String
-  stockLocationId String
-  name            String
-  supplier        String?
-  packSize        Decimal   @db.Decimal(18, 6)
-  purchasePrice   Decimal   @db.Decimal(18, 4)
-  unitRate        Decimal   @db.Decimal(18, 6)
-  archivedAt      DateTime?
-  createdAt       DateTime  @default(now())
-  updatedAt       DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  teamId        String
+  supplyItemId  String
+  name          String
+  supplier      String?
+  packSize      Decimal   @db.Decimal(18, 6)
+  purchasePrice Decimal   @db.Decimal(18, 4)
+  unitRate      Decimal   @db.Decimal(18, 6)
+  archivedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  team          Team          @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  supplyItem    SupplyItem    @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
-  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
-  stockOnHand   StockOnHand?
+  team               Team                @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  supplyItem         SupplyItem          @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
+  stockOnHands       StockOnHand[]
   replenishmentLines ReplenishmentLine[]
 
-  @@unique([stockLocationId, name])
+  @@unique([teamId, name])
   @@index([teamId])
   @@index([supplyItemId])
-  @@index([stockLocationId])
   @@index([archivedAt])
 }
 
 model StockOnHand {
-  id        String   @id @default(uuid())
-  skuId     String   @unique
-  quantity  Decimal  @default(0) @db.Decimal(18, 6)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                String   @id @default(uuid())
+  skuId             String
+  stockLocationId   String
+  quantity          Decimal  @default(0) @db.Decimal(18, 6)
+  lastPurchasePrice Decimal? @db.Decimal(18, 4)
+  lastUnitRate      Decimal? @db.Decimal(18, 6)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
-  sku Sku @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  sku           Sku           @relation(fields: [skuId], references: [id], onDelete: Cascade)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Restrict)
+
+  @@unique([skuId, stockLocationId])
+  @@index([skuId])
+  @@index([stockLocationId])
 }
 
 enum StockEntityType {
@@ -277,24 +281,21 @@ enum StockTransactionType {
   invoice
 }
 
-model PropertyStock {
+/** Reorder thresholds per Supply Item at a stock location (base units). */
+model LocationSupplyThreshold {
   id               String   @id @default(uuid())
-  teamId           String
-  propertyId       String
+  stockLocationId  String
   supplyItemId     String
-  quantity         Decimal  @default(0) @db.Decimal(18, 6)
   reorderPoint     Decimal  @default(0) @db.Decimal(18, 6)
   reorderQuantity  Decimal  @default(0) @db.Decimal(18, 6)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  team       Team       @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  property   Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
-  supplyItem SupplyItem @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
+  stockLocation StockLocation @relation(fields: [stockLocationId], references: [id], onDelete: Cascade)
+  supplyItem    SupplyItem    @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
 
-  @@unique([propertyId, supplyItemId])
-  @@index([teamId])
-  @@index([propertyId])
+  @@unique([stockLocationId, supplyItemId])
+  @@index([stockLocationId])
   @@index([supplyItemId])
 }
 

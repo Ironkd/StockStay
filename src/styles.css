@@ -2219,41 +2219,62 @@ button.secondary:hover {
 
 .property-tabs {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   margin-bottom: 20px;
   flex-wrap: wrap;
-  border-bottom: 2px solid rgba(148, 163, 184, 0.3);
-  padding-bottom: 8px;
+  border-bottom: 2px solid rgba(148, 163, 184, 0.35);
+  padding-bottom: 0;
 }
 
-.property-tab {
+.property-tab,
+button.property-tab {
   border: none;
-  background: rgba(248, 250, 252, 0.8);
+  background: transparent;
   color: #64748b;
-  padding: 10px 18px;
-  border-radius: 10px 10px 0 0;
+  padding: 10px 16px;
+  border-radius: 0;
   font-size: 13px;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.15s ease;
-  display: flex;
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+  display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  border-bottom: 3px solid transparent;
+  border-bottom: 2px solid transparent;
   margin-bottom: -2px;
+  box-shadow: none;
+  filter: none;
+  transform: none;
 }
 
-.property-tab:hover {
-  background: rgba(241, 245, 249, 0.9);
+.property-tab:hover,
+button.property-tab:hover {
+  background: rgba(15, 23, 42, 0.03);
   color: #0f172a;
+  box-shadow: none;
+  filter: none;
+  transform: none;
 }
 
-.property-tab.active {
-  background: rgba(255, 255, 255, 0.98);
+.property-tab.active,
+button.property-tab.active {
+  background: transparent;
   color: #2563eb;
   border-bottom-color: #2563eb;
   font-weight: 600;
-  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.15);
+  box-shadow: none;
+  filter: none;
+  transform: none;
+}
+
+.property-tab.active:hover,
+button.property-tab.active:hover {
+  background: rgba(37, 99, 235, 0.04);
+  color: #2563eb;
+  box-shadow: none;
+  filter: none;
+  transform: none;
 }
 
 .tab-count {

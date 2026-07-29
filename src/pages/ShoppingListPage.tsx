@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { propertyStocksApi } from "../services/catalogueApi";
-import type { PropertyStock } from "../types";
+import { locationSupplyThresholdsApi } from "../services/catalogueApi";
+import type { LocationLowStockRow } from "../types";
 
 export const ShoppingListPage: React.FC = () => {
-  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
+  const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
@@ -13,10 +13,10 @@ export const ShoppingListPage: React.FC = () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await propertyStocksApi.getAll();
-      setPropertyStocks(data);
+      const data = await locationSupplyThresholdsApi.listLowStock();
+      setLowStock(data);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load stock");
+      setError(err instanceof Error ? err.message : "Failed to load low stock");
     } finally {
       setLoading(false);
     }
@@ -26,7 +26,6 @@ export const ShoppingListPage: React.FC = () => {
     refresh();
   }, []);
 
-  // Refetch when user returns to this tab so items drop off after replenishing elsewhere
   useEffect(() => {
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") refresh();
@@ -36,10 +35,7 @@ export const ShoppingListPage: React.FC = () => {
   }, []);
 
   const byCategory = useMemo(() => {
-    const lowStock = propertyStocks.filter(
-      (row) => Number(row.quantity) <= Number(row.reorderPoint)
-    );
-    const groups: Record<string, PropertyStock[]> = {};
+    const groups: Record<string, LocationLowStockRow[]> = {};
     for (const row of lowStock) {
       const cat = row.supplyItem?.category?.trim() || "Uncategorized";
       if (!groups[cat]) groups[cat] = [];
@@ -54,7 +50,7 @@ export const ShoppingListPage: React.FC = () => {
       a.localeCompare(b, undefined, { sensitivity: "base" })
     );
     return { groups, order };
-  }, [propertyStocks]);
+  }, [lowStock]);
 
   if (loading) {
     return (
@@ -84,21 +80,18 @@ export const ShoppingListPage: React.FC = () => {
       <div className="shopping-list-header">
         <h2>Shopping List</h2>
         <p className="shopping-list-subtitle">
-          Property stock at or below reorder point, grouped by category. Replenish from a
-          stock location to clear items off the list.
+          Supply items at stock locations at or below reorder point. Receive packs at the
+          location to clear items off the list.
         </p>
-        <button
-          type="button"
-          className="clear-button"
-          onClick={() => navigate("/stock")}
-        >
+        <button type="button" className="clear-button" onClick={() => navigate("/stock")}>
           View Stock
         </button>
       </div>
 
       {totalLowStock === 0 ? (
         <div className="empty-state">
-          No items on the shopping list. All property stock is above reorder point.
+          No items on the shopping list. Set reorder points on supply items at a stock
+          location, or receive stock to raise on-hand levels.
         </div>
       ) : (
         <div className="shopping-list-by-category">
@@ -109,14 +102,14 @@ export const ShoppingListPage: React.FC = () => {
                 <h3 className="shopping-list-category-title">{category}</h3>
                 <ul className="shopping-list-items">
                   {list.map((row) => {
-                    const quantity = Number(row.quantity);
+                    const onHand = Number(row.onHandBase);
                     const reorderPoint = Number(row.reorderPoint);
-                    const reorderQuantity = Number(row.reorderQuantity);
-                    const need = Math.max(
-                      0,
-                      reorderQuantity > 0 ? reorderQuantity : reorderPoint - quantity
-                    );
-                    const isOut = quantity <= 0;
+                    const need = Number(row.suggestedBuyBase) || 0;
+                    const unit =
+                      row.supplyItem?.baseUnit?.code ||
+                      row.supplyItem?.baseUnit?.name ||
+                      "units";
+                    const isOut = onHand <= 0;
                     return (
                       <li key={row.id} className="shopping-list-item">
                         <span className="shopping-list-item-name">
@@ -128,25 +121,24 @@ export const ShoppingListPage: React.FC = () => {
                             role="link"
                             tabIndex={0}
                             onClick={() =>
-                              row.propertyId && navigate(`/properties/${row.propertyId}`)
+                              row.stockLocationId &&
+                              navigate(`/stock/${row.stockLocationId}`)
                             }
-                            style={{ cursor: row.propertyId ? "pointer" : undefined }}
+                            style={{ cursor: row.stockLocationId ? "pointer" : undefined }}
                           >
-                            {row.property?.name ?? "No property"}
+                            {row.stockLocation?.name ?? "Location"}
                           </span>
                           {" · "}
-                          Current: {quantity}
+                          On hand: {onHand} {unit}
                           {reorderPoint > 0 && <> · Reorder at {reorderPoint}</>}
                           {need > 0 && (
                             <span
                               className={
-                                isOut
-                                  ? "shopping-list-need out"
-                                  : "shopping-list-need"
+                                isOut ? "shopping-list-need out" : "shopping-list-need"
                               }
                             >
                               {" "}
-                              · Need {need}
+                              · Need {need} {unit}
                             </span>
                           )}
                         </span>

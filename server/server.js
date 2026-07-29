@@ -29,7 +29,7 @@ import {
 import {
   receiveStock,
   adjustStockOnHand,
-  propertyStockOps,
+  locationSupplyThresholdOps,
   stockTransactionOps,
 } from "./stockLedger.js";
 import {
@@ -40,6 +40,7 @@ import {
   getReturnableQty,
   listReplenishments,
   listUnbilledLines,
+  listUnrevertedLinesForPropertySupply,
 } from "./replenishment.js";
 import { createCatalogueAuth, mapStockDomainError } from "./middleware/catalogueAuth.js";
 import { computeUnitRate } from "./decimalUtil.js";
@@ -1320,18 +1321,12 @@ app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res)
       return res.status(400).json({ message: "SKU name is required." });
     }
     const supplyItemId = typeof req.body?.supplyItemId === "string" ? req.body.supplyItemId : "";
-    const stockLocationId =
-      typeof req.body?.stockLocationId === "string" ? req.body.stockLocationId : "";
-    if (!supplyItemId || !stockLocationId) {
-      return res.status(400).json({ message: "supplyItemId and stockLocationId are required." });
+    if (!supplyItemId) {
+      return res.status(400).json({ message: "supplyItemId is required." });
     }
     const supplyItem = await supplyItemOps.findById(supplyItemId);
     if (!supplyItem || supplyItem.teamId !== req.currentUser.teamId || supplyItem.archivedAt) {
       return res.status(400).json({ message: "Invalid or archived supply item." });
-    }
-    const location = await stockLocationOps.findById(stockLocationId);
-    if (!location || location.teamId !== req.currentUser.teamId || location.archivedAt) {
-      return res.status(400).json({ message: "Invalid or archived stock location." });
     }
     const packSize = parseDecimalInput(req.body?.packSize, "packSize");
     if (packSize.error) return res.status(400).json({ message: packSize.error });
@@ -1344,10 +1339,17 @@ app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res)
       return res.status(400).json({ message: "purchasePrice cannot be negative." });
     }
     const unitRate = computeUnitRate(purchasePrice.value, packSize.value).toString();
+    const stockLocationId =
+      typeof req.body?.stockLocationId === "string" ? req.body.stockLocationId.trim() : "";
+    if (stockLocationId) {
+      const location = await stockLocationOps.findById(stockLocationId);
+      if (!location || location.teamId !== req.currentUser.teamId || location.archivedAt) {
+        return res.status(400).json({ message: "Invalid or archived stock location." });
+      }
+    }
     const sku = await skuOps.create({
       teamId: req.currentUser.teamId,
       supplyItemId,
-      stockLocationId,
       name,
       supplier:
         typeof req.body?.supplier === "string" ? req.body.supplier.trim() || null : null,
@@ -1355,10 +1357,15 @@ app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res)
       purchasePrice: purchasePrice.value,
       unitRate,
     });
+    if (stockLocationId) {
+      await skuOps.ensureStockOnHand(sku.id, stockLocationId);
+      const withSoh = await skuOps.findById(sku.id, { stockLocationId });
+      return res.status(201).json(withSoh);
+    }
     res.status(201).json(sku);
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      return res.status(409).json({ message: "A SKU with this name already exists at this location." });
+      return res.status(409).json({ message: "A SKU with this name already exists." });
     }
     console.error("Error creating SKU:", error);
     res.status(500).json({ message: "Error creating SKU" });
@@ -1432,15 +1439,39 @@ app.patch("/api/skus/:id", authenticateToken, requireCatalogueWrite, async (req,
     res.json(updated);
   } catch (error) {
     if (isUniqueConstraintError(error)) {
-      return res.status(409).json({ message: "A SKU with this name already exists at this location." });
+      return res.status(409).json({ message: "A SKU with this name already exists." });
     }
     console.error("Error updating SKU:", error);
     res.status(500).json({ message: "Error updating SKU" });
   }
 });
 
+app.post("/api/skus/:id/stock-locations/:locationId", authenticateToken, requireCatalogueWrite, async (req, res) => {
+  try {
+    const sku = await skuOps.findById(req.params.id);
+    if (!sku || sku.teamId !== req.currentUser.teamId) {
+      return res.status(404).json({ message: "SKU not found." });
+    }
+    const location = await stockLocationOps.findById(req.params.locationId);
+    if (!location || location.teamId !== req.currentUser.teamId || location.archivedAt) {
+      return res.status(400).json({ message: "Invalid or archived stock location." });
+    }
+    await skuOps.ensureStockOnHand(sku.id, location.id);
+    const updated = await skuOps.findById(sku.id, { stockLocationId: location.id });
+    res.status(201).json(updated);
+  } catch (error) {
+    console.error("Error stocking SKU at location:", error);
+    res.status(500).json({ message: "Error stocking SKU at location" });
+  }
+});
+
 app.post("/api/skus/:id/receive", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
+    const stockLocationId =
+      typeof req.body?.stockLocationId === "string" ? req.body.stockLocationId.trim() : "";
+    if (!stockLocationId) {
+      return res.status(400).json({ message: "stockLocationId is required." });
+    }
     const qty = parseDecimalInput(req.body?.quantity, "quantity");
     if (qty.error) return res.status(400).json({ message: qty.error });
     if (!(qty.value > 0)) {
@@ -1464,12 +1495,13 @@ app.post("/api/skus/:id/receive", authenticateToken, requireCatalogueWrite, asyn
     const result = await receiveStock({
       teamId: req.currentUser.teamId,
       skuId: req.params.id,
+      stockLocationId,
       packQty: qty.value,
       purchasePrice,
       purchasedAt,
       userId: req.currentUser.id,
     });
-    const sku = await skuOps.findById(req.params.id);
+    const sku = await skuOps.findById(req.params.id, { stockLocationId });
     res.status(201).json({ ...result, sku });
   } catch (error) {
     if (mapStockDomainError(res, error)) return;
@@ -1480,6 +1512,11 @@ app.post("/api/skus/:id/receive", authenticateToken, requireCatalogueWrite, asyn
 
 app.post("/api/skus/:id/adjust", authenticateToken, requireCatalogueWrite, async (req, res) => {
   try {
+    const stockLocationId =
+      typeof req.body?.stockLocationId === "string" ? req.body.stockLocationId.trim() : "";
+    if (!stockLocationId) {
+      return res.status(400).json({ message: "stockLocationId is required." });
+    }
     const delta = parseDecimalInput(req.body?.quantityDelta, "quantityDelta");
     if (delta.error) return res.status(400).json({ message: delta.error });
     if (delta.value === 0) {
@@ -1488,11 +1525,12 @@ app.post("/api/skus/:id/adjust", authenticateToken, requireCatalogueWrite, async
     const result = await adjustStockOnHand({
       teamId: req.currentUser.teamId,
       skuId: req.params.id,
+      stockLocationId,
       quantityDelta: delta.value,
       reason: typeof req.body?.reason === "string" ? req.body.reason : null,
       userId: req.currentUser.id,
     });
-    const sku = await skuOps.findById(req.params.id);
+    const sku = await skuOps.findById(req.params.id, { stockLocationId });
     res.json({ ...result, sku });
   } catch (error) {
     if (mapStockDomainError(res, error)) return;
@@ -1501,13 +1539,61 @@ app.post("/api/skus/:id/adjust", authenticateToken, requireCatalogueWrite, async
   }
 });
 
-app.get("/api/property-stocks", authenticateToken, requireCatalogueRead, async (req, res) => {
+app.get(
+  "/api/stock-locations/:locationId/supply-thresholds",
+  authenticateToken,
+  requireCatalogueRead,
+  async (req, res) => {
+    try {
+      const rows = await locationSupplyThresholdOps.listByLocation(
+        req.currentUser.teamId,
+        req.params.locationId
+      );
+      if (rows == null) {
+        return res.status(404).json({ message: "Stock location not found" });
+      }
+      res.json(rows);
+    } catch (error) {
+      if (mapStockDomainError(res, error)) return;
+      console.error("Error fetching supply thresholds:", error);
+      res.status(500).json({ message: "Error fetching supply thresholds" });
+    }
+  }
+);
+
+app.put(
+  "/api/stock-locations/:locationId/supply-thresholds",
+  authenticateToken,
+  requireInventoryWrite,
+  async (req, res) => {
+    try {
+      const { supplyItemId, reorderPoint, reorderQuantity } = req.body || {};
+      if (!supplyItemId) {
+        return res.status(400).json({ message: "supplyItemId is required." });
+      }
+      const row = await locationSupplyThresholdOps.upsert(
+        req.currentUser.teamId,
+        req.params.locationId,
+        supplyItemId,
+        { reorderPoint, reorderQuantity }
+      );
+      res.json(row);
+    } catch (error) {
+      if (mapStockDomainError(res, error)) return;
+      console.error("Error upserting supply threshold:", error);
+      res.status(500).json({ message: "Error updating supply threshold" });
+    }
+  }
+);
+
+app.get("/api/location-low-stock", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
-    const rows = await propertyStockOps.findAllByTeam(req.currentUser.teamId);
+    const rows = await locationSupplyThresholdOps.listLowStock(req.currentUser.teamId);
     res.json(rows);
   } catch (error) {
-    console.error("Error fetching property stocks:", error);
-    res.status(500).json({ message: "Error fetching property stocks" });
+    if (mapStockDomainError(res, error)) return;
+    console.error("Error fetching location low stock:", error);
+    res.status(500).json({ message: "Error fetching location low stock" });
   }
 });
 
@@ -1517,6 +1603,8 @@ app.get("/api/stock-transactions", authenticateToken, requireCatalogueRead, asyn
       entityType: typeof req.query.entityType === "string" ? req.query.entityType : undefined,
       entityId: typeof req.query.entityId === "string" ? req.query.entityId : undefined,
       skuId: typeof req.query.skuId === "string" ? req.query.skuId : undefined,
+      stockLocationId:
+        typeof req.query.stockLocationId === "string" ? req.query.stockLocationId : undefined,
       postingId: typeof req.query.postingId === "string" ? req.query.postingId : undefined,
       transactionType:
         typeof req.query.transactionType === "string" ? req.query.transactionType : undefined,
@@ -1615,6 +1703,34 @@ app.post("/api/replenishments/returns", authenticateToken, requireInventoryWrite
     res.status(500).json({ message: "Error creating return" });
   }
 });
+
+app.get(
+  "/api/replenishments/unreverted",
+  authenticateToken,
+  requireInventoryRead,
+  async (req, res) => {
+    try {
+      const propertyId = typeof req.query.propertyId === "string" ? req.query.propertyId : "";
+      const supplyItemId =
+        typeof req.query.supplyItemId === "string" ? req.query.supplyItemId : "";
+      if (!propertyId || !supplyItemId) {
+        return res
+          .status(400)
+          .json({ message: "propertyId and supplyItemId query params are required." });
+      }
+      const result = await listUnrevertedLinesForPropertySupply(
+        req.currentUser.teamId,
+        propertyId,
+        supplyItemId
+      );
+      res.json(result);
+    } catch (error) {
+      if (mapStockDomainError(res, error)) return;
+      console.error("Error listing unreverted lines:", error);
+      res.status(500).json({ message: "Error listing unreverted lines" });
+    }
+  }
+);
 
 app.get("/api/replenishments/lines/:id/returnable", authenticateToken, requireInventoryRead, async (req, res) => {
   try {

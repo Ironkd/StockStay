@@ -10,14 +10,14 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
-import { propertyStocksApi, skusApi } from "../services/catalogueApi";
+import { locationSupplyThresholdsApi, skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
-import type { PropertyStock, Sku, UnbilledLine } from "../types";
+import type { LocationLowStockRow, Sku, UnbilledLine } from "../types";
 
 export const HomePage: React.FC = () => {
   const { invoices } = useInvoices();
-  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
+  const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const [skus, setSkus] = useState<Sku[]>([]);
   const navigate = useNavigate();
@@ -25,19 +25,19 @@ export const HomePage: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      propertyStocksApi.getAll(),
+      locationSupplyThresholdsApi.listLowStock(),
       replenishmentApi.listUnbilled(),
       skusApi.getAll(),
     ])
-      .then(([stocks, unbilled, allSkus]) => {
+      .then(([lows, unbilled, allSkus]) => {
         if (cancelled) return;
-        setPropertyStocks(stocks);
+        setLowStock(lows);
         setUnbilledLines(unbilled);
         setSkus(allSkus);
       })
       .catch(() => {
         if (cancelled) return;
-        setPropertyStocks([]);
+        setLowStock([]);
         setUnbilledLines([]);
         setSkus([]);
       });
@@ -47,14 +47,9 @@ export const HomePage: React.FC = () => {
   }, []);
 
   const stats = useMemo(() => {
-    const lowPropertyStock = propertyStocks.filter(
-      (ps) => Number(ps.quantity) <= Number(ps.reorderPoint)
-    );
-
-    // Property stock by supply item category (top 5 by quantity)
-    const categoryData = propertyStocks.reduce((acc, ps) => {
-      const cat = ps.supplyItem?.category?.trim() || "Uncategorized";
-      acc[cat] = (acc[cat] || 0) + Number(ps.quantity);
+    const categoryData = lowStock.reduce((acc, row) => {
+      const cat = row.supplyItem?.category?.trim() || "Uncategorized";
+      acc[cat] = (acc[cat] || 0) + Number(row.onHandBase);
       return acc;
     }, {} as Record<string, number>);
     const categoryChart = Object.entries(categoryData)
@@ -62,11 +57,15 @@ export const HomePage: React.FC = () => {
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
-    const hasStockOnHand = skus.some(
-      (s) => s.stockOnHand && Number(s.stockOnHand.quantity) > 0
-    );
+    const hasStockOnHand = skus.some((s) => {
+      const hands = s.stockOnHands?.length
+        ? s.stockOnHands
+        : s.stockOnHand
+          ? [s.stockOnHand]
+          : [];
+      return hands.some((h) => Number(h.quantity) > 0);
+    });
 
-    // Overdue invoices
     const today = new Date();
     today.setHours(0, 0, 0, 0);
     const overdueInvoices = invoices
@@ -89,7 +88,7 @@ export const HomePage: React.FC = () => {
     const overdueTotal = overdueInvoices.reduce((sum, inv) => sum + inv.total, 0);
 
     return {
-      lowPropertyStockCount: lowPropertyStock.length,
+      lowStockCount: lowStock.length,
       unbilledCount: unbilledLines.length,
       hasStockOnHand,
       categoryChart,
@@ -97,23 +96,22 @@ export const HomePage: React.FC = () => {
       overdueTotal,
       overdueCount: overdueInvoices.length,
     };
-  }, [propertyStocks, unbilledLines, skus, invoices]);
+  }, [lowStock, unbilledLines, skus, invoices]);
 
   return (
     <div className="home-page">
       <h2>Dashboard</h2>
 
-      {/* Task-oriented stat cards */}
       <div className="stats-grid">
         <div
           className="stat-card warning clickable-stat-card"
-          onClick={() => navigate("/properties")}
+          onClick={() => navigate("/stock")}
           style={{ cursor: "pointer" }}
         >
           <div className="stat-icon">⚠️</div>
           <div className="stat-content">
-            <div className="stat-value">{stats.lowPropertyStockCount}</div>
-            <div className="stat-label">Properties Low on Stock</div>
+            <div className="stat-value">{stats.lowStockCount}</div>
+            <div className="stat-label">Location items low on stock</div>
           </div>
         </div>
         <div
@@ -142,10 +140,9 @@ export const HomePage: React.FC = () => {
         )}
       </div>
 
-      {/* Charts Row */}
       <div className="charts-row">
         <div className="chart-panel">
-          <h3>Property Stock by Category</h3>
+          <h3>Low stock by category</h3>
           {stats.categoryChart.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={stats.categoryChart}>
@@ -154,11 +151,11 @@ export const HomePage: React.FC = () => {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Bar dataKey="value" fill="#3b82f6" name="Qty on hand" />
+                <Bar dataKey="value" fill="#3b82f6" name="On hand (base)" />
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <div className="empty-state">No property stock yet</div>
+            <div className="empty-state">No low-stock items at locations</div>
           )}
         </div>
 

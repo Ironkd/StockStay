@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import type { Client, Property, PropertyStock, Sku, StockLocation } from "../types";
+import type { Client, Property, Sku, StockLocation } from "../types";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
@@ -9,7 +9,6 @@ import { StockFlowModal } from "./StockFlowModal";
 type Props = {
   properties: Property[];
   clients?: Client[];
-  propertyStocks: PropertyStock[];
   stockLocations?: StockLocation[];
   onClose: () => void;
   onSuccess: () => void;
@@ -18,7 +17,6 @@ type Props = {
 export const TransferStockModal: React.FC<Props> = ({
   properties,
   clients = [],
-  propertyStocks,
   stockLocations: stockLocationsProp,
   onClose,
   onSuccess,
@@ -30,6 +28,7 @@ export const TransferStockModal: React.FC<Props> = ({
   const [baseQty, setBaseQty] = useState("");
   const [locations, setLocations] = useState<StockLocation[]>(stockLocationsProp || []);
   const [skus, setSkus] = useState<Sku[]>([]);
+  const [availableBase, setAvailableBase] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -71,6 +70,7 @@ export const TransferStockModal: React.FC<Props> = ({
     setStockLocationId("");
     setSkuId("");
     setSkus([]);
+    setAvailableBase(null);
   }, [fromPropertyId, toPropertyId]);
 
   useEffect(() => {
@@ -93,13 +93,25 @@ export const TransferStockModal: React.FC<Props> = ({
   }, [stockLocationId]);
 
   const selectedSku = skus.find((s) => s.id === skuId);
-  const availablePropertyStock = useMemo(() => {
-    if (!fromPropertyId || !selectedSku) return null;
-    const row = propertyStocks.find(
-      (ps) => ps.propertyId === fromPropertyId && ps.supplyItemId === selectedSku.supplyItemId
-    );
-    return row ? Number(row.quantity) : 0;
-  }, [fromPropertyId, selectedSku, propertyStocks]);
+
+  useEffect(() => {
+    if (!fromPropertyId || !selectedSku?.supplyItemId) {
+      setAvailableBase(null);
+      return;
+    }
+    let cancelled = false;
+    replenishmentApi
+      .listUnreverted(fromPropertyId, selectedSku.supplyItemId)
+      .then((result) => {
+        if (!cancelled) setAvailableBase(Number(result.totalRemaining) || 0);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableBase(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [fromPropertyId, selectedSku?.supplyItemId]);
 
   const qty = Number(baseQty) || 0;
   const unitRate = selectedSku ? Number(selectedSku.unitRate) || 0 : 0;
@@ -123,8 +135,10 @@ export const TransferStockModal: React.FC<Props> = ({
       setError("Both properties need a billing client.");
       return;
     }
-    if (availablePropertyStock != null && qty > availablePropertyStock + 1e-9) {
-      setError(`Insufficient property stock (available ${availablePropertyStock.toFixed(2)}).`);
+    if (availableBase != null && qty > availableBase + 1e-9) {
+      setError(
+        `Insufficient unreverted replenishment at source (available ${availableBase.toFixed(2)}).`
+      );
       return;
     }
     setLoading(true);
@@ -225,9 +239,9 @@ export const TransferStockModal: React.FC<Props> = ({
           </label>
         </div>
 
-        {selectedSku && availablePropertyStock != null && (
+        {selectedSku && availableBase != null && (
           <p style={{ fontSize: "13px", color: "#64748b" }}>
-            Available at source: {availablePropertyStock.toFixed(2)} base units
+            Available to transfer (unreverted at source): {availableBase.toFixed(2)} base units
             {selectedSku.supplyItem ? ` (${selectedSku.supplyItem.name})` : ""}
           </p>
         )}

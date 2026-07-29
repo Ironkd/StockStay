@@ -63,6 +63,16 @@ export const App: React.FC = () => {
               </ProtectedRoute>
             }
           />
+          <Route
+            path="/stock/:locationId"
+            element={
+              <ProtectedRoute pageKey="inventory">
+                <Layout>
+                  <StockPage />
+                </Layout>
+              </ProtectedRoute>
+            }
+          />
           <Route path="/inventory" element={<Navigate to="/stock" replace />} />
           <Route
             path="/properties"

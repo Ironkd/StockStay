@@ -4,7 +4,6 @@ import type {
   Client,
   Property,
   PropertyFormValues,
-  PropertyStock,
   Replenishment,
   StockLocation,
   UnbilledLine,
@@ -16,7 +15,6 @@ import { ReturnStockModal } from "../components/ReturnStockModal";
 import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
-import { propertyStocksApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 
 export const PropertyDetailPage: React.FC = () => {
@@ -32,7 +30,6 @@ export const PropertyDetailPage: React.FC = () => {
 
   const [clients, setClients] = useState<Client[]>([]);
   const [stockLocations, setStockLocations] = useState<StockLocation[]>([]);
-  const [propertyStocks, setPropertyStocks] = useState<PropertyStock[]>([]);
   const [recentMoves, setRecentMoves] = useState<Replenishment[]>([]);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
 
@@ -50,18 +47,15 @@ export const PropertyDetailPage: React.FC = () => {
 
   const refreshAll = async () => {
     try {
-      const [stocks, locs, reps, unbilled] = await Promise.all([
-        propertyStocksApi.getAll(),
+      const [locs, reps, unbilled] = await Promise.all([
         stockLocationsApi.getAll(),
         replenishmentApi.list({ limit: 30 }),
         replenishmentApi.listUnbilled(),
       ]);
-      setPropertyStocks(stocks);
       setStockLocations(locs);
       setRecentMoves(reps);
       setUnbilledLines(unbilled);
     } catch {
-      setPropertyStocks([]);
       setStockLocations([]);
       setRecentMoves([]);
       setUnbilledLines([]);
@@ -77,11 +71,6 @@ export const PropertyDetailPage: React.FC = () => {
   const handleStockFlowSuccess = () => {
     refreshAll();
   };
-
-  const propertyStockRows = useMemo(
-    () => propertyStocks.filter((row) => row.propertyId === id),
-    [propertyStocks, id]
-  );
 
   const propertyMoves = useMemo(
     () => recentMoves.filter((r) => r.propertyId === id).slice(0, 15),
@@ -229,33 +218,16 @@ export const PropertyDetailPage: React.FC = () => {
 
       <section className="panel">
         <h3 style={{ marginTop: 0 }}>
-          Property stock{linkedLocations.length > 0 ? ` · linked to ${linkedLocations.map((l) => l.name).join(", ")}` : ""}
+          Billing destination
+          {linkedLocations.length > 0
+            ? ` · linked to ${linkedLocations.map((l) => l.name).join(", ")}`
+            : ""}
         </h3>
-        {propertyStockRows.length === 0 ? (
-          <div className="empty-state">
-            <h3>No stock deployed</h3>
-            <p>Replenish from a linked stock location to deploy items here.</p>
-          </div>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="inventory-table">
-              <thead>
-                <tr>
-                  <th>Supply item</th>
-                  <th>Qty (base units)</th>
-                </tr>
-              </thead>
-              <tbody>
-                {propertyStockRows.map((row) => (
-                  <tr key={row.id}>
-                    <td>{row.supplyItem?.name || "—"}</td>
-                    <td>{Number(row.quantity).toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
+          Properties track bill-back from replenish / return / transfer. On-hand and low-stock
+          alerts live at stock locations.
+          {linkedLocations.length === 0 ? " Link a stock location to deploy supplies here." : ""}
+        </p>
       </section>
 
       <section className="panel">
@@ -403,7 +375,6 @@ export const PropertyDetailPage: React.FC = () => {
         <TransferStockModal
           properties={properties}
           clients={clients}
-          propertyStocks={propertyStocks}
           stockLocations={stockLocations}
           onClose={() => setShowTransferModal(false)}
           onSuccess={handleStockFlowSuccess}

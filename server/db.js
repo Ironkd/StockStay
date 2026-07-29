@@ -677,32 +677,60 @@ function mapSupplyItem(row) {
   };
 }
 
-function mapSku(row) {
+function mapStockOnHand(row) {
   if (!row) return null;
   return {
-    ...row,
+    id: row.id,
+    skuId: row.skuId,
+    stockLocationId: row.stockLocationId,
+    quantity: decimalToString(row.quantity),
+    lastPurchasePrice:
+      row.lastPurchasePrice != null
+        ? decimalToString(row.lastPurchasePrice, { money: true })
+        : null,
+    lastUnitRate: row.lastUnitRate != null ? decimalToString(row.lastUnitRate) : null,
+    stockLocation: row.stockLocation
+      ? { id: row.stockLocation.id, name: row.stockLocation.name }
+      : undefined,
+  };
+}
+
+function mapSku(row, { stockLocationId } = {}) {
+  if (!row) return null;
+  const hands = Array.isArray(row.stockOnHands)
+    ? row.stockOnHands
+    : row.stockOnHand
+      ? [row.stockOnHand]
+      : [];
+  let stockOnHand;
+  if (stockLocationId) {
+    const match = hands.find((h) => h.stockLocationId === stockLocationId);
+    stockOnHand = mapStockOnHand(match);
+  } else if (hands.length === 1) {
+    stockOnHand = mapStockOnHand(hands[0]);
+  } else {
+    stockOnHand = undefined;
+  }
+  return {
+    id: row.id,
+    teamId: row.teamId,
+    supplyItemId: row.supplyItemId,
+    name: row.name,
+    supplier: row.supplier,
     packSize: decimalToString(row.packSize),
     purchasePrice: decimalToString(row.purchasePrice, { money: true }),
     unitRate: decimalToString(row.unitRate),
-    stockOnHand: row.stockOnHand
-      ? {
-          id: row.stockOnHand.id,
-          skuId: row.stockOnHand.skuId,
-          quantity: decimalToString(row.stockOnHand.quantity),
-        }
-      : undefined,
+    archivedAt: row.archivedAt,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    stockOnHand,
+    stockOnHands: hands.map(mapStockOnHand),
     supplyItem: row.supplyItem
       ? {
           id: row.supplyItem.id,
           name: row.supplyItem.name,
           category: row.supplyItem.category,
           baseUnitId: row.supplyItem.baseUnitId,
-        }
-      : undefined,
-    stockLocation: row.stockLocation
-      ? {
-          id: row.stockLocation.id,
-          name: row.stockLocation.name,
         }
       : undefined,
   };
@@ -867,59 +895,58 @@ export const skuOps = {
         teamId,
         ...(includeArchived ? {} : { archivedAt: null }),
         ...(supplyItemId ? { supplyItemId } : {}),
-        ...(stockLocationId ? { stockLocationId } : {}),
+        ...(stockLocationId
+          ? { stockOnHands: { some: { stockLocationId } } }
+          : {}),
       },
       include: {
-        stockOnHand: true,
+        stockOnHands: stockLocationId
+          ? {
+              where: { stockLocationId },
+              include: { stockLocation: { select: { id: true, name: true } } },
+            }
+          : {
+              include: { stockLocation: { select: { id: true, name: true } } },
+            },
         supplyItem: true,
-        stockLocation: true,
       },
       orderBy: { name: "asc" },
     });
-    return rows.map(mapSku);
+    return rows.map((row) => mapSku(row, { stockLocationId }));
   },
 
-  async findById(id) {
+  async findById(id, { stockLocationId } = {}) {
     if (!id) return null;
     const row = await prisma.sku.findUnique({
       where: { id },
       include: {
-        stockOnHand: true,
+        stockOnHands: {
+          ...(stockLocationId ? { where: { stockLocationId } } : {}),
+          include: { stockLocation: { select: { id: true, name: true } } },
+        },
         supplyItem: true,
-        stockLocation: true,
       },
     });
-    return mapSku(row);
+    return mapSku(row, { stockLocationId });
   },
 
   async create(data) {
-    const row = await prisma.$transaction(async (tx) => {
-      const sku = await tx.sku.create({
-        data: {
-          teamId: data.teamId,
-          supplyItemId: data.supplyItemId,
-          stockLocationId: data.stockLocationId,
-          name: data.name,
-          supplier: data.supplier ?? null,
-          packSize: data.packSize,
-          purchasePrice: data.purchasePrice,
-          unitRate: data.unitRate,
+    const row = await prisma.sku.create({
+      data: {
+        teamId: data.teamId,
+        supplyItemId: data.supplyItemId,
+        name: data.name,
+        supplier: data.supplier ?? null,
+        packSize: data.packSize,
+        purchasePrice: data.purchasePrice,
+        unitRate: data.unitRate,
+      },
+      include: {
+        stockOnHands: {
+          include: { stockLocation: { select: { id: true, name: true } } },
         },
-      });
-      await tx.stockOnHand.create({
-        data: {
-          skuId: sku.id,
-          quantity: 0,
-        },
-      });
-      return tx.sku.findUnique({
-        where: { id: sku.id },
-        include: {
-          stockOnHand: true,
-          supplyItem: true,
-          stockLocation: true,
-        },
-      });
+        supplyItem: true,
+      },
     });
     return mapSku(row);
   },
@@ -936,12 +963,32 @@ export const skuOps = {
         ...(data.archivedAt !== undefined ? { archivedAt: data.archivedAt } : {}),
       },
       include: {
-        stockOnHand: true,
+        stockOnHands: {
+          include: { stockLocation: { select: { id: true, name: true } } },
+        },
         supplyItem: true,
-        stockLocation: true,
       },
     });
     return mapSku(row);
+  },
+
+  async ensureStockOnHand(skuId, stockLocationId) {
+    const existing = await prisma.stockOnHand.findUnique({
+      where: {
+        skuId_stockLocationId: { skuId, stockLocationId },
+      },
+      include: { stockLocation: { select: { id: true, name: true } } },
+    });
+    if (existing) return mapStockOnHand(existing);
+    const created = await prisma.stockOnHand.create({
+      data: {
+        skuId,
+        stockLocationId,
+        quantity: 0,
+      },
+      include: { stockLocation: { select: { id: true, name: true } } },
+    });
+    return mapStockOnHand(created);
   },
 };
 
