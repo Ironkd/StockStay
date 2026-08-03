@@ -6,8 +6,10 @@ import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
+import { useAuth } from "../contexts/AuthContext";
 
 export const InvoicesPage: React.FC = () => {
+  const { canWrite } = useAuth();
   const [searchParams] = useSearchParams();
   const propertyIdFilter = searchParams.get("propertyId") || "";
   const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
@@ -627,30 +629,32 @@ export const InvoicesPage: React.FC = () => {
           )}
         </div>
         <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button
-            type="button"
-            className="nav-button primary"
-            disabled={generatingDrafts}
-            onClick={async () => {
-              setGeneratingDrafts(true);
-              setGenerateMessage(null);
-              try {
-                const result = await invoicesApi.generateDrafts();
-                setGenerateMessage(
-                  result.count > 0
-                    ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
-                    : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
-                );
-                await refreshInvoices();
-              } catch (err) {
-                setGenerateMessage(err instanceof Error ? err.message : "Failed to generate drafts");
-              } finally {
-                setGeneratingDrafts(false);
-              }
-            }}
-          >
-            {generatingDrafts ? "Generating…" : "Generate drafts"}
-          </button>
+          {canWrite && (
+            <button
+              type="button"
+              className="nav-button primary"
+              disabled={generatingDrafts}
+              onClick={async () => {
+                setGeneratingDrafts(true);
+                setGenerateMessage(null);
+                try {
+                  const result = await invoicesApi.generateDrafts();
+                  setGenerateMessage(
+                    result.count > 0
+                      ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
+                      : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
+                  );
+                  await refreshInvoices();
+                } catch (err) {
+                  setGenerateMessage(err instanceof Error ? err.message : "Failed to generate drafts");
+                } finally {
+                  setGeneratingDrafts(false);
+                }
+              }}
+            >
+              {generatingDrafts ? "Generating…" : "Generate drafts"}
+            </button>
+          )}
           <button
             type="button"
             className="nav-button secondary"
@@ -664,15 +668,17 @@ export const InvoicesPage: React.FC = () => {
           >
             Export CSV
           </button>
-          <button
-            className="clear-button"
-            onClick={() => {
-              resetForm();
-              setShowForm(!showForm);
-            }}
-          >
-            {showForm ? "Cancel" : "Create Invoice"}
-          </button>
+          {canWrite && (
+            <button
+              className="clear-button"
+              onClick={() => {
+                resetForm();
+                setShowForm(!showForm);
+              }}
+            >
+              {showForm ? "Cancel" : "Create Invoice"}
+            </button>
+          )}
         </div>
       </div>
 

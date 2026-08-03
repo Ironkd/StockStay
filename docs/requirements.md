@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.4 (Appendix A #9–#10 closed: signup + Sale/Inventory cleanup)  
+**Version:** 1.5 (Super-admin AdminJS + viewer write enforcement)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -163,9 +163,9 @@ flowchart TB
 | Attribute | Detail |
 |-----------|--------|
 | **Goals** | Support customers, fix data issues, manage platform health |
-| **Authentication** | Separate super-user account; not a normal team member |
-| **Status** | **Not implemented** — recommended in Phase 1 assessment |
-| **Responsibilities** | View/edit org data on behalf of customers; resolve orphaned records; manage demo environments |
+| **Authentication** | Existing `User` email on `SUPER_ADMIN_EMAILS` allowlist; AdminJS session at `/admin` |
+| **Status** | **Implemented** (AdminJS + `@adminjs/prisma`; full schema CRUD) |
+| **Responsibilities** | View/edit org data on behalf of customers; resolve orphaned records via AdminJS |
 
 #### Organization Owner
 
@@ -200,8 +200,8 @@ flowchart TB
 |-----------|--------|
 | **Goals** | Read-only access to team data |
 | **Authentication** | User account; `teamRole: "viewer"` |
-| **Status** | **Partially implemented** — role exists in Settings UI but **not enforced as read-only on API** |
-| **Responsibilities** | View only; no writes (target behavior) |
+| **Status** | **Implemented** — `requireWriteAccess` / catalogue write middleware return `VIEWER_READ_ONLY`; UI hides primary write actions via `canWrite` |
+| **Responsibilities** | View only; no writes |
 
 #### Client (billing contact)
 
@@ -261,11 +261,11 @@ Legend: ✅ Allowed · 🔒 Owner only · 🔐 Scoped · 👁 Read only · ❌ N
 | Invoice branding | 🔒 | ❌ | ❌ | ✅ |
 | Org settings | 🆕 🔒 | ❌ | ❌ | ✅ |
 
-**Known gaps (must fix in implementation):**
+**Known gaps (remaining):**
 
-1. **Viewer role** — stored in UI but write endpoints do not enforce read-only.
-2. **Property update/delete** — not owner-only today; any authenticated member with route access can modify.
-3. **Super admin** — no platform role or support interface exists.
+1. **Property update/delete** — not owner-only; members with page access can modify (viewers blocked). Owner-only property edits can be tightened later if desired.
+2. ~~Viewer write APIs~~ — **Done** (1.5).
+3. ~~Super admin~~ — **Done** (1.5 — AdminJS at `/admin`).
 
 ### 3.5 SaaS plan limits
 
@@ -884,8 +884,8 @@ flowchart LR
 | Demo accounts | Present in codebase | **Remove** demo login path; onboard real users; no shared prod demo | Strategy Phase 2 |
 | Signup | May require payment / heavy form | Streamlined; payment not required to start | **Done** (1.4 — Free signup, no payment) |
 | Client payment | N/A | Explicitly out of scope v1 | — |
-| Viewer role | UI label only | Enforced read-only on API | Add middleware checks |
-| Super admin | None | Platform support interface | New feature |
+| Viewer role | UI label only | Enforced read-only on API | **Done** (1.5 — `VIEWER_READ_ONLY`) |
+| Super admin | None | Platform support interface | **Done** (1.5 — AdminJS `/admin`) |
 | Decimal types | Float for quantity and money | Decimal | Schema change |
 
 ---
@@ -1053,8 +1053,8 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 |----|-------------|----------|--------|
 | NFR-1 | Separate dev, staging, and production environments with distinct databases and secrets | Must | Assessment |
 | NFR-2 | All stock mutations go through a centralized ledger service | Must | Assessment |
-| NFR-3 | Super-admin interface for customer support | Should | Assessment |
-| NFR-4 | Viewer role enforced as read-only on all write API endpoints | Must | Assessment + this doc |
+| NFR-3 | Super-admin interface for customer support (AdminJS at `/admin`, `SUPER_ADMIN_EMAILS`) | Should | Assessment |
+| NFR-4 | Viewer role enforced as read-only on all write API endpoints (`VIEWER_READ_ONLY`) | Must | Assessment + this doc |
 | NFR-5 | IDOR prevention: all resources scoped to user's team/org | Must | Assessment |
 | NFR-6 | Immutable audit trail (StockTransaction) for all quantity changes | Must | Assessment |
 | NFR-7 | Decimal types for financial and quantity fields | Must | Assessment |
@@ -1152,7 +1152,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20) — **Done** (`plan-limits.json` / `planConfig.js`; `GET /api/plans`; expanded `GET /api/team/limits`; enforce location/supply/SKU/inventory creates; `OverLimitBanner`; Landing/Pricing live-read)
 9. **Streamlined signup** (minimal fields; no payment required to start) — **Done** (Free `POST /api/auth/signup`; no Stripe at signup; payment-signup checkout/complete paths removed)
 10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code — **Done** (models/APIs removed; Stock/Properties/Replenishment; legacy migrate scripts archived under `server/archive/`)
-11. **Super-admin interface** + **viewer role enforcement** on write APIs
+11. **Super-admin interface** + **viewer role enforcement** on write APIs — **Done** (AdminJS full schema CRUD + `SUPER_ADMIN_EMAILS`; `requireWriteAccess` / catalogue write gates; UI `canWrite`)
 12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion
 13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out)
 14. PITR recovery check + dependency hygiene (Prisma/Vite patches) as capacity allows
@@ -1171,6 +1171,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Plan limits | `server/plan-limits.json`, `server/planConfig.js` |
 | Plan limits / trials | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
+| Platform AdminJS | `server/admin.js` (`/admin`) |
 | Client billing engine | `server/clientBilling.js` |
 | Invoice PDF | `server/invoicePdf.js` |
 | Invoice email | `server/email.js` |
@@ -1199,3 +1200,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.2 | 2026-08-03 | Probable | Appendix A #7: Q1b → `Team.billingTimezone`; scheduled drafts (`clientBilling.js`); InvoiceLine; PDF+CSV+HTML send; Settings TZ + Billing generate/export UI |
 | 1.3 | 2026-08-03 | Probable | Appendix A #8: `plan-limits.json` live config; location/supply/SKU caps; BR-20 banner + PLAN_LIMIT 403s; marketing reads `GET /api/plans` |
 | 1.4 | 2026-08-03 | Probable | Appendix A #9–#10: Free signup only (payment-signup paths removed); Sale/Inventory legacy scripts archived; README/STILL_TO_DO updated |
+| 1.5 | 2026-08-03 | Probable | Appendix A #11: AdminJS `/admin` (`SUPER_ADMIN_EMAILS`); viewer `requireWriteAccess` + UI `canWrite` |

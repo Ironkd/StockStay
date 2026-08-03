@@ -20,6 +20,7 @@ import {
   supplyItemsApi,
 } from "../services/catalogueApi";
 import { propertiesApi } from "../services/propertiesApi";
+import { useAuth } from "../contexts/AuthContext";
 
 type Tab = "onhand" | "catalogue" | "activity";
 
@@ -57,6 +58,7 @@ function localDateInputValue(d = new Date()) {
 }
 
 export const StockPage: React.FC = () => {
+  const { canWrite } = useAuth();
   const { locationId: routeLocationId } = useParams<{ locationId?: string }>();
   const navigate = useNavigate();
   const isDetail = Boolean(routeLocationId);
@@ -780,9 +782,11 @@ export const StockPage: React.FC = () => {
               Locations hold packs (SKUs) of your supply items. Deploy stock to properties from the Properties page.
             </p>
           </div>
-          <button type="button" className="add-property-button" onClick={openNewLocationModal}>
-            + New location
-          </button>
+          {canWrite && (
+            <button type="button" className="add-property-button" onClick={openNewLocationModal}>
+              + New location
+            </button>
+          )}
         </div>
 
         <section className="panel">
@@ -793,9 +797,11 @@ export const StockPage: React.FC = () => {
               <h3>No stock locations yet</h3>
               <p>Create a stock location to start receiving packs.</p>
               <div style={{ marginTop: "12px" }}>
-                <button type="button" className="add-property-button" onClick={openNewLocationModal}>
-                  + New location
-                </button>
+                {canWrite && (
+                  <button type="button" className="add-property-button" onClick={openNewLocationModal}>
+                    + New location
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -836,20 +842,24 @@ export const StockPage: React.FC = () => {
                             style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => openReceiveModal(loc.id)}
-                            >
-                              Receive
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => openSkuModal(loc.id)}
-                            >
-                              Add SKU
-                            </button>
+                            {canWrite && (
+                              <>
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() => openReceiveModal(loc.id)}
+                                >
+                                  Receive
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() => openSkuModal(loc.id)}
+                                >
+                                  Add SKU
+                                </button>
+                              </>
+                            )}
                             <button
                               type="button"
                               className="secondary"

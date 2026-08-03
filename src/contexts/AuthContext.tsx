@@ -10,6 +10,8 @@ interface AuthContextType {
   switchTeam: (teamId: string) => Promise<void>;
   isAuthenticated: boolean;
   loading: boolean;
+  /** False for teamRole viewer (NFR-4); owners/members can write. */
+  canWrite: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -97,7 +99,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         refreshUser,
         switchTeam,
         isAuthenticated: !!user,
-        loading
+        loading,
+        canWrite: Boolean(user && user.teamRole !== "viewer"),
       }}
     >
       {children}

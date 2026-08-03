@@ -2,8 +2,10 @@ import React, { useState } from "react";
 import { useClients } from "../hooks/useClients";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { Client } from "../types";
+import { useAuth } from "../contexts/AuthContext";
 
 export const ClientsPage: React.FC = () => {
+  const { canWrite } = useAuth();
   const { clients, addClient, updateClient, removeClient } = useClients();
   const [editingClient, setEditingClient] = useState<Client | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -113,18 +115,20 @@ export const ClientsPage: React.FC = () => {
     <div className="clients-page">
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
         <h2>Clients</h2>
-        <button
-          className="clear-button"
-          onClick={() => {
-            resetForm();
-            setShowForm(!showForm);
-          }}
-        >
-          {showForm ? "Cancel" : "Add Client"}
-        </button>
+        {canWrite && (
+          <button
+            className="clear-button"
+            onClick={() => {
+              resetForm();
+              setShowForm(!showForm);
+            }}
+          >
+            {showForm ? "Cancel" : "Add Client"}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {showForm && canWrite && (
         <section className="panel">
           <h3>{editingClient ? "Edit Client" : "Add New Client"}</h3>
           <form onSubmit={handleSubmit} className="inventory-form">
@@ -292,20 +296,24 @@ export const ClientsPage: React.FC = () => {
                 <div className="client-header">
                   <h4>{client.name}</h4>
                   <div className="client-actions">
-                    <button
-                      className="icon-button"
-                      onClick={() => handleEdit(client)}
-                      title="Edit"
-                    >
-                      ✏️
-                    </button>
-                    <button
-                      className="icon-button"
-                      onClick={() => handleDelete(client.id)}
-                      title="Delete"
-                    >
-                      🗑️
-                    </button>
+                    {canWrite && (
+                      <>
+                        <button
+                          className="icon-button"
+                          onClick={() => handleEdit(client)}
+                          title="Edit"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="icon-button"
+                          onClick={() => handleDelete(client.id)}
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      </>
+                    )}
                   </div>
                 </div>
                 <div className="client-details">

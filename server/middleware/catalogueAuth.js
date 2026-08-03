@@ -54,7 +54,13 @@ export function createCatalogueAuth({ loadCurrentUser, userHasPageAccess }) {
       const user = await attachUser(req, res);
       if (!user) return;
       if (!userCanWriteCatalogue(user, userHasPageAccess)) {
-        return res.status(403).json({ message: "You do not have permission to modify catalogue data." });
+        const isViewer = user.teamRole === "viewer";
+        return res.status(403).json({
+          code: isViewer ? "VIEWER_READ_ONLY" : undefined,
+          message: isViewer
+            ? "Viewers have read-only access and cannot make changes."
+            : "You do not have permission to modify catalogue data.",
+        });
       }
       next();
     } catch (err) {
@@ -83,7 +89,10 @@ export function createCatalogueAuth({ loadCurrentUser, userHasPageAccess }) {
         return res.status(403).json({ message: "You do not have access to Inventory." });
       }
       if (!userCanWriteCatalogue(user, userHasPageAccess)) {
-        return res.status(403).json({ message: "Viewers cannot modify inventory stock flows." });
+        return res.status(403).json({
+          code: "VIEWER_READ_ONLY",
+          message: "Viewers have read-only access and cannot make changes.",
+        });
       }
       next();
     } catch (err) {

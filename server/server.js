@@ -51,6 +51,7 @@ import {
 } from "./clientBilling.js";
 import { buildInvoicePdf } from "./invoicePdf.js";
 import { createCatalogueAuth, mapStockDomainError } from "./middleware/catalogueAuth.js";
+import { createRequireWriteAccess } from "./middleware/requireWriteAccess.js";
 import { computeUnitRate } from "./decimalUtil.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
 import {
@@ -77,6 +78,7 @@ import {
   stripe,
   updateExtraUserSlots,
 } from "./billing.js";
+import { mountAdmin } from "./admin.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -131,6 +133,8 @@ app.use(
   helmet({
     // Allow browser clients on another origin (Vite) to read API responses when CORS allows them
     crossOriginResourcePolicy: { policy: "cross-origin" },
+    // AdminJS serves an SPA with inline assets; keep other Helmet protections
+    contentSecurityPolicy: false,
   })
 );
 
@@ -834,6 +838,8 @@ const {
   requireInventoryWrite,
 } = createCatalogueAuth({ loadCurrentUser, userHasPageAccess });
 
+const requireWriteAccess = createRequireWriteAccess({ loadCurrentUser });
+
 // ==================== PROPERTY ROUTES ====================
 
 // Get current team's properties
@@ -960,7 +966,7 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
   }
 });
 
-app.put("/api/properties/:id", authenticateToken, async (req, res) => {
+app.put("/api/properties/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
     if (!currentUser?.teamId) {
@@ -996,7 +1002,7 @@ app.put("/api/properties/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
+app.delete("/api/properties/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
     if (!currentUser?.teamId) {
@@ -1940,7 +1946,7 @@ app.get("/api/clients/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/clients", authenticateToken, async (req, res) => {
+app.post("/api/clients", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -1958,7 +1964,7 @@ app.post("/api/clients", authenticateToken, async (req, res) => {
   }
 });
 
-app.put("/api/clients/:id", authenticateToken, async (req, res) => {
+app.put("/api/clients/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -1982,7 +1988,7 @@ app.put("/api/clients/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.delete("/api/clients/:id", authenticateToken, async (req, res) => {
+app.delete("/api/clients/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -2079,7 +2085,7 @@ app.get("/api/invoices/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/invoices", authenticateToken, async (req, res) => {
+app.post("/api/invoices", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -2114,7 +2120,7 @@ app.post("/api/invoices", authenticateToken, async (req, res) => {
   }
 });
 
-app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
+app.put("/api/invoices/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -2161,7 +2167,7 @@ app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
+app.delete("/api/invoices/:id", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
@@ -2185,7 +2191,7 @@ app.delete("/api/invoices/:id", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
+app.post("/api/invoices/:id/send", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "invoices")) {
@@ -2242,7 +2248,7 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
   }
 });
 
-app.post("/api/billing/generate-drafts", authenticateToken, async (req, res) => {
+app.post("/api/billing/generate-drafts", authenticateToken, requireWriteAccess, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
     if (!userHasPageAccess(currentUser, "invoices")) {
@@ -2990,9 +2996,22 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   }
 });
 
-// Start server (bind to 0.0.0.0 so Railway can reach the process)
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
-  console.log(`📝 API available at http://localhost:${PORT}/api`);
-  console.log(`🌍 APP_ENV=${appEnv}`);
-});
+// Start server after mounting AdminJS (bind to 0.0.0.0 so Railway can reach the process)
+async function startServer() {
+  try {
+    await mountAdmin(app);
+  } catch (err) {
+    console.error("[admin] Failed to mount AdminJS:", err?.message || err);
+    app.use("/admin", (_req, res) => {
+      res.status(503).json({ message: "Platform admin unavailable." });
+    });
+  }
+  app.listen(PORT, "0.0.0.0", () => {
+    console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+    console.log(`📝 API available at http://localhost:${PORT}/api`);
+    console.log(`🛠  AdminJS at http://localhost:${PORT}/admin`);
+    console.log(`🌍 APP_ENV=${appEnv}`);
+  });
+}
+
+startServer();

@@ -10,7 +10,7 @@ import { stockLocationsApi } from "../services/stockLocationsApi";
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, canWrite } = useAuth();
   const {
     properties,
     addProperty,
@@ -119,9 +119,11 @@ export const PropertiesPage: React.FC = () => {
             Deploy stock to properties and bill clients back for what they use.
           </p>
         </div>
-        <button type="button" className="add-property-button" onClick={handleAddProperty}>
-          + Add property
-        </button>
+        {canWrite && (
+          <button type="button" className="add-property-button" onClick={handleAddProperty}>
+            + Add property
+          </button>
+        )}
       </div>
 
       {showUpgradeModal && (
@@ -192,9 +194,11 @@ export const PropertiesPage: React.FC = () => {
             <h3>No properties yet</h3>
             <p>Add your first property to start replenishing and billing clients back.</p>
             <div style={{ marginTop: "12px" }}>
-              <button type="button" className="add-property-button" onClick={handleAddProperty}>
-                + Add property
-              </button>
+              {canWrite && (
+                <button type="button" className="add-property-button" onClick={handleAddProperty}>
+                  + Add property
+                </button>
+              )}
             </div>
           </div>
         ) : (
@@ -225,24 +229,26 @@ export const PropertiesPage: React.FC = () => {
                     </td>
                     <td>{locationCountByProperty.get(property.id) || 0}</td>
                     <td>
-                      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          title="Edit"
-                          onClick={(e) => handleEditProperty(property, e)}
-                        >
-                          ✏️
-                        </button>
-                        <button
-                          type="button"
-                          className="icon-button"
-                          title="Delete"
-                          onClick={(e) => handleDeleteProperty(property, e)}
-                        >
-                          🗑️
-                        </button>
-                      </div>
+                      {canWrite && (
+                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            title="Edit"
+                            onClick={(e) => handleEditProperty(property, e)}
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            type="button"
+                            className="icon-button"
+                            title="Delete"
+                            onClick={(e) => handleDeleteProperty(property, e)}
+                          >
+                            🗑️
+                          </button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 ))}
