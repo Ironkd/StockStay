@@ -1,14 +1,14 @@
 import { apiRequest } from "../config/api";
-import type { TeamData, TeamInvitationInfo, TeamMemberInfo, InvoiceStyle } from "../types";
+import type { TeamData, TeamInvitationInfo, TeamMemberInfo, InvoiceStyle, TeamLimits } from "../types";
 
 export const teamApi = {
   getTeam: async (): Promise<TeamData> => {
     return apiRequest<TeamData>("/team");
   },
 
-  /** Team property and user limits (no settings access required – use from Inventory page) */
-  getTeamLimits: async (): Promise<{ effectiveMaxProperties: number; effectiveMaxUsers: number | null; effectivePlan: string }> => {
-    return apiRequest<{ effectiveMaxProperties: number; effectiveMaxUsers: number | null; effectivePlan: string }>("/team/limits");
+  /** Team usage vs plan limits (no settings access required – banner / create flows) */
+  getTeamLimits: async (): Promise<TeamLimits> => {
+    return apiRequest<TeamLimits>("/team/limits");
   },
 
   /** Current team name only (no settings access – use from header so name updates everywhere) */

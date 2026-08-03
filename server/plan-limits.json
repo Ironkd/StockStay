@@ -1,0 +1,101 @@
+{
+  "currency": "USD",
+  "extraUserPrice": 5,
+  "plans": {
+    "free": {
+      "id": "free",
+      "name": "Free",
+      "monthlyPrice": 0,
+      "annualPrice": 0,
+      "maxProperties": 1,
+      "maxUsers": 1,
+      "baseMaxUsers": null,
+      "maxExtraUserSlots": 0,
+      "maxInventoryItems": 30,
+      "maxStockLocations": 1,
+      "maxSupplyItems": 10,
+      "maxSkus": 15,
+      "features": ["basic_tracking"],
+      "marketingFeatures": [
+        "1 property",
+        "1 user (just you)",
+        "1 stock location",
+        "Up to 10 supply items",
+        "Up to 15 SKUs / 30 inventory items",
+        "No credit card required"
+      ]
+    },
+    "starter": {
+      "id": "starter",
+      "name": "Starter",
+      "monthlyPrice": 18,
+      "annualPrice": 180,
+      "maxProperties": 3,
+      "maxUsers": null,
+      "baseMaxUsers": 3,
+      "maxExtraUserSlots": 2,
+      "maxInventoryItems": null,
+      "maxStockLocations": 3,
+      "maxSupplyItems": 50,
+      "maxSkus": 100,
+      "features": [
+        "basic_tracking",
+        "exports",
+        "invoices",
+        "history",
+        "inventory_by_property",
+        "low_stock_alerts",
+        "usage_summary",
+        "value_per_property",
+        "csv_export"
+      ],
+      "marketingFeatures": [
+        "3 properties",
+        "3 users included",
+        "Up to 2 extra users",
+        "3 stock locations",
+        "Up to 50 supply items",
+        "Up to 100 SKUs",
+        "Low stock alerts & CSV export",
+        "Everything in Free"
+      ]
+    },
+    "pro": {
+      "id": "pro",
+      "name": "Pro",
+      "monthlyPrice": 39,
+      "annualPrice": 390,
+      "maxProperties": 10,
+      "maxUsers": null,
+      "baseMaxUsers": 5,
+      "maxExtraUserSlots": 3,
+      "maxInventoryItems": null,
+      "maxStockLocations": 10,
+      "maxSupplyItems": null,
+      "maxSkus": null,
+      "features": [
+        "basic_tracking",
+        "exports",
+        "invoices",
+        "history",
+        "team_members",
+        "permissions",
+        "advanced_reports",
+        "value_tracking",
+        "reports",
+        "shopping_list",
+        "invoicing"
+      ],
+      "marketingFeatures": [
+        "10 properties",
+        "5 users included",
+        "Up to 3 extra users",
+        "10 stock locations",
+        "Unlimited supply items & SKUs",
+        "Shopping list & invoicing",
+        "Per-property permissions",
+        "Everything in Starter"
+      ]
+    }
+  }
+}

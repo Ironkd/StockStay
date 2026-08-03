@@ -2,6 +2,8 @@ import React from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { apiRequest } from "../config/api";
+import { fetchPlansConfig } from "../services/plansApi";
+import type { PlansConfig } from "../types";
 
 export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
@@ -11,6 +13,7 @@ export const LandingPage: React.FC = () => {
   const [supportForm, setSupportForm] = React.useState({ name: "", email: "", message: "" });
   const [supportSending, setSupportSending] = React.useState(false);
   const [supportResult, setSupportResult] = React.useState<{ ok: boolean; message: string } | null>(null);
+  const [plansConfig, setPlansConfig] = React.useState<PlansConfig | null>(null);
 
   // If user is already logged in, redirect to dashboard
   React.useEffect(() => {
@@ -18,6 +21,16 @@ export const LandingPage: React.FC = () => {
       navigate("/dashboard");
     }
   }, [user, navigate]);
+
+  React.useEffect(() => {
+    fetchPlansConfig()
+      .then(setPlansConfig)
+      .catch(() => setPlansConfig(null));
+  }, []);
+
+  const free = plansConfig?.plans.free;
+  const starter = plansConfig?.plans.starter;
+  const pro = plansConfig?.plans.pro;
 
   const handleGetStarted = () => {
     navigate("/login?mode=signup");
@@ -182,7 +195,9 @@ export const LandingPage: React.FC = () => {
         <div className="landing-container">
           <h2 className="section-title">Simple, Transparent Pricing</h2>
           <p className="section-subtitle">
-            Free: 1 property, 1 user, 30 items. Starter and Pro add more properties and user seats.
+            {free
+              ? `Free: ${free.maxProperties} property, ${free.maxUsers} user, ${free.maxInventoryItems} items. Starter and Pro add more capacity.`
+              : "Free, Starter, and Pro plans for teams of all sizes."}
           </p>
 
           {/* Billing Toggle */}
@@ -206,18 +221,22 @@ export const LandingPage: React.FC = () => {
             <div className="pricing-card">
               <div className="pricing-header">
                 <div className="plan-icon">🆓</div>
-                <h3>Free</h3>
+                <h3>{free?.name || "Free"}</h3>
                 <div className="pricing-price">
-                  <span className="price-amount">$0</span>
+                  <span className="price-amount">${free?.monthlyPrice ?? 0}</span>
                   <span className="price-period"> forever</span>
                 </div>
               </div>
               <ul className="pricing-features">
-                <li>✓ 1 property</li>
-                <li>✓ 1 user (just you)</li>
-                <li>✓ Inventory tracking</li>
-                <li>✓ Up to 30 inventory items</li>
-                <li>✓ No credit card required</li>
+                {(free?.marketingFeatures || [
+                  "1 property",
+                  "1 user (just you)",
+                  "Inventory tracking",
+                  "Up to 30 inventory items",
+                  "No credit card required",
+                ]).map((line) => (
+                  <li key={line}>✓ {line}</li>
+                ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Get Started Free
@@ -228,33 +247,35 @@ export const LandingPage: React.FC = () => {
             <div className="pricing-card featured">
               <div className="pricing-badge">⭐ Most Popular</div>
               <div className="pricing-header">
-                <h3>Starter</h3>
+                <h3>{starter?.name || "Starter"}</h3>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
                     <>
-                      <span className="price-amount">$18</span>
+                      <span className="price-amount">${starter?.monthlyPrice ?? 18}</span>
                       <span className="price-period"> / month</span>
                     </>
                   ) : (
                     <>
-                      <span className="price-amount">$180</span>
+                      <span className="price-amount">${starter?.annualPrice ?? 180}</span>
                       <span className="price-period"> / year</span>
                     </>
                   )}
                 </div>
-                {billingPeriod === 'annual' && (
-                  <div className="annual-savings">Save $36, 2 months free</div>
+                {billingPeriod === 'annual' && starter && (
+                  <div className="annual-savings">
+                    Save ${(starter.monthlyPrice * 12) - starter.annualPrice}, 2 months free
+                  </div>
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ 3 properties</li>
-                <li>✓ 3 users included</li>
-                <li>✓ Up to 2 extra users</li>
-                <li>✓ Current inventory by property report</li>
-                <li>✓ Low stock alerts</li>
-                <li>✓ Usage summary & value per property</li>
-                <li>✓ CSV export</li>
-                <li>✓ Everything in Free</li>
+                {(starter?.marketingFeatures || [
+                  "3 properties",
+                  "3 users included",
+                  "Up to 2 extra users",
+                  "Everything in Free",
+                ]).map((line) => (
+                  <li key={line}>✓ {line}</li>
+                ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button primary">
                 Start Starter Plan
@@ -265,35 +286,37 @@ export const LandingPage: React.FC = () => {
             <div className="pricing-card">
               <div className="pricing-header">
                 <div className="plan-icon">🔥</div>
-                <h3>Pro</h3>
+                <h3>{pro?.name || "Pro"}</h3>
                 <p style={{ color: '#10b981', fontWeight: '600', fontSize: '14px', margin: '0 0 12px 0' }}>
                   🎁 Free 14 day trial
                 </p>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
                     <>
-                      <span className="price-amount">$39</span>
+                      <span className="price-amount">${pro?.monthlyPrice ?? 39}</span>
                       <span className="price-period"> / month</span>
                     </>
                   ) : (
                     <>
-                      <span className="price-amount">$390</span>
+                      <span className="price-amount">${pro?.annualPrice ?? 390}</span>
                       <span className="price-period"> / year</span>
                     </>
                   )}
                 </div>
-                {billingPeriod === 'annual' && (
-                  <div className="annual-savings">Save $78, 2 months free</div>
+                {billingPeriod === 'annual' && pro && (
+                  <div className="annual-savings">
+                    Save ${(pro.monthlyPrice * 12) - pro.annualPrice}, 2 months free
+                  </div>
                 )}
               </div>
               <ul className="pricing-features">
-                <li>✓ 10 properties</li>
-                <li>✓ 5 users included</li>
-                <li>✓ Up to 3 extra users</li>
-                <li>✓ Unlimited reports, shopping list & invoicing</li>
-                <li>✓ Cleaners & co-host access</li>
-                <li>✓ Per-property permissions</li>
-                <li>✓ Everything in Starter</li>
+                {(pro?.marketingFeatures || [
+                  "10 properties",
+                  "5 users included",
+                  "Everything in Starter",
+                ]).map((line) => (
+                  <li key={line}>✓ {line}</li>
+                ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
                 Start Free Trial

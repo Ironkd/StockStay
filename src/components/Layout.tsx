@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
+import { OverLimitBanner } from "./OverLimitBanner";
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({
   children
@@ -150,6 +151,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
             </Link>
           ))}
       </nav>
+
+      {user && <OverLimitBanner teamKey={activeTeamId} />}
 
       <main>{children}</main>
 

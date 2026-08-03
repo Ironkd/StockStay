@@ -130,6 +130,55 @@ export type TeamInfo = {
   isOrgOwner?: boolean;
 };
 
+export type ResourceUsage = {
+  used: number;
+  max: number | null;
+  overLimit: boolean;
+  atLimit: boolean;
+};
+
+export type TeamLimits = {
+  effectivePlan: string;
+  effectiveMaxProperties: number | null;
+  effectiveMaxUsers: number | null;
+  overLimit: boolean;
+  resources: {
+    properties: ResourceUsage;
+    users: ResourceUsage;
+    stockLocations: ResourceUsage;
+    supplyItems: ResourceUsage;
+    skus: ResourceUsage;
+    inventoryItems: ResourceUsage;
+  };
+};
+
+export type PlanTierLimits = {
+  id: string;
+  name: string;
+  monthlyPrice: number;
+  annualPrice: number;
+  maxProperties: number | null;
+  maxUsers: number | null;
+  baseMaxUsers: number | null;
+  maxExtraUserSlots: number;
+  maxInventoryItems: number | null;
+  maxStockLocations: number | null;
+  maxSupplyItems: number | null;
+  maxSkus: number | null;
+  features: string[];
+  marketingFeatures?: string[];
+};
+
+export type PlansConfig = {
+  currency: string;
+  extraUserPrice: number;
+  plans: {
+    free: PlanTierLimits;
+    starter: PlanTierLimits;
+    pro: PlanTierLimits;
+  };
+};
+
 export type TeamMemberInfo = {
   id: string;
   teamRole: string;

@@ -3,47 +3,55 @@
  * Handles free trial logic for Pro plan (14 days) at Organization level
  */
 
-import { prisma } from './db.js';
+import { prisma } from "./db.js";
+import {
+  getPlanLimits,
+  getResourceMax,
+  isWithinLimit,
+  planLimitErrorBody,
+} from "./planConfig.js";
+
+export { getPlanLimits, getAllPlans, planLimitErrorBody } from "./planConfig.js";
 
 /**
- * Start a 14-day Pro trial for an organization (10 properties during trial)
+ * Start a 14-day Pro trial for an organization
  * @param {string} organizationId
  * @returns {Promise<Object>} Updated organization
  */
 export async function startProTrial(organizationId) {
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-  const limits = getPlanLimits('pro');
+  const limits = getPlanLimits("pro");
 
   return await prisma.organization.update({
     where: { id: organizationId },
     data: {
-      plan: 'pro',
+      plan: "pro",
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
-      trialPlan: 'pro',
+      trialPlan: "pro",
       maxProperties: limits.maxProperties,
     },
   });
 }
 
 /**
- * Start a 14-day Starter trial for an organization (3 properties during trial)
+ * Start a 14-day Starter trial for an organization
  * @param {string} organizationId
  * @returns {Promise<Object>} Updated organization
  */
 export async function startStarterTrial(organizationId) {
   const trialEndsAt = new Date();
   trialEndsAt.setDate(trialEndsAt.getDate() + 14);
-  const limits = getPlanLimits('starter');
+  const limits = getPlanLimits("starter");
 
   return await prisma.organization.update({
     where: { id: organizationId },
     data: {
-      plan: 'starter',
+      plan: "starter",
       isOnTrial: true,
       trialEndsAt: trialEndsAt,
-      trialPlan: 'starter',
+      trialPlan: "starter",
       maxProperties: limits.maxProperties,
     },
   });
@@ -63,42 +71,13 @@ export function isTrialExpired(org) {
  * @param {Object} org - Organization
  */
 export function getEffectivePlan(org) {
-  if (!org) return 'free';
+  if (!org) return "free";
 
   if (org.isOnTrial && org.trialPlan && !isTrialExpired(org)) {
     return org.trialPlan;
   }
 
-  return org.plan || 'free';
-}
-
-export function getPlanLimits(plan) {
-  const limits = {
-    free: {
-      maxProperties: 1,
-      maxUsers: 1,
-      maxInventoryItems: 30,
-      features: ['basic_tracking'],
-    },
-    starter: {
-      maxProperties: 3,
-      baseMaxUsers: 3,
-      maxExtraUserSlots: 2,
-      maxUsers: null,
-      maxInventoryItems: null,
-      features: ['basic_tracking', 'exports', 'invoices', 'history', 'inventory_by_property', 'low_stock_alerts', 'usage_summary', 'value_per_property', 'csv_export'],
-    },
-    pro: {
-      maxProperties: 10,
-      baseMaxUsers: 5,
-      maxExtraUserSlots: 3,
-      maxUsers: null,
-      maxInventoryItems: null,
-      features: ['basic_tracking', 'exports', 'invoices', 'history', 'team_members', 'permissions', 'advanced_reports', 'value_tracking', 'reports', 'shopping_list', 'invoicing'],
-    },
-  };
-
-  return limits[plan] || limits.free;
+  return org.plan || "free";
 }
 
 /**
@@ -117,27 +96,59 @@ export function getEffectiveMaxUsers(org) {
 }
 
 /**
- * @param {Object} org - Organization
- * @param {number} currentPropertyCount - Properties on the active team
+ * @param {Object} org
+ * @param {string} resource - properties | users | stockLocations | supplyItems | skus | inventoryItems
+ * @param {number} currentCount
+ * @returns {{ allowed: boolean, canCreate: boolean, used: number, max: number|null, plan: string, resource: string }}
  */
-export function canCreateProperty(org, currentPropertyCount) {
-  const effectivePlan = getEffectivePlan(org);
-  const limits = getPlanLimits(effectivePlan);
-
+export function canCreateResource(org, resource, currentCount) {
+  const plan = getEffectivePlan(org);
+  const limits = getPlanLimits(plan);
+  const max =
+    resource === "users"
+      ? getEffectiveMaxUsers(org)
+      : getResourceMax(limits, resource);
+  const allowed = isWithinLimit(max, currentCount);
   return {
-    canCreate: currentPropertyCount < limits.maxProperties,
-    limit: limits.maxProperties,
-    current: currentPropertyCount,
-    plan: effectivePlan,
+    allowed,
+    canCreate: allowed,
+    used: currentCount,
+    current: currentCount,
+    max,
+    limit: max,
+    plan,
+    resource,
   };
 }
 
 /**
- * Downgrade expired trials to free plan
+ * @param {Object} org - Organization
+ * @param {number} currentPropertyCount - Properties on the active team
+ */
+export function canCreateProperty(org, currentPropertyCount) {
+  return canCreateResource(org, "properties", currentPropertyCount);
+}
+
+/**
+ * Build PLAN_LIMIT 403 body from a canCreateResource result.
+ */
+export function toPlanLimitResponse(check, message) {
+  return planLimitErrorBody({
+    plan: check.plan,
+    resource: check.resource,
+    used: check.used,
+    max: check.max,
+    message,
+  });
+}
+
+/**
+ * Downgrade expired trials to free plan (does not delete excess resources — BR-20)
  */
 export async function downgradeExpiredTrials() {
   try {
     const now = new Date();
+    const freeLimits = getPlanLimits("free");
 
     const expiredTrials = await prisma.organization.findMany({
       where: {
@@ -158,7 +169,7 @@ export async function downgradeExpiredTrials() {
           isOnTrial: false,
           trialEndsAt: null,
           trialPlan: null,
-          maxProperties: 1,
+          maxProperties: freeLimits.maxProperties ?? 1,
         },
       });
       console.log(`[TRIAL] Downgraded organization ${org.id} (${org.name}) from trial to free`);

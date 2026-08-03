@@ -1,8 +1,28 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { fetchPlansConfig } from "../services/plansApi";
+import type { PlansConfig } from "../types";
+
+function formatCap(n: number | null | undefined, unlimitedLabel = "Unlimited"): string {
+  if (n == null) return unlimitedLabel;
+  return String(n);
+}
 
 export const PricingPage: React.FC = () => {
   const navigate = useNavigate();
+  const [config, setConfig] = useState<PlansConfig | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [billingPeriod, setBillingPeriod] = useState<"monthly" | "annual">("monthly");
+
+  useEffect(() => {
+    fetchPlansConfig()
+      .then(setConfig)
+      .catch((err) => setError(err instanceof Error ? err.message : "Failed to load plans"));
+  }, []);
+
+  const tiers = config
+    ? [config.plans.free, config.plans.starter, config.plans.pro]
+    : [];
 
   return (
     <div className="landing-page">
@@ -31,20 +51,83 @@ export const PricingPage: React.FC = () => {
       <main className="legal-content">
         <div className="legal-inner">
           <h1>Pricing</h1>
-          <p className="legal-updated">Plans for teams of all sizes</p>
+          <p className="legal-updated">
+            Limits below are loaded from the live product config
+            {config ? ` (${config.currency})` : ""}.
+          </p>
 
-          <section>
-            <h2>Free</h2>
-            <p>Get started with core inventory features. Perfect for trying out Stock Stay.</p>
-          </section>
+          {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
 
-          <section>
-            <h2>Starter & Pro</h2>
-            <p>More properties, more team members, and advanced features. See the app or contact us for current pricing.</p>
-            <button type="button" onClick={() => navigate("/login")} className="nav-button primary">
-              Sign in to see plans
+          <div className="billing-toggle" style={{ marginBottom: "24px" }}>
+            <button
+              type="button"
+              className={`billing-option ${billingPeriod === "monthly" ? "active" : ""}`}
+              onClick={() => setBillingPeriod("monthly")}
+            >
+              Monthly
             </button>
-          </section>
+            <button
+              type="button"
+              className={`billing-option ${billingPeriod === "annual" ? "active" : ""}`}
+              onClick={() => setBillingPeriod("annual")}
+            >
+              Annual
+            </button>
+          </div>
+
+          <div className="pricing-grid">
+            {tiers.map((plan) => (
+              <div
+                key={plan.id}
+                className={`pricing-card ${plan.id === "starter" ? "featured" : ""}`}
+              >
+                <div className="pricing-header">
+                  <h3>{plan.name}</h3>
+                  <div className="pricing-price">
+                    <span className="price-amount">
+                      $
+                      {billingPeriod === "monthly" ? plan.monthlyPrice : plan.annualPrice}
+                    </span>
+                    <span className="price-period">
+                      {plan.monthlyPrice === 0
+                        ? " forever"
+                        : billingPeriod === "monthly"
+                          ? " / month"
+                          : " / year"}
+                    </span>
+                  </div>
+                </div>
+                <ul className="pricing-features">
+                  {(plan.marketingFeatures && plan.marketingFeatures.length > 0
+                    ? plan.marketingFeatures
+                    : [
+                        `${formatCap(plan.maxProperties)} properties`,
+                        `${formatCap(plan.baseMaxUsers ?? plan.maxUsers)} users`,
+                        `${formatCap(plan.maxStockLocations)} stock locations`,
+                        `${formatCap(plan.maxSupplyItems)} supply items`,
+                        `${formatCap(plan.maxSkus)} SKUs`,
+                      ]
+                  ).map((line) => (
+                    <li key={line}>✓ {line}</li>
+                  ))}
+                </ul>
+                {config && plan.id !== "free" && (plan.maxExtraUserSlots ?? 0) > 0 && (
+                  <p style={{ fontSize: "13px", color: "#64748b" }}>
+                    Extra users: up to {plan.maxExtraUserSlots} @ ${config.extraUserPrice}/mo each
+                  </p>
+                )}
+                <button
+                  type="button"
+                  onClick={() => navigate("/login?mode=signup")}
+                  className={`pricing-button ${plan.id === "starter" ? "primary" : ""}`}
+                >
+                  Get started
+                </button>
+              </div>
+            ))}
+          </div>
+
+          {!config && !error && <p>Loading plans…</p>}
         </div>
       </main>
     </div>

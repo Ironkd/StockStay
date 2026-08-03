@@ -816,6 +816,10 @@ export const stockLocationOps = {
     return rows.map(mapStockLocation);
   },
 
+  async countActiveByTeam(teamId) {
+    return prisma.stockLocation.count({ where: { teamId, archivedAt: null } });
+  },
+
   async findById(id) {
     if (!id) return null;
     const row = await prisma.stockLocation.findUnique({
@@ -892,6 +896,10 @@ export const supplyItemOps = {
     return rows.map(mapSupplyItem);
   },
 
+  async countActiveByTeam(teamId) {
+    return prisma.supplyItem.count({ where: { teamId, archivedAt: null } });
+  },
+
   async findById(id) {
     if (!id) return null;
     const row = await prisma.supplyItem.findUnique({
@@ -962,6 +970,10 @@ export const skuOps = {
       orderBy: { name: "asc" },
     });
     return rows.map((row) => mapSku(row, { stockLocationId }));
+  },
+
+  async countActiveByTeam(teamId) {
+    return prisma.sku.count({ where: { teamId, archivedAt: null } });
   },
 
   async findById(id, { stockLocationId } = {}) {

@@ -58,8 +58,11 @@ import {
   isTrialExpired,
   getEffectivePlan,
   getPlanLimits,
+  getAllPlans,
   getEffectiveMaxUsers,
   canCreateProperty,
+  canCreateResource,
+  toPlanLimitResponse,
   downgradeExpiredTrials,
   getTrialStatus,
   startStarterTrial,
@@ -160,6 +163,11 @@ app.post(
 );
 
 app.use(express.json());
+
+/** Public plan config for marketing + UI (BR-17 / NFR-15). Loaded at boot from plan-limits.json. */
+app.get("/api/plans", (_req, res) => {
+  res.json(getAllPlans());
+});
 
 // Rate limit for login – prevent brute force (10 attempts per 15 min per IP)
 const loginRateLimiter = rateLimit({
@@ -889,12 +897,13 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
 
     // Check if trial has expired and downgrade if needed
     if (organization.isOnTrial && isTrialExpired(organization)) {
+      const freeLimits = getPlanLimits("free");
       await organizationOps.update(organization.id, {
         plan: "free",
         isOnTrial: false,
         trialEndsAt: null,
         trialPlan: null,
-        maxProperties: 1,
+        maxProperties: freeLimits.maxProperties ?? 1,
       });
       organization = await organizationOps.findById(organization.id);
       console.log(`[TRIAL] Auto-downgraded organization ${organization.id} from expired trial`);
@@ -905,17 +914,14 @@ app.post("/api/properties", authenticateToken, async (req, res) => {
     const propertyCheck = canCreateProperty(organization, currentCount);
 
     if (!propertyCheck.canCreate) {
-      const effectivePlan = getEffectivePlan(organization);
-      return res.status(403).json({
-        message:
-          effectivePlan === "free"
-            ? "Free plan allows only 1 property. Upgrade your plan to add more."
-            : `Property limit reached for your current plan (${propertyCheck.limit} max).`,
-        limit: propertyCheck.limit,
-        current: propertyCheck.current,
-        plan: propertyCheck.plan,
-        upgradeAvailable: true,
-      });
+      return res.status(403).json(
+        toPlanLimitResponse(
+          propertyCheck,
+          propertyCheck.plan === "free"
+            ? "Free plan property limit reached. Upgrade your plan to add more."
+            : undefined
+        )
+      );
     }
 
     const { name, location, clientId, markupPercentage, stockLocationIds } = req.body;
@@ -1072,6 +1078,15 @@ app.post("/api/stock-locations", authenticateToken, requireCatalogueWrite, async
     if (!name) {
       return res.status(400).json({ message: "Stock location name is required." });
     }
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx?.organization) {
+      return res.status(404).json({ message: "Organization not found." });
+    }
+    const currentCount = await stockLocationOps.countActiveByTeam(req.currentUser.teamId);
+    const check = canCreateResource(ctx.organization, "stockLocations", currentCount);
+    if (!check.allowed) {
+      return res.status(403).json(toPlanLimitResponse(check));
+    }
     const address =
       typeof req.body?.address === "string" ? req.body.address.trim() || null : null;
     const tags = Array.isArray(req.body?.tags) ? req.body.tags : [];
@@ -1207,6 +1222,15 @@ app.post("/api/supply-items", authenticateToken, requireCatalogueWrite, async (r
     if (!unit) {
       return res.status(400).json({ message: "Invalid baseUnitId." });
     }
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx?.organization) {
+      return res.status(404).json({ message: "Organization not found." });
+    }
+    const currentCount = await supplyItemOps.countActiveByTeam(req.currentUser.teamId);
+    const check = canCreateResource(ctx.organization, "supplyItems", currentCount);
+    if (!check.allowed) {
+      return res.status(403).json(toPlanLimitResponse(check));
+    }
     const reorderPoint = parseDecimalInput(req.body?.defaultReorderPoint ?? 0, "defaultReorderPoint");
     if (reorderPoint.error) return res.status(400).json({ message: reorderPoint.error });
     const reorderQty = parseDecimalInput(
@@ -1335,6 +1359,19 @@ app.post("/api/skus", authenticateToken, requireCatalogueWrite, async (req, res)
     const supplyItem = await supplyItemOps.findById(supplyItemId);
     if (!supplyItem || supplyItem.teamId !== req.currentUser.teamId || supplyItem.archivedAt) {
       return res.status(400).json({ message: "Invalid or archived supply item." });
+    }
+    const ctx = await ensureMembershipContext(req.user.id);
+    if (!ctx?.organization) {
+      return res.status(404).json({ message: "Organization not found." });
+    }
+    const skuCount = await skuOps.countActiveByTeam(req.currentUser.teamId);
+    const skuCheck = canCreateResource(ctx.organization, "skus", skuCount);
+    if (!skuCheck.allowed) {
+      return res.status(403).json(toPlanLimitResponse(skuCheck));
+    }
+    const inventoryCheck = canCreateResource(ctx.organization, "inventoryItems", skuCount);
+    if (!inventoryCheck.allowed) {
+      return res.status(403).json(toPlanLimitResponse(inventoryCheck));
     }
     const packSize = parseDecimalInput(req.body?.packSize, "packSize");
     if (packSize.error) return res.status(400).json({ message: packSize.error });
@@ -2270,20 +2307,75 @@ app.get("/api/invoices/:id/export.csv", authenticateToken, async (req, res) => {
 
 // ==================== TEAM & INVITE ROUTES ====================
 
-// Get team property limit (no settings access required – used by Inventory page)
+// Get team usage vs plan limits (no settings access required – used by banner / create flows)
 app.get("/api/team/limits", authenticateToken, async (req, res) => {
   try {
     const ctx = await ensureMembershipContext(req.user.id);
     if (!ctx?.team || !ctx.organization) {
       return res.status(404).json({ message: "Team not found for user" });
     }
-    const effectivePlan = getEffectivePlan(ctx.organization);
+    const teamId = ctx.team.id;
+    const org = ctx.organization;
+    const effectivePlan = getEffectivePlan(org);
     const planLimits = getPlanLimits(effectivePlan);
-    const effectiveMaxUsers = getEffectiveMaxUsers(ctx.organization);
+    const effectiveMaxUsers = getEffectiveMaxUsers(org);
+
+    const [
+      propertyCount,
+      userCount,
+      stockLocationCount,
+      supplyItemCount,
+      skuCount,
+    ] = await Promise.all([
+      propertyOps.countByTeam(teamId),
+      membershipOps.countByTeam(teamId),
+      stockLocationOps.countActiveByTeam(teamId),
+      supplyItemOps.countActiveByTeam(teamId),
+      skuOps.countActiveByTeam(teamId),
+    ]);
+
+    const usageEntry = (resource, used, max) => ({
+      used,
+      max,
+      overLimit: max != null && used > max,
+      atLimit: max != null && used >= max,
+    });
+
+    const properties = usageEntry("properties", propertyCount, planLimits.maxProperties);
+    const users = usageEntry("users", userCount, effectiveMaxUsers);
+    const stockLocations = usageEntry(
+      "stockLocations",
+      stockLocationCount,
+      planLimits.maxStockLocations ?? null
+    );
+    const supplyItems = usageEntry(
+      "supplyItems",
+      supplyItemCount,
+      planLimits.maxSupplyItems ?? null
+    );
+    const skus = usageEntry("skus", skuCount, planLimits.maxSkus ?? null);
+    const inventoryItems = usageEntry(
+      "inventoryItems",
+      skuCount,
+      planLimits.maxInventoryItems ?? null
+    );
+
+    const resources = {
+      properties,
+      users,
+      stockLocations,
+      supplyItems,
+      skus,
+      inventoryItems,
+    };
+    const overLimit = Object.values(resources).some((r) => r.overLimit);
+
     res.json({
+      effectivePlan,
       effectiveMaxProperties: planLimits.maxProperties,
       effectiveMaxUsers,
-      effectivePlan,
+      overLimit,
+      resources,
     });
   } catch (error) {
     console.error("Error fetching team limits:", error);
@@ -2574,14 +2666,15 @@ app.post("/api/team/invitations", authenticateToken, async (req, res) => {
     const effectiveMaxUsers = getEffectiveMaxUsers(org);
     if (effectiveMaxUsers !== null) {
       const memberCount = await membershipOps.countByTeam(currentUser.teamId);
-      if (memberCount >= effectiveMaxUsers) {
+      const userCheck = canCreateResource(org, "users", memberCount);
+      if (!userCheck.allowed) {
         const msg =
           effectiveMaxUsers === 1
             ? "Free plan allows only 1 user. Upgrade to Starter or Pro to add team members."
             : effectivePlan === "starter"
               ? `Starter plan allows ${effectiveMaxUsers} users. You can add up to 2 extra users at $5/mo each in Settings.`
               : `Pro plan allows ${effectiveMaxUsers} users. You can add up to 3 extra users at $5/mo each in Settings.`;
-        return res.status(403).json({ message: msg });
+        return res.status(403).json(toPlanLimitResponse(userCheck, msg));
       }
     }
 

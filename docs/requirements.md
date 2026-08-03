@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.2 (Scheduled client billing + team billing timezone)  
+**Version:** 1.3 (Configurable plan limits + BR-20 downgrade UX)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -66,7 +66,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 | Negative stock | **Hard block** — replenishment (and other outflows) must not leave StockOnHand negative. |
 | Data migration | **None.** Service has not launched; replace existing models as needed. |
 | Stock location fields | **Name + address + tags** are sufficient. |
-| Plan limits | Caps supported for stock locations, supply items, and SKUs (and existing limits). Values are **configurable** and UI/marketing must read the same live config. |
+| Plan limits | Caps for stock locations, supply items, SKUs (and properties/users/inventory). Values in `plan-limits.json`; UI/marketing read live via `GET /api/plans`. |
 | Invoice delivery | **PDF**, **email HTML**, and **CSV export** are all required in v1. Accounting export = CSV only (QBO/Xero-specific formats deferred). |
 | Consumption tracking | **Not in v1**. Billing is driven by stock location ↔ property movements (replenish and return), including legs of inter-property transfers. Properties are **billing destinations**, not inventory monitors — no property on-hand balance or property-level low-stock. |
 | Break-pack | Replenishment can deploy **partial units** from a sealed SKU (e.g. 20 loose pods from a 100-pack → decrement 0.2 packs at stock location). |
@@ -269,13 +269,13 @@ Legend: ✅ Allowed · 🔒 Owner only · 🔐 Scoped · 👁 Read only · ❌ N
 
 ### 3.5 SaaS plan limits
 
-| Plan | Properties | Users | Inventory items | Notable features |
-|------|------------|-------|-----------------|------------------|
-| Free | 1 | 1 | 30 | Basic tracking |
-| Starter | 3 | 3 (+2 extra @ $5/mo) | Unlimited | Invoices, exports, low-stock alerts |
-| Pro | 10 | 5 (+3 extra @ $5/mo) | Unlimited | Shopping list, advanced reports, team permissions |
+| Plan | Properties | Users | Inventory (SKUs) | Stock locations | Supply items | SKUs | Notable features |
+|------|------------|-------|------------------|-----------------|--------------|------|------------------|
+| Free | 1 | 1 | 30 | 1 | 10 | 15 | Basic tracking |
+| Starter | 3 | 3 (+2 extra @ $5/mo) | Unlimited | 3 | 50 | 100 | Invoices, exports, low-stock alerts |
+| Pro | 10 | 5 (+3 extra @ $5/mo) | Unlimited | 10 | Unlimited | Unlimited | Shopping list, advanced reports, team permissions |
 
-**Configurable caps (required):** Plan limits must also support caps for **stock locations**, **supply items**, and **SKUs** per tier. Limit values live in a **single configuration source** (e.g. `trialManager.js` / shared plan config). The **UI and marketing pages must read this config live** so published limits never diverge from what the product enforces. Super admins / developers can change values to experiment with pricing without updating marketing copy separately.
+**Configurable caps (required):** Limit values live in **`server/plan-limits.json`** (optional `PLAN_LIMITS_PATH` override), loaded at server boot. Public **`GET /api/plans`** and authenticated **`GET /api/team/limits`** expose the same config; Landing/Pricing read `/api/plans` live. Restart required after editing the JSON. Create APIs enforce caps with structured `PLAN_LIMIT` 403s; over-limit orgs see an in-app banner (BR-20 — data preserved).
 
 ---
 
@@ -879,8 +879,8 @@ flowchart LR
 | Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields **and** invoice branding |
 | User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
 | Timezone | Not captured | `Team.billingTimezone` (IANA, editable in Settings) | Q1b resolved in 1.2 |
-| Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | Extend plan config |
-| Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | See BR-20 |
+| Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | **Done** (1.3 — `plan-limits.json`) |
+| Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | **Done** (1.3 — BR-20 banner + create gates) |
 | Demo accounts | Present in codebase | **Remove** demo login path; onboard real users; no shared prod demo | Strategy Phase 2 |
 | Signup | May require payment / heavy form | Streamlined; payment not required to start | Strategy Phase 2 |
 | Client payment | N/A | Explicitly out of scope v1 | — |
@@ -912,10 +912,10 @@ Rules that implementation must not guess:
 | **BR-14 No negative stock** | Hard block any outflow that would make StockOnHand negative. |
 | **BR-15 Return credits** | Credits from Property→Location appear on the **next** invoice for that client; no separate credit-note document in v1. |
 | **BR-16 Inter-property via location** | Property↔property moves must pass through a chosen stock location as **two ordinary transactions** (return then replenish). Both legs are billable/refundable under BR-1. Prefer a shared transfer reference ID linking the two legs for audit. |
-| **BR-17 Live plan limits** | Cap values (including stock locations, supply items, SKUs) are configurable; product UI and marketing pages read the same live configuration. |
+| **BR-17 Live plan limits** | Cap values (including stock locations, supply items, SKUs) are configurable via `plan-limits.json` / `PLAN_LIMITS_PATH`; product UI and marketing pages read `GET /api/plans` (and team usage via `GET /api/team/limits`). |
 | **BR-18 Invoice artifacts** | Sending an invoice requires PDF + email HTML; CSV export is available separately. |
 | **BR-19 Multi-team** | Users may belong to multiple teams; v1 ships membership schema and team-switching UI. |
-| **BR-20 Plan downgrade** | When an org/team moves to a lower plan (or trial ends) and current usage exceeds new limits: block creating *new* over-limit resources; existing excess resources remain readable/editable but creation is gated until usage is within limits (or user upgrades). Exact UX copy TBD; never silently delete customer data. |
+| **BR-20 Plan downgrade** | When an org/team moves to a lower plan (or trial ends) and current usage exceeds new limits: block creating *new* over-limit resources (`PLAN_LIMIT` 403); existing excess resources remain readable/editable; persistent over-limit banner with upgrade CTA; never silently delete customer data. |
 | **BR-21 Concurrent stock posts** | Ledger posts that change StockOnHand must use row-level locking (or equivalent serializable transaction) so two concurrent replenishments cannot both pass the sufficiency check. |
 | **BR-22 Schema integrity** | Prefer DB enums for fixed vocabularies; unique constraints where business identity requires them (e.g. `@@unique([teamId, invoiceNumber])`); formal Prisma relations + explicit `onDelete` for all FKs. |
 | **BR-23 Signup** | New users can sign up and start without completing payment. Collect minimal required fields only. |
@@ -1065,7 +1065,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-12 | **Remove** shared demo-account functionality; onboard real users. Demo/test data only in non-prod environments | Must | Strategy |
 | NFR-13 | Redirect unauthenticated users to /login for protected routes | Must | Existing |
 | NFR-14 | Server-side event logs for auth, billing/webhooks, and stock ledger posts | Should | Assessment + Strategy |
-| NFR-15 | Plan limit config is single source of truth for API enforcement and marketing UI | Must | Validation |
+| NFR-15 | Plan limit config is single source of truth for API enforcement and marketing UI (`plan-limits.json` + `GET /api/plans`) | Must | Validation |
 | NFR-16 | Invoice send produces PDF attachment and branded HTML email | Must | Validation |
 | NFR-17 | Row-level locking (or equivalent) on concurrent stock balance updates | Must | Strategy |
 | NFR-18 | Schema uses enums, unique constraints, and explicit FK `onDelete` where required (BR-22) | Must | Assessment |
@@ -1116,7 +1116,7 @@ The following are **explicitly deferred**. Implementation agents must not scope-
 | Q8 | Inventory migration | **Replace** existing models; no migration (pre-launch). |
 | Q9 | Clients/invoices migration | **Replace** existing models; no migration (pre-launch). |
 | Q10 | Stock location fields | **Name + address + tags** sufficient. |
-| Q11 | Plan limits | Support configurable caps for stock locations, supply items, SKUs (and existing limits). UI/marketing read config **live**. |
+| Q11 | Plan limits | Configurable caps for stock locations, supply items, SKUs (and existing). UI/marketing read **`GET /api/plans`** live (`plan-limits.json`). |
 | Q12 | Multi-team users | **Schema and UI in v1** so multi-team can be tested end-to-end. |
 | Q13 | Accounting export | **CSV** sufficient for v1. |
 | Q14 | Invoice artifacts | **PDF**, **email HTML**, and **CSV** all required. |
@@ -1149,7 +1149,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
 6. **Inter-property transfer** as linked return + replenish (both billable) — **Done** (`createInterPropertyTransfer` + `POST /api/replenishments/transfers`; shared `transferGroupId`; Stock-page Transfer UI)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **Done** (`Team.billingTimezone` / Q1b; `clientBilling.js` period math + draft generation + daily job; `InvoiceLine`; PDF via `invoicePdf.js`; CSV export; Settings TZ + Billing UI)
-8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20)
+8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20) — **Done** (`plan-limits.json` / `planConfig.js`; `GET /api/plans`; expanded `GET /api/team/limits`; enforce location/supply/SKU/inventory creates; `OverLimitBanner`; Landing/Pricing live-read)
 9. **Streamlined signup** (minimal fields; no payment required to start)
 10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code
 11. **Super-admin interface** + **viewer role enforcement** on write APIs
@@ -1168,7 +1168,8 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | DB operations | `server/db.js` |
 | Stock ledger | `server/stockLedger.js` |
 | Replenishment / return | `server/replenishment.js` |
-| Plan limits | `server/trialManager.js` |
+| Plan limits | `server/plan-limits.json`, `server/planConfig.js` |
+| Plan limits / trials | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
 | Client billing engine | `server/clientBilling.js` |
 | Invoice PDF | `server/invoicePdf.js` |
@@ -1196,3 +1197,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.0 | 2026-07-28 | Probable | SKUs team-shared; StockOnHand per (sku, location) with lastPurchasePrice/lastUnitRate; bill-back prefers location last rate |
 | 1.1 | 2026-07-28 | Probable | Drop PropertyStock; properties billing-only; LocationSupplyThreshold low stock per supply item@location; transfers allocate unreverted replenish lines |
 | 1.2 | 2026-08-03 | Probable | Appendix A #7: Q1b → `Team.billingTimezone`; scheduled drafts (`clientBilling.js`); InvoiceLine; PDF+CSV+HTML send; Settings TZ + Billing generate/export UI |
+| 1.3 | 2026-08-03 | Probable | Appendix A #8: `plan-limits.json` live config; location/supply/SKU caps; BR-20 banner + PLAN_LIMIT 403s; marketing reads `GET /api/plans` |

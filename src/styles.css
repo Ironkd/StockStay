@@ -1130,6 +1130,38 @@ button.secondary:hover {
   border: 1px solid #86efac;
 }
 
+.plan-over-limit-banner {
+  margin: 0 16px 12px;
+  padding: 12px 16px;
+  border-radius: 10px;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  color: #9a3412;
+  font-size: 14px;
+}
+
+.plan-over-limit-banner-body {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.plan-over-limit-banner-body strong {
+  flex-shrink: 0;
+}
+
+.plan-over-limit-cta {
+  font-weight: 600;
+  color: #c2410c;
+  text-decoration: underline;
+}
+
+.plan-over-limit-cta.secondary {
+  font-weight: 500;
+  color: #9a3412;
+}
+
 .sale-created-invoice-banner {
   display: flex;
   align-items: center;
