@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.6 (Pre-alpha ops: Umami, feedback, legal, deletion runbook)  
+**Version:** 1.7 (Section 8 test harness)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -1061,7 +1061,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-8 | Database migrations reliable across dev/staging/production | Must | Assessment |
 | NFR-9 | PITR backups configured and recovery tested | Should | Assessment |
 | NFR-10 | Rate limiting, Helmet, and input sanitization / validation on API write paths | Must | Existing + Strategy |
-| NFR-11 | Automated test harness derived from user stories in Section 8 | Should | Product strategy |
+| NFR-11 | Automated test harness derived from user stories in Section 8 | Should | **Done** (1.7 — API+unit+RTL; matrix in `docs/test-matrix.md`; Playwright deferred) |
 | NFR-12 | **Remove** shared demo-account functionality; onboard real users. Demo/test data only in non-prod environments | Must | Strategy |
 | NFR-13 | Redirect unauthenticated users to /login for protected routes | Must | Existing |
 | NFR-14 | Server-side event logs for auth, billing/webhooks, and stock ledger posts | Should | Assessment + Strategy |
@@ -1154,7 +1154,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code — **Done** (models/APIs removed; Stock/Properties/Replenishment; legacy migrate scripts archived under `server/archive/`)
 11. **Super-admin interface** + **viewer role enforcement** on write APIs — **Done** (AdminJS full schema CRUD + `SUPER_ADMIN_EMAILS`; `requireWriteAccess` / catalogue write gates; UI `canWrite`)
 12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion — **Done** (Umami Cloud; Layout feedback + `signup`/`feedback_sent`; ToS/Privacy refresh + footers; sessionStorage auth disclosure; `docs/support-data-deletion.md`)
-13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out)
+13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out) — **Done** (Vitest/Supertest API + domain unit + frontend RTL; `docs/test-matrix.md`; GitHub Actions; Playwright E2E deferred)
 14. PITR recovery check + dependency hygiene (Prisma/Vite patches) as capacity allows
 
 ---
@@ -1174,6 +1174,10 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Platform AdminJS | `server/admin.js` (`/admin`) |
 | Analytics (Umami) | `src/lib/analytics.ts`, `src/components/UmamiAnalytics.tsx` |
 | Support data deletion | `docs/support-data-deletion.md` |
+| Operations handbook | `docs/operations.md` |
+| Test matrix (Section 8) | `docs/test-matrix.md` |
+| Server tests | `server/tests/` |
+| Environments | `docs/environments.md` |
 | Client billing engine | `server/clientBilling.js` |
 | Invoice PDF | `server/invoicePdf.js` |
 | Invoice email | `server/email.js` |
@@ -1204,3 +1208,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.4 | 2026-08-03 | Probable | Appendix A #9–#10: Free signup only (payment-signup paths removed); Sale/Inventory legacy scripts archived; README/STILL_TO_DO updated |
 | 1.5 | 2026-08-03 | Probable | Appendix A #11: AdminJS `/admin` (`SUPER_ADMIN_EMAILS`); viewer `requireWriteAccess` + UI `canWrite` |
 | 1.6 | 2026-08-03 | Probable | Appendix A #12: Umami analytics; in-app feedback; ToS/Privacy + sessionStorage/AdminJS disclosure; support deletion runbook |
+| 1.7 | 2026-08-03 | Probable | Appendix A #13: Section 8 test harness (API/unit/RTL + CI); Playwright deferred; `docs/test-matrix.md` |

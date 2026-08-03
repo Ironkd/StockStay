@@ -66,7 +66,9 @@ Protect `main` so only reviewed merges land in production. Create `staging` from
 
 ## Secrets (never share across envs)
 
-See [server/.env.example](../server/.env.example) for the full list. Minimum per deployed environment:
+Canonical lists: **[operations.md §2](operations.md#2-environment-variables-complete)**, [server/.env.example](../server/.env.example), [.env.example](../.env.example).
+
+Minimum per deployed environment:
 
 
 | Variable                   | Notes                                                    |
@@ -79,10 +81,12 @@ See [server/.env.example](../server/.env.example) for the full list. Minimum per
 | `APP_URL` / `FRONTEND_URL` | Frontend origin (password-reset / invite links)          |
 | `STRIPE_*`                 | Test keys on staging; live keys on production            |
 | `RESEND_API_KEY`           | Optional; email falls back to console/SMTP               |
+| `SUPER_ADMIN_EMAILS`       | Optional; enable AdminJS at `/admin` for support         |
+| `ADMIN_SESSION_SECRET`     | Optional; AdminJS cookies (falls back to `JWT_SECRET`)   |
+| `PLAN_LIMITS_PATH`         | Optional; override path to plan-limits JSON              |
 
 
-Frontend build-time: `VITE_API_BASE_URL` must be the **same** environment’s API (`…/api`).
-
+Frontend build-time: `VITE_API_BASE_URL` must be the **same** environment’s API (`…/api`). Optional: `VITE_UMAMI_SCRIPT_URL` + `VITE_UMAMI_WEBSITE_ID`, `VITE_GOOGLE_MAPS_API_KEY`.
 ## Staging provisioning checklist
 
 Do this **once** to create a safe “practice” copy of Stock Stay that is separate from the live site. You can tick items as you go.
@@ -266,11 +270,33 @@ Without email, signup still works, but verification links appear only in Railway
 3. Set `RESEND_FROM_EMAIL` (e.g. `Stock Stay Staging <onboarding@resend.dev>` while testing).
 4. Redeploy Railway staging.
 
-- [ ] Staging can send verification / reset emails (or you’re OK reading links from logs)  
+- [ ] Staging can send verification / reset emails (or you’re OK reading links from logs)
 
 ---
 
+### Step 5b — Platform admin & analytics (optional)
 
+**AdminJS** (support console on the API):
+
+1. Sign up a user on the staging site and verify email.
+2. On Railway staging, set `SUPER_ADMIN_EMAILS` to that email (comma-separated if several).
+3. Set `ADMIN_SESSION_SECRET` to a random string (or rely on `JWT_SECRET`).
+4. Redeploy → open `https://YOUR-RAILWAY-HOST/admin` and log in with that user’s password.
+
+Details: [operations.md §4](operations.md#4-platform-admin-adminjs).
+
+**Umami** (frontend):
+
+1. Create a website in Umami Cloud.
+2. On Vercel Preview/Staging, set `VITE_UMAMI_SCRIPT_URL` and `VITE_UMAMI_WEBSITE_ID`.
+3. Redeploy the staging frontend.
+
+Details: [operations.md §6](operations.md#6-analytics-umami-cloud).
+
+- [ ] AdminJS reachable (or deliberately left disabled)
+- [ ] Umami configured (or intentionally skipped)
+
+---
 
 ### Step 6 — Smoke test (prove it works)
 
@@ -280,11 +306,13 @@ On the **staging** website (not production):
 2. Open the staging site → **Sign up** with a real email you can access.
 3. Verify email (inbox, or Railway logs if Resend isn’t set).
 4. Log in.
-5. Confirm you are **not** on the production domain and that there is **no** “[demo@example.com](mailto:demo@example.com)” login hint.
+5. Confirm you are **not** on the production domain and that there is **no** “demo@example.com” login hint.
+6. Optional: open `{API}/admin` if `SUPER_ADMIN_EMAILS` is set; send feedback from the app footer; confirm `/terms` and `/privacy`.
 
 - [ ] Health OK  
 - [ ] Signup + verify + login OK  
 - [ ] Confirmed this is staging, not production  
+- [ ] Optional admin / feedback / legal smoke OK  
 
 ---
 
@@ -374,7 +402,11 @@ Local Docker after a bad state: recreate the volume (or drop/recreate the DB), t
 
 ## Related docs
 
-- [DEPLOY.md](../DEPLOY.md) — original single-env deploy steps (use alongside this matrix)
-- [server/.env.example](../server/.env.example) — backend variable reference
-- [docs/requirements.md](requirements.md) — NFR-1, NFR-12, Appendix A step 1
-
+- **[operations.md](operations.md)** — full env var catalog, AdminJS, plan limits, Umami, feedback, deletion, smoke tests
+- [support-data-deletion.md](support-data-deletion.md) — support-handled account deletion via AdminJS
+- [requirements.md](requirements.md) — NFR-1, NFR-12, Appendix A
+- [../README.md](../README.md) — quick start
+- [../STILL_TO_DO.md](../STILL_TO_DO.md) — go-live checklist
+- [../DEPLOY.md](../DEPLOY.md) — older single-env deploy steps (use alongside this matrix)
+- [../server/.env.example](../server/.env.example) — backend variable template
+- [../.env.example](../.env.example) — frontend variable template

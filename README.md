@@ -9,70 +9,73 @@ Inventory and client billing for short-term rental property managers. React + Ty
 - **Properties & clients** — billing destinations and contacts
 - **Scheduled invoices** — draft generation, PDF/email send, CSV export
 - **Teams & plans** — Free / Starter / Pro limits, invites, Stripe upgrades after signup
+- **Platform admin** — AdminJS at `/admin` for support (allowlisted emails)
+- **Ops** — Umami analytics (optional), in-app feedback, ToS/Privacy, support deletion runbook
 
-### Getting started
+### Documentation
 
-**📋 See [SETUP.md](./SETUP.md) for detailed step-by-step instructions.**
+| Doc | What it’s for |
+|-----|----------------|
+| **[docs/operations.md](docs/operations.md)** | **Start here for ops:** all env vars, new environments, AdminJS, plan limits, Umami, feedback, deletion |
+| [docs/test-matrix.md](docs/test-matrix.md) | Section 8 user-story → automated test map |
+| [docs/environments.md](docs/environments.md) | Staging/production provisioning checklist (Supabase, Railway, Vercel, Stripe) |
+| [docs/requirements.md](docs/requirements.md) | Product requirements (source of truth) |
+| [docs/support-data-deletion.md](docs/support-data-deletion.md) | How support deletes/anonymizes accounts |
+| [STILL_TO_DO.md](STILL_TO_DO.md) | Post-deploy go-live checklist |
+| [SETUP.md](SETUP.md) | Older macOS setup notes (prefer Quick Start + operations.md) |
 
-#### Quick Start
+### Getting started (local)
 
-1. **Start local Postgres** (Docker):
+1. **Postgres** (Docker, host port **5433**):
 
    ```bash
    docker compose up -d
    ```
 
-2. **Install Frontend Dependencies:**
+2. **Env files:**
+
    ```bash
-   npm install
    cp .env.example .env
+   cp server/.env.example server/.env
    ```
 
-3. **Install Backend Dependencies:**
+3. **API** (Terminal 1):
+
    ```bash
    cd server
    npm install
-   cp .env.example .env
    npx prisma generate
    npx prisma migrate deploy
-   cd ..
-   ```
-
-4. **Start Backend Server** (Terminal 1):
-   ```bash
-   cd server
    npm run dev
    ```
-   Server runs on `http://localhost:3000` (or `PORT` from `server/.env`)
 
-5. **Start Frontend** (Terminal 2 - new terminal):
+   Default: `http://localhost:3000` (set `PORT` if needed).
+
+4. **Frontend** (Terminal 2):
+
    ```bash
+   npm install
    npm run dev
    ```
-   Frontend runs on `http://localhost:5173`
 
-6. **Sign up** at `http://localhost:5173` (Free plan; no payment required).
+   Open `http://localhost:5173` → **Sign up** (Free plan; no payment). Without email configured, verification links appear in the API console.
 
-See **[docs/environments.md](docs/environments.md)** for local / staging / production separation.
+Full variable reference: **[docs/operations.md §2](docs/operations.md#2-environment-variables-complete)**.
 
-The `.env` file should point the frontend at your local API (default `http://localhost:3000/api`).
+### Common operator tasks
 
-### Environment variables
-
-**Frontend** (root `.env`):
-- `VITE_API_BASE_URL` – Backend API URL (e.g. `http://localhost:3000/api` for local).
-
-**Backend** (`server/.env`): copy from `server/.env.example`.
-- `APP_ENV` – `local`, `staging`, or `production`.
-- `PORT` – Server port (default 3000).
-- `NODE_ENV` – `development` or `production`.
-- `JWT_SECRET` – **Required when `APP_ENV` is staging or production.**
-- `DATABASE_URL` – PostgreSQL connection string (Docker local or Supabase).
-- `CORS_ORIGIN` – Frontend origin(s) for CORS.
+| Task | Where |
+|------|--------|
+| Set up staging/prod | [docs/environments.md](docs/environments.md) |
+| Enable AdminJS | `SUPER_ADMIN_EMAILS` + open `{API}/admin` — [ops §4](docs/operations.md#4-platform-admin-adminjs) |
+| Change Free/Starter/Pro caps | Edit `server/plan-limits.json`, restart API — [ops §5](docs/operations.md#5-plan-limits) |
+| Turn on analytics | `VITE_UMAMI_*` on frontend — [ops §6](docs/operations.md#6-analytics-umami-cloud) |
+| Handle deletion request | [docs/support-data-deletion.md](docs/support-data-deletion.md) |
+| Configure email / Stripe | `server/EMAIL_SETUP.md`, `server/STRIPE_SETUP.md` |
 
 ### Backend API (high level)
 
-All authenticated requests need `Authorization: Bearer <token>` (except public auth/plans).
+Authenticated requests need `Authorization: Bearer <token>` (except public auth/plans).
 
 #### Auth
 - `POST /api/auth/signup` – Free account (no payment)
@@ -93,6 +96,9 @@ All authenticated requests need `Authorization: Bearer <token>` (except public a
 - `GET/POST /api/clients`, `GET/POST /api/invoices`
 - `POST /api/billing/generate-drafts`, `POST /api/invoices/:id/send`, CSV export
 
+#### Platform admin
+- `GET /admin` – AdminJS (disabled/404 unless `SUPER_ADMIN_EMAILS` is set)
+
 Compat redirects: frontend `/inventory` and `/sales` → `/stock`.
 
 ### Build for production
@@ -104,9 +110,19 @@ npm run preview
 
 ### Running tests
 
+**Frontend** (Vitest + Testing Library):
+
 ```bash
-npm install
+npm test -- --run
+```
+
+**Backend** (Vitest + Supertest against Postgres `stockstay_test`):
+
+```bash
+docker compose up -d
+cd server
+npm install --include=dev   # required: server/.npmrc omits devDeps for prod
 npm test
 ```
 
-See `docs/` and `SETUP.md` for more.
+Story coverage map: [docs/test-matrix.md](docs/test-matrix.md). Playwright E2E is deferred.

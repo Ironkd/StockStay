@@ -6,6 +6,7 @@ import { body, validationResult } from "express-validator";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import crypto from "crypto";
+import { pathToFileURL } from "url";
 import "dotenv/config";
 import {
   userOps,
@@ -173,6 +174,28 @@ app.get("/api/plans", (_req, res) => {
   res.json(getAllPlans());
 });
 
+/** Public contact / in-app feedback (NFR-20). */
+app.post("/api/contact", async (req, res) => {
+  try {
+    const email = typeof req.body?.email === "string" ? req.body.email.trim() : "";
+    const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
+    const message = typeof req.body?.message === "string" ? req.body.message.trim() : "";
+    if (!email || !message) {
+      return res.status(400).json({ message: "Email and message are required." });
+    }
+    const ok = await sendSupportEmail(email, name || "Someone", message);
+    if (!ok) {
+      return res.status(503).json({ message: "Unable to send message right now. Please try again later." });
+    }
+    res.json({ message: "Message sent." });
+  } catch (error) {
+    console.error("Error sending contact message:", error);
+    res.status(500).json({ message: "Failed to send message." });
+  }
+});
+
+const skipRateLimitInTests = () => process.env.NODE_ENV === "test";
+
 // Rate limit for login – prevent brute force (10 attempts per 15 min per IP)
 const loginRateLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -180,6 +203,7 @@ const loginRateLimiter = rateLimit({
   message: { message: "Too many login attempts. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipRateLimitInTests,
 });
 
 // Rate limit for forgot-password (5 per 15 min per IP)
@@ -189,6 +213,7 @@ const forgotPasswordRateLimiter = rateLimit({
   message: { message: "Too many reset requests. Please try again in 15 minutes." },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipRateLimitInTests,
 });
 
 // Authentication middleware
@@ -395,6 +420,7 @@ const signupRateLimiter = rateLimit({
   message: { message: "Too many sign-up attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  skip: skipRateLimitInTests,
 });
 
 const PASSWORD_RULES = {
@@ -2932,9 +2958,11 @@ async function checkAndDowngradeTrials() {
   }
 }
 
-checkAndDowngradeTrials();
-setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
-console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
+if (process.env.NODE_ENV !== "test") {
+  checkAndDowngradeTrials();
+  setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
+  console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
+}
 
 const BILLING_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
 
@@ -2951,9 +2979,11 @@ async function runScheduledClientBilling() {
 }
 
 // Delay first run so the server finishes booting; then daily
-setTimeout(runScheduledClientBilling, 60 * 1000);
-setInterval(runScheduledClientBilling, BILLING_CHECK_INTERVAL);
-console.log(`[BILLING] Scheduled draft generation every ${BILLING_CHECK_INTERVAL / 1000 / 60 / 60} hours`);
+if (process.env.NODE_ENV !== "test") {
+  setTimeout(runScheduledClientBilling, 60 * 1000);
+  setInterval(runScheduledClientBilling, BILLING_CHECK_INTERVAL);
+  console.log(`[BILLING] Scheduled draft generation every ${BILLING_CHECK_INTERVAL / 1000 / 60 / 60} hours`);
+}
 
 app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   try {
@@ -2996,16 +3026,29 @@ app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   }
 });
 
-// Start server after mounting AdminJS (bind to 0.0.0.0 so Railway can reach the process)
-async function startServer() {
-  try {
-    await mountAdmin(app);
-  } catch (err) {
-    console.error("[admin] Failed to mount AdminJS:", err?.message || err);
-    app.use("/admin", (_req, res) => {
-      res.status(503).json({ message: "Platform admin unavailable." });
-    });
+let adminMountPromise = null;
+
+/** Mount AdminJS once (used by boot and by tests). */
+export async function ensureAdminMounted() {
+  if (!adminMountPromise) {
+    adminMountPromise = (async () => {
+      try {
+        await mountAdmin(app);
+      } catch (err) {
+        console.error("[admin] Failed to mount AdminJS:", err?.message || err);
+        app.use("/admin", (_req, res) => {
+          res.status(503).json({ message: "Platform admin unavailable." });
+        });
+      }
+    })();
   }
+  await adminMountPromise;
+  return app;
+}
+
+// Start server after mounting AdminJS (bind to 0.0.0.0 so Railway can reach the process)
+export async function startServer() {
+  await ensureAdminMounted();
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
     console.log(`📝 API available at http://localhost:${PORT}/api`);
@@ -3014,4 +3057,11 @@ async function startServer() {
   });
 }
 
-startServer();
+export { app, JWT_SECRET };
+
+// Only listen when this file is the process entrypoint (not when imported by tests)
+const isMain =
+  process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
+if (isMain) {
+  startServer();
+}

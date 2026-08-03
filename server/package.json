@@ -9,7 +9,11 @@
     "build": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio"
+    "db:studio": "prisma studio",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:unit": "vitest run tests/unit",
+    "test:api": "vitest run tests/api"
   },
   "dependencies": {
     "@adminjs/express": "^6.1.1",
@@ -57,5 +61,14 @@
     "@tiptap/extension-ordered-list": "2.1.13",
     "@tiptap/extension-paragraph": "2.1.13",
     "@tiptap/extension-strike": "2.1.13"
+  },
+  "devDependencies": {
+    "@types/supertest": "^6.0.3",
+    "supertest": "^7.2.2",
+    "vitest": "^1.6.1"
+  },
+  "allowScripts": {
+    "esbuild@0.25.12": true,
+    "esbuild@0.21.5": true
   }
 }

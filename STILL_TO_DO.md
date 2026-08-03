@@ -2,6 +2,9 @@
 
 Use this list after deploying the app to get full functionality and verify everything works.
 
+**Operator handbook (env vars, AdminJS, plan limits, Umami):** [docs/operations.md](docs/operations.md)  
+**New environment provisioning:** [docs/environments.md](docs/environments.md)
+
 ---
 
 ## 1. Run database migrations
@@ -34,6 +37,9 @@ After migrations and deploy, quickly check:
 - [ ] **Stock** – Create location / supply item / SKU; receive stock; replenish a property.
 - [ ] **Billing** – Generate draft invoices from unbilled lines; send (PDF + email); CSV export.
 - [ ] **Plan limits** – Free caps block creates when over limit; upgrade from Settings.
+- [ ] **Feedback** – App footer “Send feedback” (or Settings contact) delivers email.
+- [ ] **Legal** – `/terms` and `/privacy` reachable from marketing and app footers.
+- [ ] **Admin** (if enabled) – `{API}/admin` login with an allowlisted user.
 
 ---
 
@@ -65,7 +71,38 @@ Paid plans and trials use Stripe Checkout **after** signup (Settings):
 
 ---
 
-## 5. Support data deletion (alpha)
+## 5. Platform admin (optional)
+
+To enable support AdminJS:
+
+1. Set `SUPER_ADMIN_EMAILS` to existing User emails (comma-separated).
+2. Set `ADMIN_SESSION_SECRET` (or rely on `JWT_SECRET`).
+3. Open `{API_ORIGIN}/admin` and sign in with that user’s password.
+
+Details: [docs/operations.md §4](docs/operations.md#4-platform-admin-adminjs).
+
+---
+
+## 6. Plan limits
+
+Caps are in `server/plan-limits.json` (restart API after edits). Optional override: `PLAN_LIMITS_PATH`.
+
+Details: [docs/operations.md §5](docs/operations.md#5-plan-limits).
+
+---
+
+## 7. Analytics (optional)
+
+On the **frontend** build env, set both:
+
+- `VITE_UMAMI_SCRIPT_URL`
+- `VITE_UMAMI_WEBSITE_ID`
+
+Details: [docs/operations.md §6](docs/operations.md#6-analytics-umami-cloud).
+
+---
+
+## 8. Support data deletion (alpha)
 
 There is no in-app “delete my account” button. For deletion requests, follow:
 
@@ -79,8 +116,13 @@ There is no in-app “delete my account” button. For deletion requests, follow
 
 | Task | Where / command |
 |------|-----------------|
+| Ops handbook | `docs/operations.md` |
+| Test matrix / harness | `docs/test-matrix.md`; `cd server && npm install --include=dev && npm test` |
+| New env / staging | `docs/environments.md` |
 | Run migrations | `cd server && npm run migrate:deploy` |
 | Migration docs | `server/DEPLOY_MIGRATIONS.md` |
 | Email (invoice, reset) | `server/EMAIL_SETUP.md` + `RESEND_API_KEY` or SMTP vars |
 | Stripe | `server/STRIPE_SETUP.md` |
-| Support data deletion (alpha) | `docs/support-data-deletion.md` |
+| AdminJS | `SUPER_ADMIN_EMAILS` → `{API}/admin` |
+| Plan limits | `server/plan-limits.json` |
+| Support data deletion | `docs/support-data-deletion.md` |

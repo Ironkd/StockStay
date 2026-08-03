@@ -1,5 +1,7 @@
 # Setup Instructions (macOS)
 
+> **Prefer the current guides:** local quick start in [README.md](./README.md), full env/ops in [docs/operations.md](./docs/operations.md), staging/prod in [docs/environments.md](./docs/environments.md). This file remains for Node install help and older step wording.
+
 Follow these steps to get your StockStay app running on macOS.
 
 ## Prerequisites

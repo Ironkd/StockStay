@@ -1,4 +1,5 @@
 # Local Postgres for Stock Stay development
+# App DB: stockstay. Tests auto-create stockstay_test on the same instance (port 5433).
 services:
   postgres:
     image: postgres:16-alpine
