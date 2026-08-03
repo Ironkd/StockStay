@@ -16,7 +16,8 @@ Inventory and client billing for short-term rental property managers. React + Ty
 
 | Doc | What it’s for |
 |-----|----------------|
-| **[docs/operations.md](docs/operations.md)** | **Start here for ops:** all env vars, new environments, AdminJS, plan limits, Umami, feedback, deletion |
+| [docs/operations.md](docs/operations.md) | **Start here for ops:** all env vars, new environments, AdminJS, plan limits, Umami, feedback, deletion |
+| [docs/pitr-recovery.md](docs/pitr-recovery.md) | Supabase PITR / backup verification |
 | [docs/test-matrix.md](docs/test-matrix.md) | Section 8 user-story → automated test map |
 | [docs/environments.md](docs/environments.md) | Staging/production provisioning checklist (Supabase, Railway, Vercel, Stripe) |
 | [docs/requirements.md](docs/requirements.md) | Product requirements (source of truth) |

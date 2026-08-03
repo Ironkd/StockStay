@@ -112,11 +112,23 @@ There is no in-app “delete my account” button. For deletion requests, follow
 
 ---
 
+## 9. Backups / PITR (NFR-9)
+
+Before launch, verify Supabase backups (or enable PITR) for **staging** and **production**:
+
+**[docs/pitr-recovery.md](docs/pitr-recovery.md)**
+
+- [ ] Staging checklist + optional restore dry-run  
+- [ ] Production checklist (confirmation-only unless scheduled outage)
+
+---
+
 ## Quick reference
 
 | Task | Where / command |
 |------|-----------------|
 | Ops handbook | `docs/operations.md` |
+| PITR / backups | `docs/pitr-recovery.md` |
 | Test matrix / harness | `docs/test-matrix.md`; `cd server && npm install --include=dev && npm test` |
 | New env / staging | `docs/environments.md` |
 | Run migrations | `cd server && npm run migrate:deploy` |

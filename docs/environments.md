@@ -403,6 +403,7 @@ Local Docker after a bad state: recreate the volume (or drop/recreate the DB), t
 ## Related docs
 
 - **[operations.md](operations.md)** — full env var catalog, AdminJS, plan limits, Umami, feedback, deletion, smoke tests
+- **[pitr-recovery.md](pitr-recovery.md)** — Supabase PITR / backup verification checklist
 - [support-data-deletion.md](support-data-deletion.md) — support-handled account deletion via AdminJS
 - [requirements.md](requirements.md) — NFR-1, NFR-12, Appendix A
 - [../README.md](../README.md) — quick start

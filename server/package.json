@@ -18,9 +18,9 @@
   "dependencies": {
     "@adminjs/express": "^6.1.1",
     "@adminjs/prisma": "^5.0.4",
-    "@prisma/adapter-better-sqlite3": "^7.3.0",
-    "@prisma/adapter-pg": "^7.3.0",
-    "@prisma/client": "^7.3.0",
+    "@prisma/adapter-better-sqlite3": "^7.9.1",
+    "@prisma/adapter-pg": "^7.9.1",
+    "@prisma/client": "^7.9.1",
     "adminjs": "^7.8.17",
     "bcryptjs": "^2.4.3",
     "better-sqlite3": "^12.6.2",
@@ -38,7 +38,7 @@
     "nodemailer": "^7.0.13",
     "pdfkit": "^0.19.1",
     "pg": "^8.17.2",
-    "prisma": "^7.3.0",
+    "prisma": "^7.9.1",
     "resend": "^4.0.0",
     "stripe": "^20.3.0",
     "tslib": "^2.8.1"
@@ -69,6 +69,8 @@
   },
   "allowScripts": {
     "esbuild@0.25.12": true,
-    "esbuild@0.21.5": true
+    "esbuild@0.21.5": true,
+    "prisma@7.9.1": true,
+    "@prisma/engines@7.9.1": true
   }
 }

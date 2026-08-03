@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.7 (Section 8 test harness)  
+**Version:** 1.8 (PITR runbook + Vite/Prisma within-major hygiene)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -1059,7 +1059,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-6 | Immutable audit trail (StockTransaction) for all quantity changes | Must | Assessment |
 | NFR-7 | Decimal types for financial and quantity fields | Must | Assessment |
 | NFR-8 | Database migrations reliable across dev/staging/production | Must | Assessment |
-| NFR-9 | PITR backups configured and recovery tested | Should | Assessment |
+| NFR-9 | PITR backups configured and recovery tested | Should | **Done** (1.8 — `docs/pitr-recovery.md` runbook; operator must tick staging/prod checklist; live prod restore deferred) |
 | NFR-10 | Rate limiting, Helmet, and input sanitization / validation on API write paths | Must | Existing + Strategy |
 | NFR-11 | Automated test harness derived from user stories in Section 8 | Should | **Done** (1.7 — API+unit+RTL; matrix in `docs/test-matrix.md`; Playwright deferred) |
 | NFR-12 | **Remove** shared demo-account functionality; onboard real users. Demo/test data only in non-prod environments | Must | Strategy |
@@ -1074,7 +1074,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-21 | Terms of Service and Privacy Policy reachable from app and marketing site | Must | **Done** (1.6 — footer links + refreshed pages) |
 | NFR-22 | Cookie disclosure if cookies are used; prefer sessionStorage for auth tokens | Should | **Done** (1.6 — Privacy: sessionStorage auth; AdminJS cookies for `/admin` only; no consent banner) |
 | NFR-23 | User data deletion supported via customer support for alpha (self-serve optional later) | Should | **Done** (1.6 — `docs/support-data-deletion.md`) |
-| NFR-24 | Lightweight dependency hygiene: keep Vite/Prisma (and critical deps) on patched versions | Should | Assessment |
+| NFR-24 | Lightweight dependency hygiene: keep Vite/Prisma (and critical deps) on patched versions | Should | **Done** (1.8 — Vite 6.4.3, Vitest 1.6.1, Prisma 7.9.1 within major; see ops §15) |
 
 ---
 
@@ -1155,7 +1155,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 11. **Super-admin interface** + **viewer role enforcement** on write APIs — **Done** (AdminJS full schema CRUD + `SUPER_ADMIN_EMAILS`; `requireWriteAccess` / catalogue write gates; UI `canWrite`)
 12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion — **Done** (Umami Cloud; Layout feedback + `signup`/`feedback_sent`; ToS/Privacy refresh + footers; sessionStorage auth disclosure; `docs/support-data-deletion.md`)
 13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out) — **Done** (Vitest/Supertest API + domain unit + frontend RTL; `docs/test-matrix.md`; GitHub Actions; Playwright E2E deferred)
-14. PITR recovery check + dependency hygiene (Prisma/Vite patches) as capacity allows
+14. **PITR recovery check** + **dependency hygiene** (Prisma/Vite patches) as capacity allows — **Done** (`docs/pitr-recovery.md`; Vite 6.4.3 / Vitest 1.6.1 / Prisma 7.9.1; live prod restore deferred to ops calendar)
 
 ---
 
@@ -1175,6 +1175,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Analytics (Umami) | `src/lib/analytics.ts`, `src/components/UmamiAnalytics.tsx` |
 | Support data deletion | `docs/support-data-deletion.md` |
 | Operations handbook | `docs/operations.md` |
+| PITR / backups | `docs/pitr-recovery.md` |
 | Test matrix (Section 8) | `docs/test-matrix.md` |
 | Server tests | `server/tests/` |
 | Environments | `docs/environments.md` |
@@ -1209,3 +1210,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.5 | 2026-08-03 | Probable | Appendix A #11: AdminJS `/admin` (`SUPER_ADMIN_EMAILS`); viewer `requireWriteAccess` + UI `canWrite` |
 | 1.6 | 2026-08-03 | Probable | Appendix A #12: Umami analytics; in-app feedback; ToS/Privacy + sessionStorage/AdminJS disclosure; support deletion runbook |
 | 1.7 | 2026-08-03 | Probable | Appendix A #13: Section 8 test harness (API/unit/RTL + CI); Playwright deferred; `docs/test-matrix.md` |
+| 1.8 | 2026-08-03 | Probable | Appendix A #14: PITR runbook (`docs/pitr-recovery.md`); Vite 6.4.3 / Vitest 1.6.1 / Prisma 7.9.1 within-major hygiene |

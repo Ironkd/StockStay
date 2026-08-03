@@ -299,11 +299,27 @@ Playwright browser E2E is **deferred**.
 
 ---
 
-## 15. Doc map
+## 15. Dependency hygiene (NFR-24)
+
+- Prefer **within-major** patches for Vite, Vitest, Prisma, and other critical deps (no surprise majors mid-sprint).
+- After bumps: run root `npm test -- --run` + `npm run build`, and `cd server && npm install --include=dev && npm test`.
+- Cadence: at least when closing an Appendix A slice, or monthly before launch.
+- Do not use `npm audit fix --force` unless an incident requires it; document leftover high/critical vulns if deferred.
+
+---
+
+## 16. PITR / backups (NFR-9)
+
+See **[pitr-recovery.md](pitr-recovery.md)** — verify Supabase daily backups or PITR on staging/prod; staging restore dry-run; no unscheduled prod restore.
+
+---
+
+## 17. Doc map
 
 | Doc | Use when |
 |-----|----------|
 | [operations.md](operations.md) (this file) | Day-to-day config & support |
+| [pitr-recovery.md](pitr-recovery.md) | Backup / PITR verification |
 | [test-matrix.md](test-matrix.md) | Section 8 story → test status |
 | [environments.md](environments.md) | First-time staging/prod stacks |
 | [requirements.md](requirements.md) | What to build / acceptance |
