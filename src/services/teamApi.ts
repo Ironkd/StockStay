@@ -47,6 +47,16 @@ export const teamApi = {
     });
   },
 
+  /** Update team billing timezone (team owner only). */
+  updateBillingTimezone: async (
+    billingTimezone: string
+  ): Promise<{ team: { id: string; name: string; billingTimezone: string } }> => {
+    return apiRequest("/team", {
+      method: "PATCH",
+      body: JSON.stringify({ billingTimezone }),
+    });
+  },
+
   acceptInvitation: async (token: string): Promise<{ message: string; user?: import("./authApi").AuthUser }> => {
     return apiRequest("/team/invitations/accept", {
       method: "POST",

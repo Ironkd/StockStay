@@ -94,12 +94,14 @@ enum UnitDimension {
 }
 
 model Team {
-  id             String   @id @default(uuid())
-  organizationId String
-  name           String
-  ownerId        String
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id               String   @id @default(uuid())
+  organizationId   String
+  name             String
+  ownerId          String
+  /** IANA timezone for billing period boundaries (Q1b). */
+  billingTimezone  String   @default("America/Toronto")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   organization   Organization     @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   memberships    UserMembership[]
@@ -150,6 +152,7 @@ model Property {
   client         Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
   stockLocations StockLocationProperty[]
   replenishments Replenishment[]
+  invoiceLines   InvoiceLine[]
 
   @@index([teamId])
   @@index([clientId])
@@ -411,6 +414,7 @@ model ReplenishmentLine {
   supplyItem    SupplyItem         @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
   reversesLine  ReplenishmentLine? @relation("ReplenishmentLineReversal", fields: [reversesLineId], references: [id], onDelete: SetNull)
   reversedBy    ReplenishmentLine[] @relation("ReplenishmentLineReversal")
+  invoiceLine   InvoiceLine?
 
   @@index([replenishmentId])
   @@index([skuId])
@@ -421,27 +425,52 @@ model ReplenishmentLine {
 }
 
 model Invoice {
-  id            String   @id @default(uuid())
-  teamId        String?
-  invoiceNumber String
-  clientId      String?
-  clientName    String   @default("")
-  date          String // ISO date string
-  dueDate       String? // ISO date string
-  items         String // JSON array of invoice items
-  subtotal      Float    @default(0)
-  tax           Float    @default(0)
-  total         Float    @default(0)
-  status        String   @default("draft") // draft, sent, paid, overdue
-  notes         String   @default("")
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id                  String    @id @default(uuid())
+  teamId              String?
+  invoiceNumber       String
+  clientId            String?
+  clientName          String    @default("")
+  date                String // ISO date string (invoice issue date)
+  dueDate             String? // ISO date string
+  items               String    @default("[]") // Legacy JSON array; scheduled invoices use InvoiceLine
+  billingPeriodStart  DateTime?
+  billingPeriodEnd    DateTime?
+  taxRate             Decimal   @default(0) @db.Decimal(9, 4)
+  subtotal            Float     @default(0)
+  tax                 Float     @default(0)
+  total               Float     @default(0)
+  status              String    @default("draft") // draft, sent, paid, overdue
+  notes               String    @default("")
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
-  team Team? @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  team   Team?         @relation(fields: [teamId], references: [id], onDelete: SetNull)
+  lines  InvoiceLine[]
 
   @@index([clientId])
   @@index([invoiceNumber])
   @@index([teamId])
+  @@index([teamId, clientId, billingPeriodStart])
+}
+
+model InvoiceLine {
+  id                   String   @id @default(uuid())
+  invoiceId            String
+  propertyId           String?
+  replenishmentLineId  String?  @unique
+  description          String
+  quantity             Decimal  @db.Decimal(18, 6)
+  unitPrice            Decimal  @db.Decimal(18, 6)
+  amount               Decimal  @db.Decimal(18, 4)
+  sortOrder            Int      @default(0)
+  createdAt            DateTime @default(now())
+
+  invoice           Invoice           @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  property          Property?         @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  replenishmentLine ReplenishmentLine? @relation(fields: [replenishmentLineId], references: [id], onDelete: SetNull)
+
+  @@index([invoiceId])
+  @@index([propertyId])
 }
 
 model Invitation {

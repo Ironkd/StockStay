@@ -492,50 +492,99 @@ export const clientOps = {
 };
 
 // Invoice operations (team-scoped)
+const invoiceLineInclude = {
+  lines: {
+    include: {
+      property: { select: { id: true, name: true } },
+    },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+  },
+};
+
+function mapInvoiceRow(inv) {
+  if (!inv) return null;
+  const legacyItems = parseJson(inv.items, []);
+  const lines = Array.isArray(inv.lines)
+    ? inv.lines.map((line) => ({
+        ...line,
+        quantity: line.quantity != null ? String(line.quantity) : "0",
+        unitPrice: line.unitPrice != null ? String(line.unitPrice) : "0",
+        amount: line.amount != null ? String(line.amount) : "0",
+      }))
+    : [];
+  const items =
+    lines.length > 0
+      ? lines.map((l) => ({
+          name: l.description,
+          quantity: Number(l.quantity),
+          unitPrice: Number(l.unitPrice),
+          total: Number(l.amount),
+          propertyId: l.propertyId,
+          propertyName: l.property?.name,
+          replenishmentLineId: l.replenishmentLineId,
+        }))
+      : legacyItems;
+  return {
+    ...inv,
+    items,
+    lines,
+    taxRate: inv.taxRate != null ? Number(inv.taxRate) : 0,
+    billingPeriodStart: inv.billingPeriodStart
+      ? new Date(inv.billingPeriodStart).toISOString()
+      : null,
+    billingPeriodEnd: inv.billingPeriodEnd
+      ? new Date(inv.billingPeriodEnd).toISOString()
+      : null,
+  };
+}
+
 export const invoiceOps = {
   async findAll(teamId) {
     const where = teamId != null ? { teamId } : {};
-    const invoices = await prisma.invoice.findMany({ where, orderBy: { createdAt: 'desc' } });
-    return invoices.map((inv) => ({
-      ...inv,
-      items: parseJson(inv.items, []),
-    }));
+    const invoices = await prisma.invoice.findMany({
+      where,
+      include: invoiceLineInclude,
+      orderBy: { createdAt: "desc" },
+    });
+    return invoices.map(mapInvoiceRow);
   },
 
   async findById(id) {
-    const invoice = await prisma.invoice.findUnique({ where: { id } });
-    if (!invoice) return null;
-    return {
-      ...invoice,
-      items: parseJson(invoice.items, []),
-    };
+    const invoice = await prisma.invoice.findUnique({
+      where: { id },
+      include: invoiceLineInclude,
+    });
+    return mapInvoiceRow(invoice);
   },
 
   async create(data) {
+    const { lines, taxRate, billingPeriodStart, billingPeriodEnd, ...rest } = data;
     const invoice = await prisma.invoice.create({
       data: {
-        ...data,
+        ...rest,
         items: stringifyJson(data.items || []),
+        taxRate: taxRate ?? 0,
+        billingPeriodStart: billingPeriodStart ?? null,
+        billingPeriodEnd: billingPeriodEnd ?? null,
       },
+      include: invoiceLineInclude,
     });
-    return {
-      ...invoice,
-      items: parseJson(invoice.items, []),
-    };
+    return mapInvoiceRow(invoice);
   },
 
   async update(id, data) {
+    const payload = { ...data };
+    if (data.items !== undefined) {
+      payload.items = stringifyJson(data.items);
+    }
+    // Don't pass lines through raw update
+    delete payload.lines;
     const invoice = await prisma.invoice.update({
       where: { id },
-      data: {
-        ...data,
-        items: data.items !== undefined ? stringifyJson(data.items) : undefined,
-      },
+      data: payload,
+      include: invoiceLineInclude,
     });
-    return {
-      ...invoice,
-      items: parseJson(invoice.items, []),
-    };
+    return mapInvoiceRow(invoice);
   },
 
   async delete(id) {

@@ -57,6 +57,8 @@ export const SettingsPage: React.FC = () => {
 
   const [teamNameEdit, setTeamNameEdit] = useState("");
   const [savingName, setSavingName] = useState(false);
+  const [billingTimezoneEdit, setBillingTimezoneEdit] = useState("America/Toronto");
+  const [savingTimezone, setSavingTimezone] = useState(false);
   const [newTeamName, setNewTeamName] = useState("");
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [createTeamError, setCreateTeamError] = useState<string | null>(null);
@@ -155,6 +157,7 @@ export const SettingsPage: React.FC = () => {
       const data = await teamApi.getTeam();
       setTeamData(data);
       setTeamNameEdit(data.team.name);
+      setBillingTimezoneEdit(data.team.billingTimezone || "America/Toronto");
       setOrgNameEdit(data.organization?.name ?? data.team.organizationName ?? "");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load team");
@@ -228,6 +231,32 @@ export const SettingsPage: React.FC = () => {
       console.error(err);
     } finally {
       setSavingName(false);
+    }
+  };
+
+  const handleSaveBillingTimezone = async () => {
+    if (!teamData || !isOwner) return;
+    const tz = billingTimezoneEdit.trim();
+    if (!tz) return;
+    setSavingTimezone(true);
+    try {
+      const { team } = await teamApi.updateBillingTimezone(tz);
+      setTeamData((prev) =>
+        prev
+          ? {
+              ...prev,
+              team: {
+                ...prev.team,
+                billingTimezone: team.billingTimezone || tz,
+              },
+            }
+          : null
+      );
+      setBillingTimezoneEdit(team.billingTimezone || tz);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save billing timezone");
+    } finally {
+      setSavingTimezone(false);
     }
   };
 
@@ -1214,6 +1243,48 @@ export const SettingsPage: React.FC = () => {
                     <> · {team.propertyCount} propert{team.propertyCount === 1 ? "y" : "ies"}</>
                   )}
                 </p>
+                <label style={{ display: "block", marginTop: "16px" }}>
+                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>
+                    Billing timezone
+                  </span>
+                  {isTeamOwner ? (
+                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+                      <select
+                        value={billingTimezoneEdit}
+                        onChange={(e) => setBillingTimezoneEdit(e.target.value)}
+                        style={{ maxWidth: "320px", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+                      >
+                        <option value="America/Toronto">America/Toronto (Eastern)</option>
+                        <option value="America/Winnipeg">America/Winnipeg (Central)</option>
+                        <option value="America/Edmonton">America/Edmonton (Mountain)</option>
+                        <option value="America/Vancouver">America/Vancouver (Pacific)</option>
+                        <option value="America/Halifax">America/Halifax (Atlantic)</option>
+                        <option value="America/St_Johns">America/St_Johns (Newfoundland)</option>
+                        <option value="America/New_York">America/New_York</option>
+                        <option value="America/Chicago">America/Chicago</option>
+                        <option value="America/Denver">America/Denver</option>
+                        <option value="America/Los_Angeles">America/Los_Angeles</option>
+                        <option value="UTC">UTC</option>
+                      </select>
+                      <button
+                        type="button"
+                        className="nav-button primary"
+                        onClick={handleSaveBillingTimezone}
+                        disabled={
+                          savingTimezone ||
+                          billingTimezoneEdit === (team.billingTimezone || "America/Toronto")
+                        }
+                      >
+                        {savingTimezone ? "Saving..." : "Save timezone"}
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ fontSize: "14px" }}>{team.billingTimezone || "America/Toronto"}</div>
+                  )}
+                  <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#94a3b8" }}>
+                    Weekly / biweekly / monthly invoice periods close at midnight in this timezone.
+                  </p>
+                </label>
               </div>
 
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>

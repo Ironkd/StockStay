@@ -128,7 +128,17 @@ function getInvoiceBranding(team) {
  */
 function buildInvoiceEmailHtml(invoice, team = null) {
   const branding = getInvoiceBranding(team);
-  const items = invoice.items || [];
+  const items =
+    Array.isArray(invoice.lines) && invoice.lines.length > 0
+      ? invoice.lines.map((l) => ({
+          name: l.property?.name
+            ? `${l.description} · ${l.property.name}`
+            : l.description,
+          quantity: Number(l.quantity),
+          unitPrice: Number(l.unitPrice),
+          total: Number(l.amount),
+        }))
+      : invoice.items || [];
   const itemsRows = items
     .map(
       (item) =>
@@ -140,6 +150,10 @@ function buildInvoiceEmailHtml(invoice, team = null) {
   const total = Number(invoice.total) ?? 0;
   const dateStr = invoice.date ? new Date(invoice.date).toLocaleDateString() : "";
   const dueStr = invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "";
+  const periodStr =
+    invoice.billingPeriodStart && invoice.billingPeriodEnd
+      ? `<p style="margin:4px 0 0;font-size:12px;color:#64748b;">Period: ${new Date(invoice.billingPeriodStart).toLocaleDateString()} – ${new Date(invoice.billingPeriodEnd).toLocaleDateString()}</p>`
+      : "";
   const notes = invoice.notes ? `<p style="margin-top:20px;color:#64748b;font-size:14px;">${escapeHtml(invoice.notes)}</p>` : "";
   const logoBlock = branding.logoUrl
     ? `<img src="${escapeHtml(branding.logoUrl)}" alt="${escapeHtml(branding.companyName)}" style="max-height:48px;max-width:200px;display:block;margin-bottom:20px;" />`
@@ -167,6 +181,7 @@ function buildInvoiceEmailHtml(invoice, team = null) {
       <p style="margin:0 0 16px;font-size:15px;color:#334155;">${escapeHtml(invoice.clientName)}</p>
       <h2 style="margin:0 0 8px;font-size:1.75rem;font-weight:700;color:${branding.primaryColor};">Invoice ${escapeHtml(invoice.invoiceNumber)}</h2>
       <p style="margin:0;font-size:13px;color:#64748b;">Date: ${dateStr} &nbsp;·&nbsp; Due: ${dueStr}</p>
+      ${periodStr}
     </div>
     <div style="padding:28px;">
       <table style="width:100%;border-collapse:collapse;margin-bottom:24px;">
@@ -200,31 +215,52 @@ function escapeHtml(str) {
 }
 
 /**
- * Send invoice email to the client.
+ * Send invoice email to the client (HTML body + PDF attachment).
  * @param {string} to - Client email
  * @param {string} clientName - Client name
- * @param {object} invoice - Invoice object (invoiceNumber, clientName, date, dueDate, items, subtotal, tax, total, notes)
- * @param {object|null} team - Team with optional invoiceLogoUrl and invoiceStyle (for branding)
+ * @param {object} invoice - Invoice object (invoiceNumber, clientName, date, dueDate, items/lines, subtotal, tax, total, notes)
+ * @param {object|null} team - Org/team branding (invoiceLogoUrl, invoiceStyle)
+ * @param {Buffer|null} pdfBuffer - Optional PDF attachment
  * @returns {Promise<boolean>} - true if sent, false on error
  */
-export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
+export async function sendInvoiceEmail(to, clientName, invoice, team = null, pdfBuffer = null) {
   if (!to || !String(to).trim()) return false;
   const branding = getInvoiceBranding(team);
   const subject = `Invoice ${invoice.invoiceNumber} from ${branding.companyName}`;
   const html = buildInvoiceEmailHtml(invoice, team);
-  const text = `Invoice ${invoice.invoiceNumber}\n\n${clientName}\nDate: ${invoice.date}\nDue: ${invoice.dueDate}\n\nItems: ${(invoice.items || []).map((i) => `${i.name} x${i.quantity} = $${i.total}`).join("\n")}\n\nSubtotal: $${(invoice.subtotal ?? 0).toFixed(2)}\nTax: $${(invoice.tax ?? 0).toFixed(2)}\nTotal: $${(invoice.total ?? 0).toFixed(2)}\n\n— Stock Stay`;
+  const itemList =
+    Array.isArray(invoice.lines) && invoice.lines.length > 0
+      ? invoice.lines.map((i) => `${i.description} x${i.quantity} = $${i.amount}`).join("\n")
+      : (invoice.items || []).map((i) => `${i.name} x${i.quantity} = $${i.total}`).join("\n");
+  const text = `Invoice ${invoice.invoiceNumber}\n\n${clientName}\nDate: ${invoice.date}\nDue: ${invoice.dueDate}\n\nItems:\n${itemList}\n\nSubtotal: $${(invoice.subtotal ?? 0).toFixed(2)}\nTax: $${(invoice.tax ?? 0).toFixed(2)}\nTotal: $${(invoice.total ?? 0).toFixed(2)}\n\n— Stock Stay`;
+
+  const attachments = [];
+  if (pdfBuffer && Buffer.isBuffer(pdfBuffer)) {
+    attachments.push({
+      filename: `invoice-${invoice.invoiceNumber}.pdf`,
+      content: pdfBuffer,
+      contentType: "application/pdf",
+    });
+  }
 
   if (RESEND_API_KEY) {
     try {
       const { Resend } = await import("resend");
       const resend = new Resend(RESEND_API_KEY);
-      const { error } = await resend.emails.send({
+      const payload = {
         from: RESEND_FROM_EMAIL,
         to: [to.trim()],
         subject,
         html,
         text,
-      });
+      };
+      if (attachments.length) {
+        payload.attachments = attachments.map((a) => ({
+          filename: a.filename,
+          content: a.content,
+        }));
+      }
+      const { error } = await resend.emails.send(payload);
       if (error) {
         console.error("[EMAIL] Resend invoice error:", error.message);
         return false;
@@ -245,6 +281,13 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
         subject,
         text,
         html,
+        attachments: attachments.length
+          ? attachments.map((a) => ({
+              filename: a.filename,
+              content: a.content,
+              contentType: a.contentType,
+            }))
+          : undefined,
       });
       return true;
     } catch (err) {
@@ -256,6 +299,7 @@ export async function sendInvoiceEmail(to, clientName, invoice, team = null) {
   console.log("[EMAIL] Invoice email (no Resend/SMTP configured):");
   console.log("  To:", to);
   console.log("  Subject:", subject);
+  if (pdfBuffer) console.log("  PDF attachment bytes:", pdfBuffer.length);
   return true;
 }
 

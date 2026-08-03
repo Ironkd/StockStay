@@ -1,9 +1,9 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.1 (Location low stock; properties billing-only)  
-**Status:** Ready for implementation planning (timezone for billing periods still open)  
+**Version:** 1.2 (Scheduled client billing + team billing timezone)  
+**Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
-**Last updated:** 2026-07-28
+**Last updated:** 2026-08-03
 
 ---
 
@@ -16,7 +16,7 @@ This document is the **source of truth** for Stock Stay's functional requirement
 3. **Product strategy call notes** (stock locations, supply catalogue, monthly client billing)
 4. **Validation sessions** with Neil (Probable) and David
 
-Future implementation work — schema changes, API refactors, UI flows — should trace back to sections in this document. Validated decisions are recorded in [Section 11](#11-resolved-decisions). One item remains open: **billing timezone** (Q1b).
+Future implementation work — schema changes, API refactors, UI flows — should trace back to sections in this document. Validated decisions are recorded in [Section 11](#11-resolved-decisions).
 
 ---
 
@@ -56,7 +56,7 @@ Stock Stay has two completely separate billing concepts. Documentation, code, an
 |-------|----------|
 | Client ↔ Property | One client can be billed for **multiple properties**. Each property has **one billing client**. |
 | Client identity | **Client** is a billing contact — not assumed to be the property owner. The PM's relationship may be with an owner, manager, or other party. |
-| Billing schedule | Per client: **weekly**, **biweekly**, or **monthly (end of month)**. Editable per client. **Timezone for period boundaries: open** — see Q1b. |
+| Billing schedule | Per client: **weekly**, **biweekly**, or **monthly (end of month)**. Editable per client. Period boundaries use **`Team.billingTimezone`** (IANA, editable in Settings) — Q1b resolved. |
 | Bill-back pricing | Unit rate × base qty, plus **markup**. Markup is set **per property**, with a **default markup per client**. |
 | Invoice grouping | **One invoice per client** per billing period, with line items **broken down by property**. |
 | Ad-hoc invoice at replenishment | **Out of scope** for now. |
@@ -329,7 +329,7 @@ Operational unit within an Organization. Today Team is the de facto tenant; targ
 |--------------------|-------|
 | organizationId | FK to Organization |
 | name | Team display name |
-| timezone | **TBD** — billing-period timezone policy is open (Q1b). Do not implement signup timezone capture until decided. |
+| billingTimezone | IANA timezone for billing period boundaries (default `America/Toronto`); editable in Settings (Q1b). |
 
 #### UserMembership
 
@@ -471,7 +471,7 @@ Client invoice. Target model normalizes line items (today lines are JSON blobs).
 | Field (conceptual) | Notes |
 |--------------------|-------|
 | clientId | Billed client |
-| billingPeriodStart, billingPeriodEnd | Period covered (timezone policy TBD — Q1b) |
+| billingPeriodStart, billingPeriodEnd | Period covered; bounds computed in `Team.billingTimezone`, stored as UTC |
 | status | draft / sent / paid / overdue |
 | lines | FK to InvoiceLine rows |
 | InvoiceLine.propertyId | Property breakdown within the client invoice |
@@ -707,7 +707,7 @@ Property-level reorder / PropertyStock monitoring is **out of v1**. Use **SL-6**
 | | |
 |---|---|
 | **Actor** | System (scheduled job) or Team Owner / Member with invoices access (manual trigger) |
-| **Preconditions** | Unbilled replenishment lines (and reverse credits) exist for clients whose billing period has ended (per `Client.billingFrequency`; timezone per Q1b) |
+| **Preconditions** | Unbilled replenishment lines (and reverse credits) exist for clients whose billing period has ended (per `Client.billingFrequency`; period math in `Team.billingTimezone`) |
 | **Steps** | For each due client: aggregate unbilled lines → create **one draft Invoice** with lines **grouped/broken down by property** |
 | **Postconditions** | Invoice in draft status; lines linked to replenishment lines; replenishment lines marked invoiced |
 | **Audit** | Invoice created timestamp |
@@ -718,7 +718,7 @@ Property-level reorder / PropertyStock monitoring is **out of v1**. Use **SL-6**
 | | |
 |---|---|
 | **Preconditions** | Invoice in draft status |
-| **Steps** | PM adjusts line items, tax, notes |
+| **Steps** | PM adjusts tax and notes on scheduled drafts (line items from replenishment are fixed); free-form invoices may still edit line items |
 | **Postconditions** | Invoice updated |
 | **Audit** | Updated timestamp |
 | **Billing** | Totals recalculated |
@@ -814,7 +814,7 @@ This section is the canonical example for validation. All implementation of cata
 
 ### Phase 3: Scheduled client billing
 
-1. When the client's billing period ends (weekly / biweekly / monthly EOM; **timezone TBD — Q1b**), the billing engine aggregates all unbilled replenishment lines (and reverse credits) for that client.
+1. When the client's billing period ends (weekly / biweekly / monthly EOM in **`Team.billingTimezone`**), the billing engine aggregates all unbilled replenishment lines (and reverse credits) for that client.
 2. System creates **one draft Invoice** for the client, with line items **broken down by property** (including the $9.60 Coffee Pod line under Property A, with markup applied if configured).
 3. PM reviews, optionally edits, then **sends by email** (HTML + **PDF attachment**) and/or **exports CSV**.
 4. PM marks invoice **paid** when client pays offline.
@@ -878,7 +878,7 @@ flowchart LR
 | Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | Replace with Replenishment + Invoice |
 | Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields **and** invoice branding |
 | User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
-| Timezone | Not captured | Billing-period timezone policy **open (Q1b)** | Decide before scheduled billing engine |
+| Timezone | Not captured | `Team.billingTimezone` (IANA, editable in Settings) | Q1b resolved in 1.2 |
 | Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | Extend plan config |
 | Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | See BR-20 |
 | Demo accounts | Present in codebase | **Remove** demo login path; onboard real users; no shared prod demo | Strategy Phase 2 |
@@ -902,7 +902,7 @@ Rules that implementation must not guess:
 | **BR-4 Property stock increment** | Always in base units of the Supply Item. |
 | **BR-5 Unit rate snapshot** | ReplenishmentLine / credit lines store unit rate and effective markup at time of transaction (later price/markup changes do not alter past lines). |
 | **BR-6 Unbilled carry-forward** | Unbilled replenishment charges and return credits carry forward until included in an invoice. No double-billing. |
-| **BR-7 Billing schedule** | Per client: `weekly`, `biweekly`, or `monthly_eom`. Timezone for period boundaries is **open (Q1b)** — do not hard-code team-owner-at-signup until decided. |
+| **BR-7 Billing schedule** | Per client: `weekly`, `biweekly`, or `monthly_eom`. Period boundaries use **`Team.billingTimezone`** (IANA, editable in Settings; default `America/Toronto`). Weekly = ISO Mon→Mon; biweekly = 14-day windows from Monday of the ISO week containing `Team.createdAt`; monthly_eom = calendar month. Lines included by `Replenishment.createdAt` in `[periodStart, periodEnd)`. At most one invoice per `(clientId, billingPeriodStart, billingPeriodEnd)`. |
 | **BR-8 Invoice grouping** | One invoice per client per billing period; line items broken down by property. |
 | **BR-9 Ledger-only mutations** | No API route or UI action may update stock balances without creating a StockTransaction. |
 | **BR-10 No delete with history** | Entities referenced by StockTransaction or InvoiceLine are archived, not hard-deleted. |
@@ -1120,10 +1120,11 @@ The following are **explicitly deferred**. Implementation agents must not scope-
 | Q12 | Multi-team users | **Schema and UI in v1** so multi-team can be tested end-to-end. |
 | Q13 | Accounting export | **CSV** sufficient for v1. |
 | Q14 | Invoice artifacts | **PDF**, **email HTML**, and **CSV** all required. |
+| Q1b | Billing timezone | **`Team.billingTimezone`** (IANA string, editable in Settings; default `America/Toronto`). All weekly / biweekly / monthly_eom cutovers use this timezone; period bounds stored as UTC. |
 
 ### Still open
 
-- [ ] **Q1b — Billing timezone:** Which timezone defines period boundaries (weekly / biweekly / monthly EOM)? Candidates include: team owner timezone at signup, org/team setting (editable), property timezone, UTC, or browser-local at invoice generation. **Defer decision until scheduled billing work (Appendix A step for billing engine).** Do not implement timezone capture at signup until this is decided.
+_None — Q1b resolved in v1.2._
 
 ### Design note: why inter-property is always billable/refundable
 
@@ -1142,12 +1143,12 @@ Uniform rule: every stock-location ↔ property movement bills or refunds. Pass-
 Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work.
 
 1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
-2. **Organization + UserMembership** schema and **team-switching UI** (timezone field deferred pending Q1b)
+2. **Organization + UserMembership** schema and **team-switching UI** — timezone on Team shipped as `billingTimezone` with Appendix A #7
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (StockOnHand + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5; PropertyStock dropped in 1.1)
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
 6. **Inter-property transfer** as linked return + replenish (both billable) — **Done** (`createInterPropertyTransfer` + `POST /api/replenishments/transfers`; shared `transferGroupId`; Stock-page Transfer UI)
-7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **resolve Q1b (timezone) here before coding period math**
+7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **Done** (`Team.billingTimezone` / Q1b; `clientBilling.js` period math + draft generation + daily job; `InvoiceLine`; PDF via `invoicePdf.js`; CSV export; Settings TZ + Billing UI)
 8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20)
 9. **Streamlined signup** (minimal fields; no payment required to start)
 10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code
@@ -1169,6 +1170,8 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Replenishment / return | `server/replenishment.js` |
 | Plan limits | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
+| Client billing engine | `server/clientBilling.js` |
+| Invoice PDF | `server/invoicePdf.js` |
 | Invoice email | `server/email.js` |
 | Frontend routes | `src/App.tsx` |
 | Access control | `src/components/ProtectedRoute.tsx` |
@@ -1192,3 +1195,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 0.9 | 2026-07-28 | Probable | SL-4 Receive: purchase price (defaults to last) + purchase date; updates SKU unitRate; receipt audit on StockTransaction |
 | 1.0 | 2026-07-28 | Probable | SKUs team-shared; StockOnHand per (sku, location) with lastPurchasePrice/lastUnitRate; bill-back prefers location last rate |
 | 1.1 | 2026-07-28 | Probable | Drop PropertyStock; properties billing-only; LocationSupplyThreshold low stock per supply item@location; transfers allocate unreverted replenish lines |
+| 1.2 | 2026-08-03 | Probable | Appendix A #7: Q1b → `Team.billingTimezone`; scheduled drafts (`clientBilling.js`); InvoiceLine; PDF+CSV+HTML send; Settings TZ + Billing generate/export UI |

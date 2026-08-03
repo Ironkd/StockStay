@@ -52,6 +52,10 @@ export type Invoice = {
   date: string;
   dueDate: string;
   items: InvoiceItem[];
+  lines?: InvoiceLine[];
+  billingPeriodStart?: string | null;
+  billingPeriodEnd?: string | null;
+  taxRate?: number;
   subtotal: number;
   tax: number;
   total: number;
@@ -61,13 +65,29 @@ export type Invoice = {
   updatedAt: string;
 };
 
-export type InvoiceItem = {
+export type InvoiceLine = {
   id: string;
+  invoiceId?: string;
+  propertyId?: string | null;
+  replenishmentLineId?: string | null;
+  description: string;
+  quantity: string | number;
+  unitPrice: string | number;
+  amount: string | number;
+  sortOrder?: number;
+  property?: { id: string; name: string };
+};
+
+export type InvoiceItem = {
+  id?: string;
   name: string;
   quantity: number;
   unitPrice: number;
   total: number;
   sku?: string;
+  propertyId?: string;
+  propertyName?: string;
+  replenishmentLineId?: string;
 };
 
 // Invoice email branding (stored per team)
@@ -101,9 +121,10 @@ export type TeamInfo = {
   trialEndsAt: string | null;
   trialStatus?: string;
   billingPortalAvailable: boolean;
-  /** Invoice email branding */
   invoiceLogoUrl?: string | null;
   invoiceStyle?: InvoiceStyle | null;
+  /** IANA timezone for billing period boundaries */
+  billingTimezone?: string;
   organizationId?: string;
   organizationName?: string;
   isOrgOwner?: boolean;

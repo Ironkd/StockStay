@@ -42,6 +42,14 @@ import {
   listUnbilledLines,
   listUnrevertedLinesForPropertySupply,
 } from "./replenishment.js";
+import {
+  generateDraftInvoicesForTeam,
+  generateDraftInvoicesForAllTeams,
+  updateDraftInvoice,
+  buildInvoicesCsv,
+  ClientBillingError,
+} from "./clientBilling.js";
+import { buildInvoicePdf } from "./invoicePdf.js";
 import { createCatalogueAuth, mapStockDomainError } from "./middleware/catalogueAuth.js";
 import { computeUnitRate } from "./decimalUtil.js";
 import { sendVerificationEmail, sendInvoiceEmail, sendInvitationEmail, sendSupportEmail } from "./email.js";
@@ -1998,6 +2006,35 @@ app.get("/api/invoices", authenticateToken, async (req, res) => {
   }
 });
 
+app.get("/api/invoices/export.csv", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!userHasPageAccess(currentUser, "invoices")) {
+      return res.status(403).json({ message: "You do not have access to Invoices." });
+    }
+    const idsRaw = typeof req.query.ids === "string" ? req.query.ids : "";
+    const ids = idsRaw
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    let invoices = await invoiceOps.findAll(currentUser.teamId);
+    if (ids.length > 0) {
+      const idSet = new Set(ids);
+      invoices = invoices.filter((inv) => idSet.has(inv.id));
+    }
+    const csv = buildInvoicesCsv(invoices);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="invoices-${new Date().toISOString().slice(0, 10)}.csv"`
+    );
+    res.send(csv);
+  } catch (error) {
+    console.error("Error exporting invoices CSV:", error);
+    res.status(500).json({ message: "Error exporting invoices" });
+  }
+});
+
 app.get("/api/invoices/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
@@ -2072,9 +2109,30 @@ app.put("/api/invoices/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Invoice not found" });
     }
 
-    const invoiceData = req.body;
+    const body = req.body || {};
+    if (
+      (existingInvoice.lines && existingInvoice.lines.length > 0) ||
+      body.taxRate !== undefined ||
+      (existingInvoice.billingPeriodStart && body.items === undefined)
+    ) {
+      try {
+        const updated = await updateDraftInvoice(currentUser.teamId, req.params.id, {
+          taxRate: body.taxRate,
+          notes: body.notes,
+          status: body.status,
+          dueDate: body.dueDate,
+          date: body.date,
+        });
+        return res.json(updated);
+      } catch (err) {
+        if (err instanceof ClientBillingError) {
+          return res.status(err.code === "NOT_FOUND" ? 404 : 400).json({ message: err.message });
+        }
+        throw err;
+      }
+    }
 
-    const updatedInvoice = await invoiceOps.update(req.params.id, invoiceData);
+    const updatedInvoice = await invoiceOps.update(req.params.id, body);
     res.json(updatedInvoice);
   } catch (error) {
     console.error("Error updating invoice:", error);
@@ -2137,7 +2195,19 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
       team?.organizationId
         ? await organizationOps.findById(team.organizationId)
         : null;
-    const sent = await sendInvoiceEmail(clientEmail, invoice.clientName, invoice, branding);
+    let pdfBuffer = null;
+    try {
+      pdfBuffer = await buildInvoicePdf(invoice, branding || team);
+    } catch (pdfErr) {
+      console.error("[PDF] Failed to build invoice PDF:", pdfErr?.message || pdfErr);
+    }
+    const sent = await sendInvoiceEmail(
+      clientEmail,
+      invoice.clientName,
+      invoice,
+      branding,
+      pdfBuffer
+    );
     if (!sent) {
       return res.status(500).json({
         message: "Failed to send email. Check server email configuration (Resend or SMTP).",
@@ -2148,6 +2218,53 @@ app.post("/api/invoices/:id/send", authenticateToken, async (req, res) => {
   } catch (error) {
     console.error("Error sending invoice:", error);
     res.status(500).json({ message: "Error sending invoice." });
+  }
+});
+
+app.post("/api/billing/generate-drafts", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!userHasPageAccess(currentUser, "invoices")) {
+      return res.status(403).json({ message: "You do not have access to Invoices." });
+    }
+    if (!currentUser.teamId) {
+      return res.status(400).json({ message: "No active team." });
+    }
+    const clientId =
+      typeof req.body?.clientId === "string" && req.body.clientId.trim()
+        ? req.body.clientId.trim()
+        : null;
+    const result = await generateDraftInvoicesForTeam(currentUser.teamId, { clientId });
+    res.status(201).json(result);
+  } catch (error) {
+    if (error instanceof ClientBillingError) {
+      return res.status(error.code === "NOT_FOUND" ? 404 : 400).json({ message: error.message });
+    }
+    console.error("Error generating draft invoices:", error);
+    res.status(500).json({ message: "Error generating draft invoices" });
+  }
+});
+
+app.get("/api/invoices/:id/export.csv", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!userHasPageAccess(currentUser, "invoices")) {
+      return res.status(403).json({ message: "You do not have access to Invoices." });
+    }
+    const invoice = await invoiceOps.findById(req.params.id);
+    if (!invoice || invoice.teamId !== currentUser.teamId) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+    const csv = buildInvoicesCsv([invoice]);
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="invoice-${invoice.invoiceNumber}.csv"`
+    );
+    res.send(csv);
+  } catch (error) {
+    console.error("Error exporting invoice CSV:", error);
+    res.status(500).json({ message: "Error exporting invoice" });
   }
 });
 
@@ -2312,6 +2429,7 @@ app.get("/api/team", authenticateToken, async (req, res) => {
         billingPortalAvailable: Boolean(org.stripeCustomerId),
         invoiceLogoUrl: org.invoiceLogoUrl ?? null,
         invoiceStyle,
+        billingTimezone: team.billingTimezone || "America/Toronto",
       },
       organization: {
         id: org.id,
@@ -2374,6 +2492,13 @@ app.patch("/api/team", authenticateToken, async (req, res) => {
       }
     }
 
+    if (typeof req.body.billingTimezone === "string" && req.body.billingTimezone.trim()) {
+      if (currentUser.teamRole !== "owner") {
+        return res.status(403).json({ message: "Only team owners can update billing timezone" });
+      }
+      teamUpdates.billingTimezone = req.body.billingTimezone.trim();
+    }
+
     if (Object.keys(teamUpdates).length === 0 && Object.keys(orgUpdates).length === 0) {
       return res.status(400).json({ message: "No valid updates provided" });
     }
@@ -2400,6 +2525,7 @@ app.patch("/api/team", authenticateToken, async (req, res) => {
       team: {
         id: updatedTeam.id,
         name: updatedTeam.name,
+        billingTimezone: updatedTeam.billingTimezone || "America/Toronto",
         organizationId: updatedOrg.id,
         organizationName: updatedOrg.name,
         invoiceLogoUrl: updatedOrg.invoiceLogoUrl ?? null,
@@ -2726,6 +2852,25 @@ async function checkAndDowngradeTrials() {
 checkAndDowngradeTrials();
 setInterval(checkAndDowngradeTrials, TRIAL_CHECK_INTERVAL);
 console.log(`[TRIAL] Scheduled trial checks every ${TRIAL_CHECK_INTERVAL / 1000 / 60} minutes`);
+
+const BILLING_CHECK_INTERVAL = 24 * 60 * 60 * 1000;
+
+async function runScheduledClientBilling() {
+  try {
+    console.log("[BILLING] Generating draft invoices for due periods...");
+    const result = await generateDraftInvoicesForAllTeams();
+    console.log(
+      `[BILLING] Done — ${result.invoicesCreated} draft(s) across ${result.teams} team(s)`
+    );
+  } catch (error) {
+    console.error("[BILLING] Error generating drafts:", error);
+  }
+}
+
+// Delay first run so the server finishes booting; then daily
+setTimeout(runScheduledClientBilling, 60 * 1000);
+setInterval(runScheduledClientBilling, BILLING_CHECK_INTERVAL);
+console.log(`[BILLING] Scheduled draft generation every ${BILLING_CHECK_INTERVAL / 1000 / 60 / 60} hours`);
 
 app.post("/api/team/start-trial", authenticateToken, async (req, res) => {
   try {

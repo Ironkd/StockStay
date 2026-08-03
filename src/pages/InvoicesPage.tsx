@@ -18,6 +18,8 @@ export const InvoicesPage: React.FC = () => {
   const [sendingInvoice, setSendingInvoice] = useState(false);
   const [senderBranding, setSenderBranding] = useState<{ companyName: string; companyAddress: string; companyPhone: string; companyEmail: string } | null>(null);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
+  const [generatingDrafts, setGeneratingDrafts] = useState(false);
+  const [generateMessage, setGenerateMessage] = useState<string | null>(null);
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -230,13 +232,25 @@ export const InvoicesPage: React.FC = () => {
       return;
     }
 
-    const invoiceData = {
-      ...formData,
-      tax: Math.round(formData.tax * 100) / 100,
-      clientName: selectedClient.name,
-      subtotal: calculations.subtotal,
-      total: calculations.total
-    };
+    const isScheduled =
+      Boolean(editingInvoice?.billingPeriodStart) ||
+      (editingInvoice?.lines && editingInvoice.lines.length > 0);
+
+    const invoiceData = isScheduled
+      ? {
+          taxRate: Math.round(formData.tax * 100) / 100,
+          notes: formData.notes,
+          status: formData.status,
+          dueDate: formData.dueDate,
+          date: formData.date,
+        }
+      : {
+          ...formData,
+          tax: Math.round(formData.tax * 100) / 100,
+          clientName: selectedClient.name,
+          subtotal: calculations.subtotal,
+          total: calculations.total,
+        };
 
     // Remember if this invoice had already been sent before editing.
     const wasPreviouslySent = editingInvoice?.status === "sent";
@@ -267,9 +281,11 @@ export const InvoicesPage: React.FC = () => {
   const handleEdit = (invoice: Invoice) => {
     setEditingInvoice(invoice);
     const taxRate =
-      invoice.subtotal && invoice.subtotal !== 0
-        ? (invoice.tax / invoice.subtotal) * 100
-        : Number(invoice.tax);
+      invoice.taxRate != null && invoice.taxRate !== undefined
+        ? Number(invoice.taxRate)
+        : invoice.subtotal && invoice.subtotal !== 0
+          ? (invoice.tax / invoice.subtotal) * 100
+          : Number(invoice.tax);
     setFormData({
       invoiceNumber: invoice.invoiceNumber,
       clientId: invoice.clientId,
@@ -363,7 +379,7 @@ export const InvoicesPage: React.FC = () => {
               {invoice.status !== "sent" && (
                 <button
                   onClick={() => handleSendClick(invoice)}
-                  title="Send to client"
+                  title="Send to client (HTML + PDF)"
                   disabled={invoice.status === "paid"}
                   style={{
                     backgroundColor: invoice.status === "paid" ? "#94a3b8" : "#3b82f6",
@@ -380,6 +396,19 @@ export const InvoicesPage: React.FC = () => {
                   Send
                 </button>
               )}
+              <button
+                className="icon-button"
+                onClick={() =>
+                  invoicesApi
+                    .exportCsv(invoice.id, invoice.invoiceNumber)
+                    .catch((err) =>
+                      alert(err instanceof Error ? err.message : "Export failed")
+                    )
+                }
+                title="Export CSV"
+              >
+                ⬇️
+              </button>
               <button
                 className="icon-button"
                 onClick={() => handleEdit(invoice)}
@@ -403,10 +432,20 @@ export const InvoicesPage: React.FC = () => {
           </p>
           <p>
             <strong>Due Date:</strong>{" "}
-            {new Date(invoice.dueDate).toLocaleDateString()}
+            {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}
           </p>
+          {invoice.billingPeriodStart && invoice.billingPeriodEnd && (
+            <p>
+              <strong>Period:</strong>{" "}
+              {new Date(invoice.billingPeriodStart).toLocaleDateString()} –{" "}
+              {new Date(invoice.billingPeriodEnd).toLocaleDateString()}
+            </p>
+          )}
           <p>
             <strong>Total:</strong> ${invoice.total.toFixed(2)}
+            {invoice.lines && invoice.lines.length > 0
+              ? ` · ${invoice.lines.length} line${invoice.lines.length === 1 ? "" : "s"}`
+              : ""}
           </p>
         </div>
       </div>
@@ -567,11 +606,11 @@ export const InvoicesPage: React.FC = () => {
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", gap: "12px", flexWrap: "wrap" }}>
         <div>
           <h2>Billing</h2>
           <p style={{ marginTop: "4px", fontSize: "0.9em", color: "#64748b" }}>
-            Create and manage invoices, and bill back unbilled replenishment charges.
+            Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
           </p>
           <div className="invoice-totals-bar">
             <span className="invoice-total-item">
@@ -583,16 +622,58 @@ export const InvoicesPage: React.FC = () => {
               {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(yearlyTotal)}
             </span>
           </div>
+          {generateMessage && (
+            <p style={{ marginTop: "8px", fontSize: "13px", color: "#0369a1" }}>{generateMessage}</p>
+          )}
         </div>
-        <button
-          className="clear-button"
-          onClick={() => {
-            resetForm();
-            setShowForm(!showForm);
-          }}
-        >
-          {showForm ? "Cancel" : "Create Invoice"}
-        </button>
+        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          <button
+            type="button"
+            className="nav-button primary"
+            disabled={generatingDrafts}
+            onClick={async () => {
+              setGeneratingDrafts(true);
+              setGenerateMessage(null);
+              try {
+                const result = await invoicesApi.generateDrafts();
+                setGenerateMessage(
+                  result.count > 0
+                    ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
+                    : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
+                );
+                await refreshInvoices();
+              } catch (err) {
+                setGenerateMessage(err instanceof Error ? err.message : "Failed to generate drafts");
+              } finally {
+                setGeneratingDrafts(false);
+              }
+            }}
+          >
+            {generatingDrafts ? "Generating…" : "Generate drafts"}
+          </button>
+          <button
+            type="button"
+            className="nav-button secondary"
+            onClick={async () => {
+              try {
+                await invoicesApi.exportAllCsv();
+              } catch (err) {
+                setGenerateMessage(err instanceof Error ? err.message : "CSV export failed");
+              }
+            }}
+          >
+            Export CSV
+          </button>
+          <button
+            className="clear-button"
+            onClick={() => {
+              resetForm();
+              setShowForm(!showForm);
+            }}
+          >
+            {showForm ? "Cancel" : "Create Invoice"}
+          </button>
+        </div>
       </div>
 
       {showForm && (
@@ -829,8 +910,9 @@ export const InvoicesPage: React.FC = () => {
         {sectionVisibility.unbilled && (
           <div style={{ marginTop: "12px" }}>
             <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
-              These lines will be included on the next scheduled invoice for each client
-              (scheduled billing comes in a later release). Credits are returns with negative amounts.
+              These lines are included when you click <strong>Generate drafts</strong> for each
+              client&apos;s closed billing period (per client frequency, team timezone). Credits are
+              returns with negative amounts.
               {propertyIdFilter && " Filtered to the selected property."}
             </p>
             {visibleUnbilledLines.length === 0 ? (
