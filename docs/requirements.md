@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.5 (Super-admin AdminJS + viewer write enforcement)  
+**Version:** 1.6 (Pre-alpha ops: Umami, feedback, legal, deletion runbook)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -1069,11 +1069,11 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-16 | Invoice send produces PDF attachment and branded HTML email | Must | Validation |
 | NFR-17 | Row-level locking (or equivalent) on concurrent stock balance updates | Must | Strategy |
 | NFR-18 | Schema uses enums, unique constraints, and explicit FK `onDelete` where required (BR-22) | Must | Assessment |
-| NFR-19 | Basic product analytics (Umami or GA4) with page views and signup/activation events | Should | Strategy |
-| NFR-20 | In-app feedback / bug report path (link or widget) | Should | Strategy |
-| NFR-21 | Terms of Service and Privacy Policy reachable from app and marketing site | Must | Strategy |
-| NFR-22 | Cookie disclosure if cookies are used; prefer LocalStorage for auth tokens | Should | Strategy |
-| NFR-23 | User data deletion supported via customer support for alpha (self-serve optional later) | Should | Strategy |
+| NFR-19 | Basic product analytics (Umami Cloud) with page views and signup/feedback events | Should | **Done** (1.6 — `src/lib/analytics.ts`, Umami script) |
+| NFR-20 | In-app feedback / bug report path (link or widget) | Should | **Done** (1.6 — Layout “Send feedback” + Settings/Landing contact) |
+| NFR-21 | Terms of Service and Privacy Policy reachable from app and marketing site | Must | **Done** (1.6 — footer links + refreshed pages) |
+| NFR-22 | Cookie disclosure if cookies are used; prefer sessionStorage for auth tokens | Should | **Done** (1.6 — Privacy: sessionStorage auth; AdminJS cookies for `/admin` only; no consent banner) |
+| NFR-23 | User data deletion supported via customer support for alpha (self-serve optional later) | Should | **Done** (1.6 — `docs/support-data-deletion.md`) |
 | NFR-24 | Lightweight dependency hygiene: keep Vite/Prisma (and critical deps) on patched versions | Should | Assessment |
 
 ---
@@ -1153,7 +1153,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 9. **Streamlined signup** (minimal fields; no payment required to start) — **Done** (Free `POST /api/auth/signup`; no Stripe at signup; payment-signup checkout/complete paths removed)
 10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code — **Done** (models/APIs removed; Stock/Properties/Replenishment; legacy migrate scripts archived under `server/archive/`)
 11. **Super-admin interface** + **viewer role enforcement** on write APIs — **Done** (AdminJS full schema CRUD + `SUPER_ADMIN_EMAILS`; `requireWriteAccess` / catalogue write gates; UI `canWrite`)
-12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion
+12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion — **Done** (Umami Cloud; Layout feedback + `signup`/`feedback_sent`; ToS/Privacy refresh + footers; sessionStorage auth disclosure; `docs/support-data-deletion.md`)
 13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out)
 14. PITR recovery check + dependency hygiene (Prisma/Vite patches) as capacity allows
 
@@ -1172,6 +1172,8 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Plan limits / trials | `server/trialManager.js` |
 | Stripe SaaS billing | `server/billing.js` |
 | Platform AdminJS | `server/admin.js` (`/admin`) |
+| Analytics (Umami) | `src/lib/analytics.ts`, `src/components/UmamiAnalytics.tsx` |
+| Support data deletion | `docs/support-data-deletion.md` |
 | Client billing engine | `server/clientBilling.js` |
 | Invoice PDF | `server/invoicePdf.js` |
 | Invoice email | `server/email.js` |
@@ -1201,3 +1203,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.3 | 2026-08-03 | Probable | Appendix A #8: `plan-limits.json` live config; location/supply/SKU caps; BR-20 banner + PLAN_LIMIT 403s; marketing reads `GET /api/plans` |
 | 1.4 | 2026-08-03 | Probable | Appendix A #9–#10: Free signup only (payment-signup paths removed); Sale/Inventory legacy scripts archived; README/STILL_TO_DO updated |
 | 1.5 | 2026-08-03 | Probable | Appendix A #11: AdminJS `/admin` (`SUPER_ADMIN_EMAILS`); viewer `requireWriteAccess` + UI `canWrite` |
+| 1.6 | 2026-08-03 | Probable | Appendix A #12: Umami analytics; in-app feedback; ToS/Privacy + sessionStorage/AdminJS disclosure; support deletion runbook |

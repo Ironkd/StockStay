@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { apiRequest } from "../config/api";
 import { fetchPlansConfig } from "../services/plansApi";
+import { track } from "../lib/analytics";
 import type { PlansConfig } from "../types";
 
 export const LandingPage: React.FC = () => {
@@ -50,6 +51,7 @@ export const LandingPage: React.FC = () => {
         }),
       });
       setSupportResult({ ok: true, message: "Message sent. We'll get back to you soon." });
+      track("feedback_sent", { source: "landing" });
       setSupportForm({ name: "", email: "", message: "" });
       setTimeout(() => {
         setSupportOpen(false);

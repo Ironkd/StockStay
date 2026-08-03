@@ -22,6 +22,7 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
+import { UmamiAnalytics } from "./components/UmamiAnalytics";
 
 const isNativeApp = Capacitor.isNativePlatform();
 
@@ -29,6 +30,7 @@ export const App: React.FC = () => {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <UmamiAnalytics />
         <Routes>
           <Route
             path="/"

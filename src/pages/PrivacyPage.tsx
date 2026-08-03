@@ -31,30 +31,37 @@ export const PrivacyPage: React.FC = () => {
       <main className="legal-content">
         <div className="legal-inner">
           <h1>Privacy Policy</h1>
-          <p className="legal-updated">Last updated: January 2026</p>
+          <p className="legal-updated">Last updated: August 2026</p>
+          <p style={{ fontSize: "13px", color: "#64748b" }}>
+            This is product boilerplate for an alpha SaaS release and is not a substitute for legal advice.
+          </p>
 
           <section>
             <h2>1. Introduction</h2>
             <p>
-              Stock Stay (“we”, “our”, or “us”) operates the inventory management service at stockstay.com. This Privacy
-              Policy describes how we collect, use, store, and protect your information when you use our Service.
+              Stock Stay (“we”, “our”, or “us”) operates the inventory and billing service at stockstay.com. This Privacy
+              Policy describes how we collect, use, store, and protect information when you use our Service.
             </p>
           </section>
 
           <section>
             <h2>2. Information We Collect</h2>
-            <p>We collect information you provide directly and information we obtain from your use of the Service.</p>
+            <p>We collect information you provide and information from your use of the Service.</p>
             <ul>
               <li>
                 <strong>Account and profile:</strong> email address, name, and password (stored in hashed form).
               </li>
               <li>
-                <strong>Business data:</strong> inventory items, properties, clients, invoices, sales, and other data
-                you enter into the Service.
+                <strong>Business data:</strong> inventory, properties, clients, invoices, stock movements, and other
+                data you enter into the Service.
               </li>
               <li>
-                <strong>Usage and technical data:</strong> log data (e.g. IP address, browser type, access times),
-                and device information as needed to operate and secure the Service.
+                <strong>Support messages:</strong> name, email, and message content when you contact us (including
+                in-app feedback).
+              </li>
+              <li>
+                <strong>Usage and technical data:</strong> log data (e.g. IP address, browser type, access times) as
+                needed to operate and secure the Service; optional product analytics as described below.
               </li>
             </ul>
           </section>
@@ -64,82 +71,108 @@ export const PrivacyPage: React.FC = () => {
             <p>We use your information to:</p>
             <ul>
               <li>Provide, maintain, and improve the Service</li>
-              <li>Authenticate you and manage your account</li>
-              <li>Process and store your inventory, client, and invoice data</li>
-              <li>Send you service-related communications (e.g. security or product updates)</li>
+              <li>Authenticate you and manage your account and organization memberships</li>
+              <li>Process inventory, client, and billing data you store</li>
+              <li>Respond to support and feedback requests</li>
+              <li>Send service-related communications (e.g. security or product updates)</li>
+              <li>Understand product usage via privacy-friendly analytics (when enabled)</li>
               <li>Comply with legal obligations and enforce our Terms of Service</li>
             </ul>
           </section>
 
           <section>
-            <h2>4. Data Storage and Processing</h2>
+            <h2>4. Authentication and browser storage</h2>
             <p>
-              Your data is stored and processed using Supabase (PostgreSQL and related infrastructure). Supabase
-              processes data in accordance with its own privacy and security practices. By using Stock Stay, you consent
-              to this storage and processing as described here.
+              When you sign in, we store an authentication token in your browser’s <strong>sessionStorage</strong>. That
+              token is cleared when the browser tab/session ends and is not a persistent marketing cookie. We do not use
+              a third-party marketing cookie banner for the main app because auth is sessionStorage-based.
+            </p>
+            <p>
+              Platform operators who use the AdminJS console at <code>/admin</code> on the API host may receive{" "}
+              <strong>session cookies</strong> required for that admin interface only. Those cookies are not used for
+              end-user product authentication.
             </p>
           </section>
 
           <section>
-            <h2>5. Data Sharing</h2>
+            <h2>5. Analytics</h2>
             <p>
-              We do not sell your personal information. We may share your information only: (a) with service providers
-              who assist in operating the Service (e.g. hosting, database) under contractual obligations to protect your
-              data; (b) if required by law or to protect our rights and safety; or (c) in connection with a merger,
-              sale, or transfer of assets, with notice where required.
+              When configured, we use <strong>Umami</strong> (privacy-friendly, cookieless analytics) to measure page
+              views and limited product events such as signup and feedback submitted. Umami is loaded only when analytics
+              environment variables are set. We do not use Google Analytics for this alpha release.
             </p>
           </section>
 
           <section>
-            <h2>6. Security</h2>
+            <h2>6. Data Storage and Processing</h2>
             <p>
-              We use industry-standard measures (including encryption, access controls, and secure protocols) to protect
-              your data. You are responsible for keeping your password confidential. Please report any suspected
-              unauthorized access to your account.
+              Your data is stored and processed using our hosting and database providers (including PostgreSQL
+              infrastructure such as Supabase where deployed). Providers process data under their own privacy and
+              security practices. By using Stock Stay, you consent to this storage and processing as described here.
             </p>
           </section>
 
           <section>
-            <h2>7. Your Rights</h2>
+            <h2>7. Data Sharing</h2>
             <p>
-              Depending on your location, you may have rights to access, correct, delete, or export your personal data,
-              or to object to or restrict certain processing. You can update account and profile information in the
-              Service. For other requests, contact us using the support or contact information on stockstay.com.
+              We do not sell your personal information. We may share information only: (a) with service providers who
+              assist in operating the Service (hosting, email, analytics) under obligations to protect your data; (b) if
+              required by law or to protect our rights and safety; or (c) in connection with a merger, sale, or transfer
+              of assets, with notice where required.
             </p>
           </section>
 
           <section>
-            <h2>8. Cookies and Similar Technologies</h2>
+            <h2>8. Security</h2>
             <p>
-              We use cookies and similar technologies necessary to operate the Service (e.g. session and authentication).
-              We may use analytics to understand how the Service is used and to improve it. You can adjust your browser
-              settings to limit or block cookies; some features may not work correctly if you disable essential cookies.
+              We use industry-standard measures (including encryption in transit, access controls, and hashed passwords)
+              to protect your data. You are responsible for keeping your password confidential. Report suspected
+              unauthorized access to support@stockstay.com.
             </p>
           </section>
 
           <section>
-            <h2>9. Data Retention</h2>
+            <h2>9. Your Rights and deletion</h2>
             <p>
-              We retain your data for as long as your account is active or as needed to provide the Service and comply
-              with legal obligations. After account closure, we may retain certain data for backup, legal, or
-              legitimate business purposes in accordance with applicable law.
+              Depending on your location, you may have rights to access, correct, delete, or export personal data, or to
+              object to or restrict certain processing. You can update profile information in Settings. During alpha,
+              account and data deletion is handled by support (email support@stockstay.com); there is no self-serve
+              “delete my account” button yet.
             </p>
           </section>
 
           <section>
-            <h2>10. Changes to This Policy</h2>
+            <h2>10. Cookies and similar technologies</h2>
+            <p>
+              The main product does not rely on third-party marketing cookies. Auth uses sessionStorage as described
+              above. AdminJS on the API host may set session cookies for allowlisted platform admins only. Optional Umami
+              analytics is designed to avoid tracking cookies. You can limit cookies in your browser; essential admin
+              session cookies may be required for <code>/admin</code> to work.
+            </p>
+          </section>
+
+          <section>
+            <h2>11. Data Retention</h2>
+            <p>
+              We retain your data while your account is active or as needed to provide the Service and meet legal
+              obligations. After deletion or account closure, we may retain limited data for backup, legal, or
+              legitimate business purposes as required by applicable law.
+            </p>
+          </section>
+
+          <section>
+            <h2>12. Changes to This Policy</h2>
             <p>
               We may update this Privacy Policy from time to time. We will post the updated policy on this page and
-              update the “Last updated” date. Continued use of the Service after changes constitutes acceptance of the
-              revised policy.
+              update the “Last updated” date. Continued use after changes constitutes acceptance of the revised policy.
             </p>
           </section>
 
           <section>
-            <h2>11. Contact</h2>
+            <h2>13. Contact</h2>
             <p>
-              For questions about this Privacy Policy or our data practices, contact us at the support or contact
-              information provided on stockstay.com.
+              Questions about this Privacy Policy or data practices:{" "}
+              <a href="mailto:support@stockstay.com">support@stockstay.com</a>.
             </p>
           </section>
         </div>

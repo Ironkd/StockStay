@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { authApi } from "../services/authApi";
+import { track } from "../lib/analytics";
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HAS_UPPER = /[A-Z]/;
@@ -171,9 +172,11 @@ export const LoginPage: React.FC = () => {
           ...(inviteToken ? { inviteToken: inviteToken.trim() } : {}),
         });
         if (response.joinedTeam) {
+          track("signup", { via: "invite" });
           navigate("/verify-email?pending=1");
           return;
         }
+        track("signup", { via: "free" });
         setSignupSuccess(
           "Account created on the Free plan. Check your email to verify your address, then sign in. You can upgrade anytime in Settings."
         );

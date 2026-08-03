@@ -6,6 +6,7 @@ import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { propertiesApi } from "../services/propertiesApi";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
+import { track } from "../lib/analytics";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
 import type { Property } from "../types";
 
@@ -506,6 +507,7 @@ export const SettingsPage: React.FC = () => {
         }),
       });
       setSupportResult({ ok: true, message: "Message sent. We'll get back to you soon." });
+      track("feedback_sent", { source: "settings" });
       setSupportForm((f) => ({ ...f, message: "" }));
       setTimeout(() => {
         setShowSupportModal(false);

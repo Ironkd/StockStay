@@ -65,6 +65,16 @@ Paid plans and trials use Stripe Checkout **after** signup (Settings):
 
 ---
 
+## 5. Support data deletion (alpha)
+
+There is no in-app “delete my account” button. For deletion requests, follow:
+
+**[docs/support-data-deletion.md](docs/support-data-deletion.md)**
+
+(AdminJS `/admin` + verify requester → remove/anonymize User / memberships / org as appropriate → confirm by email.)
+
+---
+
 ## Quick reference
 
 | Task | Where / command |
@@ -73,3 +83,4 @@ Paid plans and trials use Stripe Checkout **after** signup (Settings):
 | Migration docs | `server/DEPLOY_MIGRATIONS.md` |
 | Email (invoice, reset) | `server/EMAIL_SETUP.md` + `RESEND_API_KEY` or SMTP vars |
 | Stripe | `server/STRIPE_SETUP.md` |
+| Support data deletion (alpha) | `docs/support-data-deletion.md` |

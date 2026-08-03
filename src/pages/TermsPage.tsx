@@ -31,40 +31,46 @@ export const TermsPage: React.FC = () => {
       <main className="legal-content">
         <div className="legal-inner">
           <h1>Terms of Service</h1>
-          <p className="legal-updated">Last updated: January 2026</p>
+          <p className="legal-updated">Last updated: August 2026</p>
+          <p style={{ fontSize: "13px", color: "#64748b" }}>
+            This is product boilerplate for an alpha SaaS release and is not a substitute for legal advice.
+          </p>
 
           <section>
             <h2>1. Acceptance of Terms</h2>
             <p>
-              By accessing or using Stock Stay (“the Service”) at stockstay.com, you agree to be bound by these Terms of Service.
-              If you do not agree, do not use the Service.
+              By accessing or using Stock Stay (“the Service”) at stockstay.com, you agree to be bound by these Terms of
+              Service. If you do not agree, do not use the Service.
             </p>
           </section>
 
           <section>
             <h2>2. Description of Service</h2>
             <p>
-              Stock Stay is an inventory management platform that helps you track stock levels, manage properties,
-              create invoices, and collaborate with your team. We reserve the right to modify or discontinue the Service
-              (in whole or in part) with reasonable notice where practicable.
+              Stock Stay is a multi-tenant inventory and billing platform for property operators. It helps you track stock
+              across locations and properties, replenish and transfer supplies, manage clients, and generate invoices.
+              Features and plan limits may change during the alpha period. We may modify or discontinue parts of the
+              Service with reasonable notice where practicable.
             </p>
           </section>
 
           <section>
-            <h2>3. Account and Use</h2>
+            <h2>3. Accounts and plans</h2>
             <p>
-              You are responsible for maintaining the confidentiality of your account and password and for all activity
-              under your account. You agree to use the Service only for lawful purposes and in accordance with these Terms.
-              You may not use the Service to transmit harmful code, abuse other users, or violate any applicable laws.
+              New accounts start on the Free plan at signup. Payment is not required to create an account; paid plans
+              (where offered) are activated later through Settings. You are responsible for maintaining the
+              confidentiality of your credentials and for activity under your account. You agree to use the Service only
+              for lawful purposes. You may not use the Service to transmit harmful code, abuse other users, or violate
+              applicable laws.
             </p>
           </section>
 
           <section>
             <h2>4. Your Data</h2>
             <p>
-              You retain ownership of the data you submit to the Service. By using the Service, you grant us the rights
-              necessary to operate and provide the Service (e.g. storing and processing your data). Our use of your data
-              is also described in our <Link to="/privacy">Privacy Policy</Link>.
+              You retain ownership of the data you submit. By using the Service, you grant us the rights necessary to
+              operate and provide the Service (for example storing and processing your data). Our handling of personal
+              information is described in our <Link to="/privacy">Privacy Policy</Link>.
             </p>
           </section>
 
@@ -72,44 +78,60 @@ export const TermsPage: React.FC = () => {
             <h2>5. Acceptable Use</h2>
             <p>
               You may not use the Service to: (a) violate any law or regulation; (b) infringe others’ intellectual
-              property or privacy; (c) distribute malware or attempt to gain unauthorized access to our or others’
-              systems; (d) resell or sublicense the Service without authorization; or (e) use the Service in a way that
-              could harm, overload, or impair the Service or other users.
+              property or privacy; (c) distribute malware or attempt unauthorized access; (d) resell or sublicense the
+              Service without authorization; or (e) overload or impair the Service or other users.
             </p>
           </section>
 
           <section>
-            <h2>6. Limitation of Liability</h2>
+            <h2>6. Alpha / availability</h2>
+            <p>
+              During alpha, the Service is provided “as is.” We aim for reliability but do not guarantee uninterrupted
+              availability, and data or features may change as we iterate.
+            </p>
+          </section>
+
+          <section>
+            <h2>7. Limitation of Liability</h2>
             <p>
               To the fullest extent permitted by law, Stock Stay and its providers shall not be liable for any indirect,
               incidental, special, consequential, or punitive damages, or any loss of profits or data, arising from your
               use of or inability to use the Service. Our total liability shall not exceed the amount you paid us in the
-              twelve (12) months preceding the claim, or one hundred dollars (USD 100), whichever is greater.
+              twelve (12) months preceding the claim, or one hundred dollars (CAD 100), whichever is greater.
             </p>
           </section>
 
           <section>
-            <h2>7. Termination</h2>
+            <h2>8. Termination</h2>
             <p>
-              We may suspend or terminate your access to the Service if you breach these Terms or for other operational
-              or legal reasons. You may stop using the Service at any time. Upon termination, your right to use the
-              Service ceases; we may retain or delete your data in accordance with our data retention practices and
-              Privacy Policy.
+              We may suspend or terminate access if you breach these Terms or for operational or legal reasons. You may
+              stop using the Service at any time. To request deletion of account data during alpha, contact support
+              (see Contact). Upon termination, your right to use the Service ceases; we may retain or delete data per our
+              Privacy Policy and retention practices.
             </p>
           </section>
 
           <section>
-            <h2>8. Changes to Terms</h2>
+            <h2>9. Changes to Terms</h2>
             <p>
               We may update these Terms from time to time. We will post the updated Terms on this page and update the
-              “Last updated” date. Continued use of the Service after changes constitutes acceptance of the revised Terms.
+              “Last updated” date. Continued use after changes constitutes acceptance of the revised Terms.
             </p>
           </section>
 
           <section>
-            <h2>9. Contact</h2>
+            <h2>10. Governing law</h2>
             <p>
-              For questions about these Terms, contact us at the support or contact information provided on stockstay.com.
+              These Terms are governed by the laws of Canada and the province in which the operator is established,
+              without regard to conflict-of-law principles, except where mandatory local consumer laws apply.
+            </p>
+          </section>
+
+          <section>
+            <h2>11. Contact</h2>
+            <p>
+              Questions about these Terms:{" "}
+              <a href="mailto:support@stockstay.com">support@stockstay.com</a> or the contact form on stockstay.com.
             </p>
           </section>
         </div>

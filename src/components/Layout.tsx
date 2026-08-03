@@ -2,6 +2,8 @@ import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { teamApi } from "../services/teamApi";
+import { apiRequest } from "../config/api";
+import { track } from "../lib/analytics";
 import { OverLimitBanner } from "./OverLimitBanner";
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({
@@ -13,6 +15,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const [headerTeamName, setHeaderTeamName] = useState<string | null>(null);
   const [effectivePlan, setEffectivePlan] = useState<string | null>(null);
   const [switching, setSwitching] = useState(false);
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({ name: "", email: "", message: "" });
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackResult, setFeedbackResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const memberships = user?.memberships ?? [];
   const activeTeamId = user?.activeTeamId || user?.teamId || "";
@@ -42,6 +48,46 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
       window.removeEventListener("active-team-changed", refetch);
     };
   }, []);
+
+  const openFeedback = () => {
+    setFeedbackResult(null);
+    setFeedbackForm({
+      name: user?.name?.trim() || "",
+      email: user?.email?.trim() || "",
+      message: "",
+    });
+    setShowFeedback(true);
+  };
+
+  const handleFeedbackSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFeedbackResult(null);
+    setFeedbackSending(true);
+    try {
+      await apiRequest<{ message: string }>("/contact", {
+        method: "POST",
+        body: JSON.stringify({
+          name: feedbackForm.name.trim(),
+          email: feedbackForm.email.trim(),
+          message: feedbackForm.message.trim(),
+        }),
+      });
+      setFeedbackResult({ ok: true, message: "Message sent. We'll get back to you soon." });
+      track("feedback_sent", { source: "layout" });
+      setFeedbackForm((f) => ({ ...f, message: "" }));
+      setTimeout(() => {
+        setShowFeedback(false);
+        setFeedbackResult(null);
+      }, 2000);
+    } catch (err) {
+      setFeedbackResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "Failed to send. Please try again.",
+      });
+    } finally {
+      setFeedbackSending(false);
+    }
+  };
 
   const handleLogout = async () => {
     await logout();
@@ -157,8 +203,103 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
       <main>{children}</main>
 
       <footer className="app-footer">
-        <span>Connected to backend API</span>
+        <button type="button" className="app-footer-link" onClick={openFeedback}>
+          Send feedback
+        </button>
+        <span className="app-footer-sep" aria-hidden="true">
+          ·
+        </span>
+        <Link to="/terms" className="app-footer-link">
+          Terms
+        </Link>
+        <span className="app-footer-sep" aria-hidden="true">
+          ·
+        </span>
+        <Link to="/privacy" className="app-footer-link">
+          Privacy
+        </Link>
       </footer>
+
+      {showFeedback && (
+        <div className="modal-overlay" onClick={() => !feedbackSending && setShowFeedback(false)}>
+          <div
+            className="modal-content"
+            onClick={(e) => e.stopPropagation()}
+            style={{ maxWidth: "440px", maxHeight: "90vh", overflowY: "auto" }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
+              <h3>Send feedback</h3>
+              <button
+                type="button"
+                className="icon-button close-button"
+                onClick={() => !feedbackSending && setShowFeedback(false)}
+                aria-label="Close"
+              >
+                ✕
+              </button>
+            </div>
+            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
+              Send us a message and we&apos;ll get back to you at support@stockstay.com.
+            </p>
+            {feedbackResult && (
+              <p
+                style={{
+                  margin: "0 0 16px",
+                  padding: "12px",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  backgroundColor: feedbackResult.ok ? "#dcfce7" : "#fee2e2",
+                  color: feedbackResult.ok ? "#166534" : "#b91c1c",
+                }}
+              >
+                {feedbackResult.message}
+              </p>
+            )}
+            <form onSubmit={handleFeedbackSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
+                <input
+                  type="text"
+                  value={feedbackForm.name}
+                  onChange={(e) => setFeedbackForm((f) => ({ ...f, name: e.target.value }))}
+                  placeholder="Your name"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email *</span>
+                <input
+                  type="email"
+                  required
+                  value={feedbackForm.email}
+                  onChange={(e) => setFeedbackForm((f) => ({ ...f, email: e.target.value }))}
+                  placeholder="you@example.com"
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
+                />
+              </label>
+              <label>
+                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Message *</span>
+                <textarea
+                  required
+                  value={feedbackForm.message}
+                  onChange={(e) => setFeedbackForm((f) => ({ ...f, message: e.target.value }))}
+                  placeholder="Ideas, bugs, or questions..."
+                  rows={4}
+                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", resize: "vertical", boxSizing: "border-box" }}
+                />
+              </label>
+              <div className="form-actions" style={{ marginTop: "4px" }}>
+                <button type="button" className="secondary" onClick={() => !feedbackSending && setShowFeedback(false)}>
+                  Cancel
+                </button>
+                <button type="submit" className="primary" disabled={feedbackSending}>
+                  {feedbackSending ? "Sending..." : "Send"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
