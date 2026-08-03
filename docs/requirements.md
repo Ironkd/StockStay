@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.3 (Configurable plan limits + BR-20 downgrade UX)  
+**Version:** 1.4 (Appendix A #9–#10 closed: signup + Sale/Inventory cleanup)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -866,23 +866,23 @@ flowchart LR
 
 | Capability | Today | Target | Notes |
 |------------|-------|--------|-------|
-| Stock storage | `Inventory` rows per Property only | Stock Location stock (SKU) + Property stock (Supply Item) | Replace `Inventory` model |
-| Product catalogue | name + sku duplicated per property row | SupplyItem + SKU catalogue | Greenfield replacement |
-| Transfers | Property ↔ Property only (`POST /api/inventory/transfer`) | Replenishment + return via stock location; inter-property = return then replenish (both billable) | New transaction types |
-| Billing trigger | Manual "bill to client" on subtract/add (`BillToClientModal`) | Location→Property bills; Property→Location credits; scheduled invoices per client | Remove subtract→invoice path |
-| Client link | Manual client pick at invoice time | Property has default billing client; invoice schedule/markup on client | Add `Property.clientId`, client billing fields |
-| Invoice lines | JSON blob on Invoice | Normalized InvoiceLine with property breakdown + FK to ReplenishmentLine | Replace JSON approach |
-| Invoice delivery | Email HTML | Email HTML + **PDF** + **CSV export** | New PDF generation |
-| Ledger | InventoryMovement; direct quantity edits allowed | StockTransaction; all changes via ledger service | Refactor all mutation paths |
+| Stock storage | `Inventory` rows per Property only | Stock Location stock (SKU); properties billing-only | **Done** (Inventory model dropped) |
+| Product catalogue | name + sku duplicated per property row | SupplyItem + SKU catalogue | **Done** |
+| Transfers | Property ↔ Property only (`POST /api/inventory/transfer`) | Replenishment + return via stock location; inter-property = return then replenish (both billable) | **Done** |
+| Billing trigger | Manual "bill to client" on subtract/add (`BillToClientModal`) | Location→Property bills; Property→Location credits; scheduled invoices per client | **Done** (bill-to path removed) |
+| Client link | Manual client pick at invoice time | Property has default billing client; invoice schedule/markup on client | **Done** |
+| Invoice lines | JSON blob on Invoice | Normalized InvoiceLine with property breakdown + FK to ReplenishmentLine | **Done** (scheduled); legacy JSON kept for free-form |
+| Invoice delivery | Email HTML | Email HTML + **PDF** + **CSV export** | **Done** |
+| Ledger | InventoryMovement; direct quantity edits allowed | StockTransaction; all changes via ledger service | **Done** |
 | Categories | Browser localStorage (`useCategories.ts`) | Server-side, team-scoped | Replace localStorage |
-| Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | Replace with Replenishment + Invoice |
+| Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | **Done** (Sale dropped; `/sales` → `/stock`) |
 | Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields **and** invoice branding |
 | User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
 | Timezone | Not captured | `Team.billingTimezone` (IANA, editable in Settings) | Q1b resolved in 1.2 |
 | Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | **Done** (1.3 — `plan-limits.json`) |
 | Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | **Done** (1.3 — BR-20 banner + create gates) |
 | Demo accounts | Present in codebase | **Remove** demo login path; onboard real users; no shared prod demo | Strategy Phase 2 |
-| Signup | May require payment / heavy form | Streamlined; payment not required to start | Strategy Phase 2 |
+| Signup | May require payment / heavy form | Streamlined; payment not required to start | **Done** (1.4 — Free signup, no payment) |
 | Client payment | N/A | Explicitly out of scope v1 | — |
 | Viewer role | UI label only | Enforced read-only on API | Add middleware checks |
 | Super admin | None | Platform support interface | New feature |
@@ -1150,8 +1150,8 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 6. **Inter-property transfer** as linked return + replenish (both billable) — **Done** (`createInterPropertyTransfer` + `POST /api/replenishments/transfers`; shared `transferGroupId`; Stock-page Transfer UI)
 7. **Scheduled client billing** engine (per-client frequency) + PDF / email HTML / CSV — **Done** (`Team.billingTimezone` / Q1b; `clientBilling.js` period math + draft generation + daily job; `InvoiceLine`; PDF via `invoicePdf.js`; CSV export; Settings TZ + Billing UI)
 8. **Configurable plan limits** (live-read by UI and marketing) + **plan downgrade rules** (BR-20) — **Done** (`plan-limits.json` / `planConfig.js`; `GET /api/plans`; expanded `GET /api/team/limits`; enforce location/supply/SKU/inventory creates; `OverLimitBanner`; Landing/Pricing live-read)
-9. **Streamlined signup** (minimal fields; no payment required to start)
-10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code
+9. **Streamlined signup** (minimal fields; no payment required to start) — **Done** (Free `POST /api/auth/signup`; no Stripe at signup; payment-signup checkout/complete paths removed)
+10. **Replace** Sale / Inventory / deprecated bill-to-client paths; light cleanup of dead code — **Done** (models/APIs removed; Stock/Properties/Replenishment; legacy migrate scripts archived under `server/archive/`)
 11. **Super-admin interface** + **viewer role enforcement** on write APIs
 12. **Pre-alpha ops slice** — in-app feedback, basic analytics (Umami/GA4), ToS/Privacy links, cookie policy or LocalStorage-only auth confirmation, support-path data deletion
 13. **Test harness** derived from Section 8 user stories (auto-generate then flesh out)
@@ -1198,3 +1198,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.1 | 2026-07-28 | Probable | Drop PropertyStock; properties billing-only; LocationSupplyThreshold low stock per supply item@location; transfers allocate unreverted replenish lines |
 | 1.2 | 2026-08-03 | Probable | Appendix A #7: Q1b → `Team.billingTimezone`; scheduled drafts (`clientBilling.js`); InvoiceLine; PDF+CSV+HTML send; Settings TZ + Billing generate/export UI |
 | 1.3 | 2026-08-03 | Probable | Appendix A #8: `plan-limits.json` live config; location/supply/SKU caps; BR-20 banner + PLAN_LIMIT 403s; marketing reads `GET /api/plans` |
+| 1.4 | 2026-08-03 | Probable | Appendix A #9–#10: Free signup only (payment-signup paths removed); Sale/Inventory legacy scripts archived; README/STILL_TO_DO updated |

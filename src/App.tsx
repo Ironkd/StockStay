@@ -22,7 +22,6 @@ import { ReportsPage } from "./pages/ReportsPage";
 import { AcceptInvitePage } from "./pages/AcceptInvitePage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { VerifyEmailPage } from "./pages/VerifyEmailPage";
-import { SignupCompletePage } from "./pages/SignupCompletePage";
 
 const isNativeApp = Capacitor.isNativePlatform();
 
@@ -42,7 +41,6 @@ export const App: React.FC = () => {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/reset-password" element={<ResetPasswordPage />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/signup-complete" element={<SignupCompletePage />} />
           <Route
             path="/dashboard"
             element={

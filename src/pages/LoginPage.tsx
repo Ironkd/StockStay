@@ -168,7 +168,6 @@ export const LoginPage: React.FC = () => {
           fullName,
           firstName: firstName.trim(),
           lastName: lastName.trim(),
-          startProTrial: false,
           ...(inviteToken ? { inviteToken: inviteToken.trim() } : {}),
         });
         if (response.joinedTeam) {

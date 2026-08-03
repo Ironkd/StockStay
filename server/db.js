@@ -461,7 +461,7 @@ export const propertyOps = {
   },
 
   async delete(id) {
-    // Note: inventory items referencing this property are NOT auto-deleted.
+    // Note: properties are billing destinations only; no property stock cascade on delete.
     // The app should prevent deleting properties that still have inventory.
     return await prisma.property.delete({ where: { id } });
   },

@@ -1,17 +1,14 @@
 ## StockStay
 
-A full-featured inventory management web app built with React and TypeScript. The app connects to a backend API for data persistence.
+Inventory and client billing for short-term rental property managers. React + TypeScript frontend, Express + Prisma API, Postgres.
 
 ### Features
 
-- **Multi-page application**: Login, Home dashboard, Inventory, Clients, Invoices, and Settings pages
-- **Authentication**: Secure login with JWT token-based authentication
-- **Inventory Management**: Add, edit, delete, and search inventory items
-- **Client Management**: Manage client contacts and information
-- **Invoice Management**: Create and manage invoices with line items
-- **Dashboard**: Visual charts and graphs showing inventory statistics
-- **Smart status**: Items are automatically marked as **In stock**, **Low stock**, or **Out of stock** based on quantity and reorder point
-- **Data export**: Export inventory data as JSON files
+- **Stock locations & catalogue** — supply items, SKUs, on-hand balances, receive/adjust
+- **Replenish / return / transfer** — billable movements with ledger audit
+- **Properties & clients** — billing destinations and contacts
+- **Scheduled invoices** — draft generation, PDF/email send, CSV export
+- **Teams & plans** — Free / Starter / Pro limits, invites, Stripe upgrades after signup
 
 ### Getting started
 
@@ -54,7 +51,7 @@ A full-featured inventory management web app built with React and TypeScript. Th
    ```
    Frontend runs on `http://localhost:5173`
 
-6. **Sign up** at `http://localhost:5173` (there is no shared demo account).
+6. **Sign up** at `http://localhost:5173` (Free plan; no payment required).
 
 See **[docs/environments.md](docs/environments.md)** for local / staging / production separation.
 
@@ -73,39 +70,30 @@ The `.env` file should point the frontend at your local API (default `http://loc
 - `DATABASE_URL` – PostgreSQL connection string (Docker local or Supabase).
 - `CORS_ORIGIN` – Frontend origin(s) for CORS.
 
-### Backend API Requirements
+### Backend API (high level)
 
-The app expects a REST API with the following endpoints:
+All authenticated requests need `Authorization: Bearer <token>` (except public auth/plans).
 
-#### Authentication
-- `POST /api/auth/login` - Login with email and password
-- `POST /api/auth/logout` - Logout
-- `GET /api/auth/me` - Get current user
+#### Auth
+- `POST /api/auth/signup` – Free account (no payment)
+- `POST /api/auth/login` / `POST /api/auth/logout` / `GET /api/auth/me`
 
-#### Inventory
-- `GET /api/inventory` - Get all inventory items
-- `GET /api/inventory/:id` - Get inventory item by ID
-- `POST /api/inventory` - Create inventory item
-- `PUT /api/inventory/:id` - Update inventory item
-- `DELETE /api/inventory/:id` - Delete inventory item
-- `DELETE /api/inventory` - Delete all inventory items
-- `POST /api/inventory/bulk` - Bulk create inventory items
+#### Plans
+- `GET /api/plans` – Public live plan limits (marketing)
+- `GET /api/team/limits` – Usage vs plan for the active team
 
-#### Clients
-- `GET /api/clients` - Get all clients
-- `GET /api/clients/:id` - Get client by ID
-- `POST /api/clients` - Create client
-- `PUT /api/clients/:id` - Update client
-- `DELETE /api/clients/:id` - Delete client
+#### Stock & catalogue
+- `GET/POST /api/stock-locations`, `GET/POST /api/supply-items`, `GET/POST /api/skus`
+- Receive / adjust via stock ledger routes; low-stock: `GET /api/location-low-stock`
 
-#### Invoices
-- `GET /api/invoices` - Get all invoices
-- `GET /api/invoices/:id` - Get invoice by ID
-- `POST /api/invoices` - Create invoice
-- `PUT /api/invoices/:id` - Update invoice
-- `DELETE /api/invoices/:id` - Delete invoice
+#### Replenishment
+- `POST /api/replenishments`, returns, transfers; unbilled lines feed invoices
 
-All API requests require a Bearer token in the Authorization header (except login).
+#### Clients & invoices
+- `GET/POST /api/clients`, `GET/POST /api/invoices`
+- `POST /api/billing/generate-drafts`, `POST /api/invoices/:id/send`, CSV export
+
+Compat redirects: frontend `/inventory` and `/sales` → `/stock`.
 
 ### Build for production
 
@@ -116,22 +104,9 @@ npm run preview
 
 ### Running tests
 
-1. Install dependencies (if not already done):
 ```bash
 npm install
-```
-
-2. Run tests:
-```bash
 npm test
 ```
 
-3. Run tests with UI (interactive):
-```bash
-npm run test:ui
-```
-
-4. Run tests with coverage:
-```bash
-npm run test:coverage
-```
+See `docs/` and `SETUP.md` for more.

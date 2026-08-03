@@ -6,11 +6,11 @@ Use this list after deploying the app to get full functionality and verify every
 
 ## 1. Run database migrations
 
-The app starts without running migrations (to avoid advisory-lock timeouts with Supabase). You must run them once so the database has all required columns (e.g. `Invoice.saleId`, `Team` billing/trial/invoice branding).
+The app starts without running migrations (to avoid advisory-lock timeouts with Supabase). You must run them once so the database matches the current Prisma schema.
 
-**Option A – Prisma (recommended)**
+**Prisma (recommended)**
 
-From your machine with `DATABASE_URL` pointing at your Supabase database:
+From your machine with `DATABASE_URL` pointing at your staging/production database:
 
 ```bash
 cd server && npm run migrate:deploy
@@ -22,14 +22,7 @@ On Railway (one-off):
 railway run npm run migrate:deploy
 ```
 
-**Option B – Supabase SQL Editor**
-
-If you prefer not to use Prisma against production, run the idempotent SQL file in Supabase **SQL Editor**:
-
-1. Open your Supabase project → **SQL Editor**.
-2. Paste and run the contents of `server/apply-migrations-supabase.sql`.
-
-See `server/DEPLOY_MIGRATIONS.md` for more detail.
+See `server/DEPLOY_MIGRATIONS.md` for more detail. Legacy one-off SQL dumps live under `server/archive/sql/` and should not be used for new deploys.
 
 ---
 
@@ -37,10 +30,10 @@ See `server/DEPLOY_MIGRATIONS.md` for more detail.
 
 After migrations and deploy, quickly check:
 
-- [ ] **Login** – Sign in (including after a password reset).
-- [ ] **Sale creation** – Create a sale; confirm an invoice is created and appears on the Invoices page.
-- [ ] **Send invoice** – Open an invoice → Send → preview → Send; confirm the client receives the email (if email is configured).
-- [ ] **Tax rounding** – Edit a sale or invoice; save; confirm tax stays at 2 decimal places (e.g. 13.00).
+- [ ] **Signup / login** – Create a Free account (no payment); sign in after email verify; password reset.
+- [ ] **Stock** – Create location / supply item / SKU; receive stock; replenish a property.
+- [ ] **Billing** – Generate draft invoices from unbilled lines; send (PDF + email); CSV export.
+- [ ] **Plan limits** – Free caps block creates when over limit; upgrade from Settings.
 
 ---
 
@@ -65,18 +58,18 @@ Details: `server/EMAIL_SETUP.md`.
 
 ## 4. Stripe (billing & trials)
 
-If you use paid plans or trials with Stripe Checkout:
+Paid plans and trials use Stripe Checkout **after** signup (Settings):
 
 - Set `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, and the price IDs in server env.
-- See `server/STRIPE_SETUP.md` and `server/STRIPE_STEP_BY_STEP.md`.
+- See `server/STRIPE_SETUP.md`.
 
 ---
 
 ## Quick reference
 
-| Task              | Where / command                                      |
-|-------------------|------------------------------------------------------|
-| Run migrations    | `cd server && npm run migrate:deploy` or run `server/apply-migrations-supabase.sql` in Supabase |
-| Migration docs    | `server/DEPLOY_MIGRATIONS.md`                         |
+| Task | Where / command |
+|------|-----------------|
+| Run migrations | `cd server && npm run migrate:deploy` |
+| Migration docs | `server/DEPLOY_MIGRATIONS.md` |
 | Email (invoice, reset) | `server/EMAIL_SETUP.md` + `RESEND_API_KEY` or SMTP vars |
-| Stripe            | `server/STRIPE_SETUP.md`                              |
+| Stripe | `server/STRIPE_SETUP.md` |

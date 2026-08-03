@@ -435,7 +435,6 @@ const signupValidation = [
   body("lastName").optional().trim(),
   body("address").optional().trim(),
   body("phoneNumber").optional().trim(),
-  body("startProTrial").optional().toBoolean(),
   body("inviteToken").optional().trim(),
 ];
 
@@ -589,21 +588,6 @@ app.post("/api/auth/signup", signupRateLimiter, signupValidation, async (req, re
       message: isDev && msg ? msg : "Something went wrong creating your account. Please try again.",
     });
   }
-});
-
-app.post("/api/auth/signup/checkout", signupRateLimiter, async (_req, res) => {
-  // Payment is no longer required at signup (BR-23). Keep endpoint for old clients.
-  return res.status(410).json({
-    message:
-      "Payment is no longer required to sign up. Create a free account, then upgrade from Settings after you sign in.",
-  });
-});
-
-app.post("/api/auth/signup/complete", async (_req, res) => {
-  return res.status(410).json({
-    message:
-      "Payment is no longer required to sign up. Create a free account from the login page, then upgrade from Settings.",
-  });
 });
 
 // Verify email: token from link in email
@@ -1915,7 +1899,7 @@ app.get("/api/clients", authenticateToken, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
 
-    // Allow list for Clients access OR Inventory access (so inventory members can pick client when billing from +/-)
+    // Allow Clients page access OR inventory page access (pick client when editing invoices)
     const canListClients =
       userHasPageAccess(currentUser, "clients") || userHasPageAccess(currentUser, "inventory");
     if (!canListClients) {

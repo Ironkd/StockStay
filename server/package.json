@@ -9,9 +9,7 @@
     "build": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:generate": "prisma generate",
-    "db:studio": "prisma studio",
-    "db:migrate:json": "node migrate-from-json.js",
-    "db:migrate:supabase": "node migrate-to-supabase-simple.js"
+    "db:studio": "prisma studio"
   },
   "dependencies": {
     "@prisma/adapter-better-sqlite3": "^7.3.0",

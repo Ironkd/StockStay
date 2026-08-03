@@ -112,42 +112,6 @@ export async function createCheckoutSession(opts) {
 }
 
 /**
- * Create a Stripe Checkout Session for new signup (no org yet).
- */
-export async function createCheckoutSessionForNewSignup(opts) {
-  if (!stripe) {
-    throw new Error("Stripe billing is not configured. Set STRIPE_SECRET_KEY.");
-  }
-  const { customerEmail, successUrl, cancelUrl, plan: planParam, metadata = {} } = opts;
-  const plan = planParam === "starter" ? "starter" : "pro";
-  const priceId = getPriceIdForPlan(plan, "monthly");
-  if (!priceId) {
-    throw new Error(plan === "starter"
-      ? "No Stripe price configured for Starter monthly. Set STRIPE_STARTER_PRICE_ID."
-      : "No Stripe price configured for Pro monthly. Set STRIPE_PRO_PRICE_ID.");
-  }
-
-  const subscriptionMetadata = { ...metadata, plan };
-  const subscriptionData = { metadata: subscriptionMetadata };
-  if (plan !== "starter") {
-    subscriptionData.trial_period_days = 14;
-  }
-
-  const session = await stripe.checkout.sessions.create({
-    customer_email: customerEmail,
-    mode: "subscription",
-    line_items: [{ price: priceId, quantity: 1 }],
-    success_url: successUrl,
-    cancel_url: cancelUrl,
-    metadata: subscriptionMetadata,
-    subscription_data: subscriptionData,
-    allow_promotion_codes: true,
-  });
-
-  return { url: session.url, sessionId: session.id };
-}
-
-/**
  * Ensure organization has a Stripe customer. Returns customer ID.
  */
 export async function ensureOrgStripeCustomer(organizationId, customerEmail) {

@@ -54,45 +54,13 @@ export interface SignupPayload {
   lastName?: string;
   address?: string;
   phoneNumber?: string;
-  startProTrial?: boolean;
   inviteToken?: string;
 }
 
 export interface SignupResponse {
   message: string;
-  checkoutUrl?: string;
   joinedTeam?: boolean;
   teamName?: string;
-}
-
-export interface SignupCheckoutPayload {
-  email: string;
-  password: string;
-  fullName: string;
-  address?: string;
-  phoneNumber?: string;
-  /** "starter" | "pro" – which plan to start (14-day trial for that plan). Default "pro". */
-  plan?: "starter" | "pro";
-  /** Profile fields to populate after signup (saved to User). */
-  firstName?: string;
-  lastName?: string;
-  streetAddress?: string;
-  city?: string;
-  province?: string;
-  postalCode?: string;
-}
-
-export interface SignupCheckoutResponse {
-  checkoutUrl: string;
-}
-
-export interface SignupCompletePayload {
-  pendingToken: string;
-  sessionId: string;
-}
-
-export interface SignupCompleteResponse {
-  message: string;
 }
 
 export const authApi = {
@@ -179,20 +147,6 @@ export const authApi = {
     return apiRequest<{ message: string }>("/auth/reset-password", {
       method: "POST",
       body: JSON.stringify({ token, password })
-    });
-  },
-
-  signupCheckout: async (payload: SignupCheckoutPayload): Promise<SignupCheckoutResponse> => {
-    return apiRequest<SignupCheckoutResponse>("/auth/signup/checkout", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
-  },
-
-  signupComplete: async (payload: SignupCompletePayload): Promise<SignupCompleteResponse> => {
-    return apiRequest<SignupCompleteResponse>("/auth/signup/complete", {
-      method: "POST",
-      body: JSON.stringify(payload),
     });
   },
 };
