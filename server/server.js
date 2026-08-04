@@ -46,21 +46,38 @@ if (isProduction && (!process.env.JWT_SECRET || JWT_SECRET === DEFAULT_JWT_SECRE
   process.exit(1);
 }
 
-// CORS: single origin or comma-separated list (e.g. https://stockstay.com,https://stockstay.ca)
+// CORS: CORS_ORIGIN, or fall back to APP_URL / FRONTEND_URL (comma-separated ok).
 // Capacitor mobile apps use capacitor://localhost (iOS) and http://localhost (Android) – allow when CORS is configured
-const CORS_ORIGIN = process.env.CORS_ORIGIN;
-const corsOriginsRaw = CORS_ORIGIN
-  ? CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
-  : [];
+function normalizeCorsOrigin(raw) {
+  let origin = String(raw || "").trim().replace(/\/+$/, "");
+  if (!origin) return "";
+  // Host-only values (common misconfig) must include a scheme to match browser Origin
+  if (!/^[a-z][a-z0-9+.-]*:/i.test(origin)) {
+    origin = `https://${origin}`;
+  }
+  return origin;
+}
+const corsSource =
+  process.env.CORS_ORIGIN || process.env.APP_URL || process.env.FRONTEND_URL || "";
+const corsOriginsRaw = corsSource
+  .split(",")
+  .map(normalizeCorsOrigin)
+  .filter(Boolean);
 if (requiresJwtSecret && corsOriginsRaw.length === 0) {
   console.error(
-    `FATAL: CORS_ORIGIN must be set when APP_ENV=${appEnv}. Use a comma-separated allow-list of frontend origins.`
+    `FATAL: CORS_ORIGIN (or APP_URL) must be set when APP_ENV=${appEnv}. ` +
+      `Example: CORS_ORIGIN=https://stockstaging.vercel.app ` +
+      `(CORS_ORIGIN=${process.env.CORS_ORIGIN ? "set" : "missing"}, ` +
+      `APP_URL=${process.env.APP_URL ? "set" : "missing"}).`
   );
   process.exit(1);
 }
 const capacitorOrigins = ["capacitor://localhost", "http://localhost", "https://localhost"];
 const corsOrigins =
   corsOriginsRaw.length > 0 ? [...new Set([...corsOriginsRaw, ...capacitorOrigins])] : [];
+if (corsOriginsRaw.length > 0) {
+  console.log(`[CORS] Allow-list: ${corsOriginsRaw.join(", ")}`);
+}
 
 // Handle OPTIONS first (before any other middleware) so preflight never gets 502
 app.options(/.*/, (req, res) => {
