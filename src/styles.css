@@ -70,6 +70,85 @@ body {
   gap: 12px;
 }
 
+.profile-menu {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.profile-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  padding: 0;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.profile-avatar:hover {
+  background: #cbd5e1;
+  filter: none;
+  transform: none;
+  box-shadow: none;
+}
+
+.profile-dropdown {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 8px);
+  min-width: 160px;
+  padding: 6px;
+  background: #ffffff;
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.profile-dropdown-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 500;
+  text-decoration: none;
+  box-shadow: none;
+  cursor: pointer;
+}
+
+.profile-dropdown-item:hover {
+  background: rgba(15, 23, 42, 0.05);
+  filter: none;
+  transform: none;
+  box-shadow: none;
+  color: #0f172a;
+}
+
+.profile-dropdown-item.danger {
+  color: #b91c1c;
+  background: transparent;
+}
+
+.profile-dropdown-item.danger:hover {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .app-logo {
   height: 40px;
   width: auto;
@@ -82,17 +161,19 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.6);
   padding: 8px 16px;
   background: rgba(248, 250, 252, 0.8);
+  box-shadow: none;
   cursor: pointer;
   font-size: 13px;
   color: #0f172a;
-  transition: background 0.15s ease, box-shadow 0.15s ease,
-    border-color 0.15s ease;
+  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 .clear-button:hover {
   background: #fee2e2;
   border-color: #fca5a5;
-  box-shadow: 0 14px 30px rgba(151, 24, 24, 0.12);
+  box-shadow: none;
+  transform: none;
+  filter: none;
 }
 
 main {
@@ -185,19 +266,16 @@ button {
   cursor: pointer;
   background: linear-gradient(135deg, #2563eb, #4f46e5);
   color: #f9fafb;
-  box-shadow: 0 14px 30px rgba(37, 99, 235, 0.4);
+  box-shadow: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  transition: transform 0.12s ease, box-shadow 0.12s ease,
-    filter 0.12s ease, background 0.12s ease;
+  transition: filter 0.12s ease, background 0.12s ease;
 }
 
 button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 18px 40px rgba(37, 99, 235, 0.45);
-  filter: brightness(1.02);
+  filter: brightness(1.05);
 }
 
 button.secondary {
@@ -209,16 +287,17 @@ button.secondary {
 
 button.secondary:hover {
   background: rgba(15, 23, 42, 0.06);
-  box-shadow: 0 10px 24px rgba(148, 163, 184, 0.3);
+  box-shadow: none;
+  filter: none;
 }
 
 button.danger {
   background: linear-gradient(135deg, #dc2626, #b91c1c);
-  box-shadow: 0 14px 30px rgba(220, 38, 38, 0.35);
+  box-shadow: none;
 }
 
 button.danger:hover {
-  box-shadow: 0 18px 40px rgba(220, 38, 38, 0.4);
+  box-shadow: none;
 }
 
 .sr-only {
@@ -610,13 +689,13 @@ button.danger:hover {
 .icon-button.close-button {
   background: linear-gradient(135deg, #2563eb, #4f46e5);
   color: #f9fafb;
-  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
+  box-shadow: none;
+  transition: filter 0.12s ease;
 }
 
 .icon-button.close-button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.4);
+  transform: none;
+  box-shadow: none;
   filter: brightness(1.05);
 }
 
@@ -1018,18 +1097,29 @@ button.danger:hover {
 }
 
 .app-footer-link {
-  background: none;
-  border: none;
-  padding: 0;
+  background: none !important;
+  border: none !important;
+  padding: 0 !important;
   font: inherit;
+  font-weight: inherit;
   color: #64748b;
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+  box-shadow: none !important;
+  border-radius: 0;
+  display: inline;
+  gap: 0;
+  filter: none !important;
+  transform: none !important;
 }
 
 .app-footer-link:hover {
   color: #334155;
+  background: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+  transform: none !important;
 }
 
 .app-footer-sep {

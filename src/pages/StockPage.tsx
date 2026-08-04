@@ -4,7 +4,6 @@ import type {
   LocationSupplyThreshold,
   Property,
   Sku,
-  SkuFormValues,
   StockLocation,
   StockTransaction,
   StockTransactionActor,
@@ -21,6 +20,7 @@ import {
 } from "../services/catalogueApi";
 import { propertiesApi } from "../services/propertiesApi";
 import { useAuth } from "../contexts/useAuth";
+import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
 
 type Tab = "onhand" | "catalogue" | "activity";
 
@@ -94,24 +94,9 @@ export const StockPage: React.FC = () => {
   const [supplyItemCategory, setSupplyItemCategory] = useState("");
   const [supplyItemBaseUnitId, setSupplyItemBaseUnitId] = useState("");
 
-  const [showSkuModal, setShowSkuModal] = useState(false);
-  const [skuName, setSkuName] = useState("");
-  const [skuSupplyItemId, setSkuSupplyItemId] = useState("");
-  const [skuPackSize, setSkuPackSize] = useState("");
-  const [skuPurchasePrice, setSkuPurchasePrice] = useState("");
-  const [skuSupplier, setSkuSupplier] = useState("");
-
-  const [showStockExistingModal, setShowStockExistingModal] = useState(false);
-  const [catalogueSkus, setCatalogueSkus] = useState<Sku[]>([]);
-  const [stockExistingSkuId, setStockExistingSkuId] = useState("");
-
+  const [editingSupplyItem, setEditingSupplyItem] = useState<SupplyItem | null>(null);
+  const [receiveStockedSkuIds, setReceiveStockedSkuIds] = useState<Set<string>>(new Set());
   const [thresholds, setThresholds] = useState<LocationSupplyThreshold[]>([]);
-  const [showReorderModal, setShowReorderModal] = useState(false);
-  const [reorderSupplyItemId, setReorderSupplyItemId] = useState("");
-  const [reorderSupplyItemName, setReorderSupplyItemName] = useState("");
-  const [reorderPoint, setReorderPoint] = useState("");
-  const [reorderQuantity, setReorderQuantity] = useState("");
-  const [reorderDefaultsHint, setReorderDefaultsHint] = useState("");
 
   const [showPropertiesModal, setShowPropertiesModal] = useState(false);
   const [manageLocationId, setManageLocationId] = useState<string>("");
@@ -126,7 +111,6 @@ export const StockPage: React.FC = () => {
   const [error, setError] = useState("");
 
   const selectedLocationId = routeLocationId || actionLocationId;
-  const selectedLocation = locations.find((l) => l.id === selectedLocationId);
   const manageLocation = locations.find((l) => l.id === manageLocationId);
 
   const refreshLocations = async () => {
@@ -331,43 +315,51 @@ export const StockPage: React.FC = () => {
     }
   };
 
-  const loadSkusForActions = async (locationId: string) => {
-    setActionLocationId(locationId);
-    if (routeLocationId === locationId && skus.length > 0) return skus;
-    return refreshSkusForLocation(locationId);
-  };
-
   const openReceiveModal = async (locationId: string, skuId?: string) => {
     setActionLocationId(locationId);
     setError("");
-    let rows = await loadSkusForActions(locationId);
-    // Location may have no StockOnHand yet — receive can create it from the team catalogue
-    if (rows.length === 0) {
-      try {
-        rows = await skusApi.getAll();
-      } catch {
-        rows = [];
+    setBusy(true);
+    try {
+      const [catalogue, atLocation] = await Promise.all([
+        skusApi.getAll(),
+        skusApi.getAll({ stockLocationId: locationId }),
+      ]);
+      if (catalogue.length === 0) {
+        setError("");
+        openSupplyItemModal();
+        return;
       }
+      const atById = new Map(atLocation.map((s) => [s.id, s]));
+      const stockedIds = new Set(atLocation.map((s) => s.id));
+      const rows = catalogue
+        .map((s) => atById.get(s.id) || s)
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+      setReceiveSkuOptions(rows);
+      setReceiveStockedSkuIds(stockedIds);
+
+      const stocked = rows.filter((s) => stockedIds.has(s.id));
+      const unstocked = rows.filter((s) => !stockedIds.has(s.id));
+      const preferred =
+        (skuId && rows.find((s) => s.id === skuId)) ||
+        stocked[0] ||
+        unstocked[0] ||
+        rows[0];
+      setReceiveSkuId(preferred?.id || "");
+      setReceiveQty("");
+      const defaultPrice =
+        preferred?.stockOnHand?.lastPurchasePrice != null
+          ? String(Number(preferred.stockOnHand.lastPurchasePrice))
+          : preferred
+            ? String(Number(preferred.purchasePrice))
+            : "";
+      setReceivePrice(defaultPrice);
+      setReceiveDate(localDateInputValue());
+      setShowReceiveModal(true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load SKUs for receive");
+    } finally {
+      setBusy(false);
     }
-    if (rows.length === 0) {
-      setError("");
-      openSkuModal(locationId);
-      return;
-    }
-    setReceiveSkuOptions(rows);
-    const id = skuId || rows[0]?.id || "";
-    const sku = rows.find((s) => s.id === id) || rows[0];
-    setReceiveSkuId(sku?.id || "");
-    setReceiveQty("");
-    const defaultPrice =
-      sku?.stockOnHand?.lastPurchasePrice != null
-        ? String(Number(sku.stockOnHand.lastPurchasePrice))
-        : sku
-          ? String(Number(sku.purchasePrice))
-          : "";
-    setReceivePrice(defaultPrice);
-    setReceiveDate(localDateInputValue());
-    setShowReceiveModal(true);
   };
 
   const receiveSku = receiveSkuOptions.find((s) => s.id === receiveSkuId) || skus.find((s) => s.id === receiveSkuId);
@@ -479,68 +471,18 @@ export const StockPage: React.FC = () => {
     }
   };
 
-  const openSkuModal = async (locationId: string, supplyItemId?: string) => {
-    await loadSkusForActions(locationId);
-    if (supplyItems.length === 0 && !supplyItemId) {
-      setError("");
-      openSupplyItemModal();
-      return;
+  const refreshAfterSupplyEdit = async () => {
+    await refreshSupplyItems();
+    await refreshAllSkus();
+    if (routeLocationId) {
+      await refreshSkusForLocation(routeLocationId);
+      await refreshThresholds(routeLocationId);
     }
-    setSkuName("");
-    setSkuSupplyItemId(supplyItemId || supplyItems[0]?.id || "");
-    setSkuPackSize("");
-    setSkuPurchasePrice("");
-    setSkuSupplier("");
-    setError("");
-    setBusy(false);
-    setShowSkuModal(true);
   };
 
-  const handleCreateSku = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!skuName.trim()) {
-      setError("SKU name is required.");
-      return;
-    }
-    if (!skuSupplyItemId) {
-      setError("Select a supply item.");
-      return;
-    }
-    const packSize = Number(skuPackSize);
-    const purchasePrice = Number(skuPurchasePrice);
-    if (!(packSize > 0)) {
-      setError("Pack size must be greater than zero.");
-      return;
-    }
-    if (!(purchasePrice >= 0) || Number.isNaN(purchasePrice)) {
-      setError("Purchase price must be zero or greater.");
-      return;
-    }
-    setBusy(true);
+  const openEditSupplyItem = (item: SupplyItem) => {
     setError("");
-    try {
-      const values: SkuFormValues = {
-        name: skuName.trim(),
-        supplyItemId: skuSupplyItemId,
-        // Stock at current location when creating from a location context
-        stockLocationId: selectedLocationId || undefined,
-        supplier: skuSupplier.trim() || null,
-        packSize,
-        purchasePrice,
-      };
-      await skusApi.create(values);
-      setShowSkuModal(false);
-      setActiveTab("onhand");
-      if (routeLocationId) {
-        await refreshSkusForLocation(routeLocationId);
-        await refreshThresholds(routeLocationId);
-      }
-      await refreshAllSkus();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to add SKU");
-    } finally {
-      setBusy(false);
-    }
+    setEditingSupplyItem(item);
   };
 
   const openPropertiesModal = async (locationId: string) => {
@@ -603,100 +545,6 @@ export const StockPage: React.FC = () => {
       setError(err instanceof Error ? err.message : "Failed to update linked properties");
     } finally {
       setPropertiesBusy(false);
-    }
-  };
-
-  const openStockExistingModal = async (locationId: string) => {
-    setActionLocationId(locationId);
-    setError("");
-    setBusy(true);
-    try {
-      const [catalogue, atLocation] = await Promise.all([
-        skusApi.getAll(),
-        skusApi.getAll({ stockLocationId: locationId }),
-      ]);
-      const atIds = new Set(atLocation.map((s) => s.id));
-      const available = catalogue.filter((s) => !atIds.has(s.id));
-      setCatalogueSkus(available);
-      setStockExistingSkuId(available[0]?.id || "");
-      setShowStockExistingModal(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load catalogue SKUs");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const handleStockExisting = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedLocationId || !stockExistingSkuId) {
-      setError("Select a SKU to stock here.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await skusApi.stockAtLocation(stockExistingSkuId, selectedLocationId);
-      setShowStockExistingModal(false);
-      if (routeLocationId) await refreshSkusForLocation(routeLocationId);
-      await refreshAllSkus();
-      setActiveTab("onhand");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to stock SKU here");
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const openReorderModal = (group: OnHandGroup) => {
-    const existing = thresholds.find((t) => t.supplyItemId === group.supplyItemId);
-    const item = supplyItems.find((s) => s.id === group.supplyItemId);
-    setReorderSupplyItemId(group.supplyItemId);
-    setReorderSupplyItemName(group.name);
-    setReorderPoint(
-      existing ? String(Number(existing.reorderPoint)) : ""
-    );
-    setReorderQuantity(
-      existing ? String(Number(existing.reorderQuantity)) : ""
-    );
-    const defPoint = item ? Number(item.defaultReorderPoint) : 0;
-    const defQty = item ? Number(item.defaultReorderQuantity) : 0;
-    setReorderDefaultsHint(
-      defPoint > 0 || defQty > 0
-        ? `Catalogue defaults: reorder at ${defPoint || 0}, buy ${defQty || 0} ${group.baseUnitLabel}`
-        : ""
-    );
-    setError("");
-    setShowReorderModal(true);
-  };
-
-  const handleSaveReorder = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!routeLocationId || !reorderSupplyItemId) return;
-    const point = Number(reorderPoint);
-    const qty = Number(reorderQuantity);
-    if (!Number.isFinite(point) || point < 0) {
-      setError("Reorder point must be zero or greater.");
-      return;
-    }
-    if (!Number.isFinite(qty) || qty < 0) {
-      setError("Reorder quantity must be zero or greater.");
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      await locationSupplyThresholdsApi.upsert(routeLocationId, {
-        supplyItemId: reorderSupplyItemId,
-        reorderPoint: point,
-        reorderQuantity: qty,
-      });
-      await refreshThresholds(routeLocationId);
-      setShowReorderModal(false);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save reorder settings");
-    } finally {
-      setBusy(false);
     }
   };
 
@@ -847,22 +695,13 @@ export const StockPage: React.FC = () => {
                             onClick={(e) => e.stopPropagation()}
                           >
                             {canWrite && (
-                              <>
-                                <button
-                                  type="button"
-                                  className="secondary"
-                                  onClick={() => openReceiveModal(loc.id)}
-                                >
-                                  Receive
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondary"
-                                  onClick={() => openSkuModal(loc.id)}
-                                >
-                                  Add SKU
-                                </button>
-                              </>
+                              <button
+                                type="button"
+                                className="secondary"
+                                onClick={() => openReceiveModal(loc.id)}
+                              >
+                                Receive
+                              </button>
                             )}
                             <button
                               type="button"
@@ -932,27 +771,6 @@ export const StockPage: React.FC = () => {
             <button type="button" className="secondary" onClick={openSupplyItemModal}>
               Add supply item
             </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => routeLocationId && openSkuModal(routeLocationId)}
-              disabled={!routeLocationId}
-              title={
-                supplyItems.length === 0
-                  ? "Add a supply item first (opens that flow)"
-                  : "Add a purchasable pack (SKU) at this location"
-              }
-            >
-              Add SKU
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => routeLocationId && openStockExistingModal(routeLocationId)}
-              disabled={!routeLocationId}
-            >
-              Stock existing SKU
-            </button>
           </>
         )}
       </div>
@@ -1007,12 +825,12 @@ export const StockPage: React.FC = () => {
             </h3>
             <p style={{ marginTop: "-4px", color: "#64748b", fontSize: "13px" }}>
               Grouped by supply item. Totals are equivalent base units across all pack sizes.
-              Set reorder on the group to drive low-stock alerts and the shopping list.
+              Edit a supply item to set reorder thresholds for this location.
             </p>
             {skus.length === 0 ? (
               <div className="empty-state">
                 <h3>Nothing here yet</h3>
-                <p>Add a supply item / receive packs to see stock on hand.</p>
+                <p>Add a supply item, then receive packs to see stock on hand.</p>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -1077,24 +895,16 @@ export const StockPage: React.FC = () => {
                       </div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
                         {canWrite && (
-                          <>
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => openReorderModal(group)}
-                            >
-                              Reorder
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() =>
-                                routeLocationId && openSkuModal(routeLocationId, group.supplyItemId)
-                              }
-                            >
-                              Add SKU
-                            </button>
-                          </>
+                          <button
+                            type="button"
+                            className="secondary"
+                            onClick={() => {
+                              const item = supplyItems.find((s) => s.id === group.supplyItemId);
+                              if (item) openEditSupplyItem(item);
+                            }}
+                          >
+                            Edit
+                          </button>
                         )}
                       </div>
                     </div>
@@ -1193,7 +1003,6 @@ export const StockPage: React.FC = () => {
                       <th>Name</th>
                       <th>Category</th>
                       <th>Base unit</th>
-                      <th>Default reorder point</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -1203,18 +1012,14 @@ export const StockPage: React.FC = () => {
                         <td>{item.name}</td>
                         <td>{item.category || "—"}</td>
                         <td>{item.baseUnit?.code || unitName(item.baseUnitId)}</td>
-                        <td>{item.defaultReorderPoint ?? "—"}</td>
                         <td>
                           {canWrite && (
                             <button
                               type="button"
                               className="secondary"
-                              onClick={() =>
-                                routeLocationId && openSkuModal(routeLocationId, item.id)
-                              }
-                              disabled={!routeLocationId}
+                              onClick={() => openEditSupplyItem(item)}
                             >
-                              Add SKU
+                              Edit
                             </button>
                           )}
                         </td>
@@ -1372,10 +1177,7 @@ export const StockPage: React.FC = () => {
                 Record what you paid for this purchase. The SKU’s unit rate updates for future
                 replenish bill-back.
                 {actionLocation ? ` · ${actionLocation.name}` : ""}
-                {receiveSkuOptions.length > 0 &&
-                !receiveSkuOptions.some((s) => s.stockOnHand)
-                  ? " First receive at this location will stock the SKU here."
-                  : ""}
+                {" "}You can also receive a catalogue SKU that is not tracked here yet.
               </p>
               <form className="inventory-form" onSubmit={handleReceive}>
                 <label>
@@ -1397,14 +1199,41 @@ export const StockPage: React.FC = () => {
                     required
                   >
                     <option value="">Select SKU…</option>
-                    {receiveSkuOptions.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                        {s.stockOnHand
-                          ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} on hand)`
-                          : " (not stocked here yet)"}
-                      </option>
-                    ))}
+                    {(() => {
+                      const stocked = receiveSkuOptions.filter((s) =>
+                        receiveStockedSkuIds.has(s.id)
+                      );
+                      const unstocked = receiveSkuOptions.filter(
+                        (s) => !receiveStockedSkuIds.has(s.id)
+                      );
+                      return (
+                        <>
+                          {stocked.length > 0 && (
+                            <optgroup label="At this location">
+                              {stocked.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                  {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
+                                  {s.stockOnHand
+                                    ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} on hand)`
+                                    : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                          {unstocked.length > 0 && (
+                            <optgroup label="Not at this location yet">
+                              {unstocked.map((s) => (
+                                <option key={s.id} value={s.id}>
+                                  {s.name}
+                                  {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </>
+                      );
+                    })()}
                   </select>
                 </label>
                 <label>
@@ -1530,162 +1359,6 @@ export const StockPage: React.FC = () => {
                   </button>
                 </div>
               </form>
-            </div>
-          </div>
-        )}
-
-        {showSkuModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowSkuModal(false)}>
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "480px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>Add SKU</h3>
-              <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-                Shared across all stock locations
-                {actionLocation?.name || selectedLocation?.name
-                  ? ` · will also stock at ${actionLocation?.name || selectedLocation?.name}`
-                  : ""}
-              </p>
-              <form className="inventory-form" onSubmit={handleCreateSku}>
-                <div className="form-grid">
-                  <label>
-                    <span>Name *</span>
-                    <input
-                      value={skuName}
-                      onChange={(e) => setSkuName(e.target.value)}
-                      placeholder="e.g. Case of 24 rolls"
-                      required
-                    />
-                  </label>
-                  <label>
-                    <span>Supply item *</span>
-                    <select
-                      value={skuSupplyItemId}
-                      onChange={(e) => setSkuSupplyItemId(e.target.value)}
-                      required
-                    >
-                      <option value="">Select…</option>
-                      {supplyItems.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>
-                    <span>Pack size (base units) *</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={skuPackSize}
-                      onChange={(e) => setSkuPackSize(e.target.value)}
-                      required
-                    />
-                  </label>
-                  <label>
-                    <span>Purchase price *</span>
-                    <input
-                      type="number"
-                      min="0"
-                      step="any"
-                      value={skuPurchasePrice}
-                      onChange={(e) => setSkuPurchasePrice(e.target.value)}
-                      required
-                    />
-                  </label>
-                  <label>
-                    <span>Supplier</span>
-                    <input
-                      value={skuSupplier}
-                      onChange={(e) => setSkuSupplier(e.target.value)}
-                      placeholder="Optional"
-                    />
-                  </label>
-                </div>
-                {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowSkuModal(false)}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy}>
-                    {busy ? "Saving…" : "Add"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {showStockExistingModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowStockExistingModal(false)}>
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "480px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>Stock existing SKU here</h3>
-              <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-                Add a catalogue SKU to{" "}
-                {actionLocation?.name || selectedLocation?.name || "this location"} with zero packs
-                on hand. Then receive packs when they arrive.
-              </p>
-              {catalogueSkus.length === 0 ? (
-                <p style={{ color: "#64748b", fontSize: "14px" }}>
-                  Every catalogue SKU is already stocked at this location. Add a new SKU instead.
-                </p>
-              ) : (
-                <form className="inventory-form" onSubmit={handleStockExisting}>
-                  <label>
-                    <span>SKU *</span>
-                    <select
-                      value={stockExistingSkuId}
-                      onChange={(e) => setStockExistingSkuId(e.target.value)}
-                      required
-                    >
-                      <option value="">Select…</option>
-                      {catalogueSkus.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name}
-                          {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-                  <div className="form-actions">
-                    <button
-                      type="button"
-                      className="secondary"
-                      onClick={() => setShowStockExistingModal(false)}
-                      disabled={busy}
-                    >
-                      Cancel
-                    </button>
-                    <button type="submit" disabled={busy || !stockExistingSkuId}>
-                      {busy ? "Saving…" : "Stock here"}
-                    </button>
-                  </div>
-                </form>
-              )}
-              {catalogueSkus.length === 0 && (
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowStockExistingModal(false)}
-                  >
-                    Close
-                  </button>
-                </div>
-              )}
             </div>
           </div>
         )}
@@ -1866,56 +1539,24 @@ export const StockPage: React.FC = () => {
           </div>
         )}
 
-        {showReorderModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowReorderModal(false)}>
-            <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-              <h3>Reorder — {reorderSupplyItemName}</h3>
-              <p style={{ color: "#64748b", fontSize: "13px" }}>
-                Thresholds are in base units for this supply item at this location. Set reorder
-                point to 0 to turn alerts off.
-              </p>
-              {reorderDefaultsHint ? (
-                <p style={{ color: "#64748b", fontSize: "12px" }}>{reorderDefaultsHint}</p>
-              ) : null}
-              {error ? <div className="form-error">{error}</div> : null}
-              <form onSubmit={handleSaveReorder} className="inventory-form">
-                <label>
-                  <span>Reorder point (base units)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={reorderPoint}
-                    onChange={(e) => setReorderPoint(e.target.value)}
-                  />
-                </label>
-                <label>
-                  <span>Suggested buy qty (base units)</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={reorderQuantity}
-                    onChange={(e) => setReorderQuantity(e.target.value)}
-                  />
-                </label>
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowReorderModal(false)}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy}>
-                    {busy ? "Saving…" : "Save"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
+        {editingSupplyItem && (
+          <EditSupplyItemModal
+            supplyItem={editingSupplyItem}
+            units={units}
+            locationId={routeLocationId}
+            locationName={
+              locations.find((l) => l.id === (routeLocationId || actionLocationId))?.name
+            }
+            existingThreshold={
+              routeLocationId
+                ? thresholds.find((t) => t.supplyItemId === editingSupplyItem.id) || null
+                : null
+            }
+            onClose={() => setEditingSupplyItem(null)}
+            onSaved={refreshAfterSupplyEdit}
+          />
         )}
+
       </>
     );
   }

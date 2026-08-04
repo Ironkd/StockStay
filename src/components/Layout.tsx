@@ -1,10 +1,23 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/useAuth";
 import { teamApi } from "../services/teamApi";
 import { apiRequest } from "../config/api";
 import { track } from "../lib/analytics";
 import { OverLimitBanner } from "./OverLimitBanner";
+
+function userInitials(name?: string | null, email?: string | null): string {
+  const trimmed = (name || "").trim();
+  if (trimmed) {
+    const parts = trimmed.split(/\s+/).filter(Boolean);
+    if (parts.length >= 2) {
+      return `${parts[0][0] || ""}${parts[1][0] || ""}`.toUpperCase();
+    }
+    return trimmed.slice(0, 2).toUpperCase();
+  }
+  const mail = (email || "").trim();
+  return mail ? mail.slice(0, 2).toUpperCase() : "?";
+}
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({
   children
@@ -20,9 +33,17 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ ok: boolean; message: string } | null>(null);
   const [navOpen, setNavOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
 
   const memberships = user?.memberships ?? [];
   const activeTeamId = user?.activeTeamId || user?.teamId || "";
+  const canSeeSettings =
+    !!user &&
+    (user.teamRole === "owner" ||
+      (!!user.allowedPages &&
+        user.allowedPages.length > 0 &&
+        user.allowedPages.includes("settings")));
 
   useEffect(() => {
     if (!user) {
@@ -51,6 +72,28 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
       window.removeEventListener("active-team-changed", refetch);
     };
   }, []);
+
+  useEffect(() => {
+    if (!profileOpen) return;
+    const onPointerDown = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setProfileOpen(false);
+    };
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [profileOpen]);
+
+  useEffect(() => {
+    setProfileOpen(false);
+  }, [location.pathname]);
 
   const openFeedback = () => {
     setFeedbackResult(null);
@@ -93,6 +136,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   };
 
   const handleLogout = async () => {
+    setProfileOpen(false);
     await logout();
     navigate("/");
   };
@@ -122,7 +166,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
     { path: "/billing", label: "Billing", icon: "🧾", pageKey: "invoices" },
     { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
-    { path: "/settings", label: "Settings", icon: "⚙️", pageKey: "settings" }
   ];
 
   const canSeePage = (item: { pageKey: string; proOnly?: boolean }) => {
@@ -180,9 +223,40 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
           )}
           </div>
         </Link>
-        <button className="clear-button" onClick={handleLogout}>
-          Logout
-        </button>
+        <div className="profile-menu" ref={profileRef}>
+          <button
+            type="button"
+            className="profile-avatar"
+            aria-haspopup="menu"
+            aria-expanded={profileOpen}
+            aria-label="Account menu"
+            onClick={() => setProfileOpen((open) => !open)}
+          >
+            {userInitials(user?.name, user?.email)}
+          </button>
+          {profileOpen && (
+            <div className="profile-dropdown" role="menu">
+              {canSeeSettings && (
+                <Link
+                  to="/settings"
+                  role="menuitem"
+                  className="profile-dropdown-item"
+                  onClick={() => setProfileOpen(false)}
+                >
+                  Settings
+                </Link>
+              )}
+              <button
+                type="button"
+                role="menuitem"
+                className="profile-dropdown-item danger"
+                onClick={() => void handleLogout()}
+              >
+                Logout
+              </button>
+            </div>
+          )}
+        </div>
       </header>
 
       <button
