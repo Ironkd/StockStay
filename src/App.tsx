@@ -1,30 +1,73 @@
-import React from "react";
+import React, { Suspense, lazy } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Capacitor } from "@capacitor/core";
 import { AuthProvider } from "./contexts/AuthContext";
 import { Layout } from "./components/Layout";
 import { ProtectedRoute } from "./components/ProtectedRoute";
 import { ProOnlyRoute } from "./components/ProOnlyRoute";
-import { LoginPage } from "./pages/LoginPage";
-import { LandingPage } from "./pages/LandingPage";
-import { PricingPage } from "./pages/PricingPage";
-import { TermsPage } from "./pages/TermsPage";
-import { PrivacyPage } from "./pages/PrivacyPage";
-import { HomePage } from "./pages/HomePage";
-import { StockPage } from "./pages/StockPage";
-import { PropertiesPage } from "./pages/PropertiesPage";
-import { PropertyDetailPage } from "./pages/PropertyDetailPage";
-import { ShoppingListPage } from "./pages/ShoppingListPage";
-import { ClientsPage } from "./pages/ClientsPage";
-import { InvoicesPage } from "./pages/InvoicesPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { AcceptInvitePage } from "./pages/AcceptInvitePage";
-import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { VerifyEmailPage } from "./pages/VerifyEmailPage";
 import { UmamiAnalytics } from "./components/UmamiAnalytics";
 
+const LoginPage = lazy(() =>
+  import("./pages/LoginPage").then((m) => ({ default: m.LoginPage }))
+);
+const LandingPage = lazy(() =>
+  import("./pages/LandingPage").then((m) => ({ default: m.LandingPage }))
+);
+const PricingPage = lazy(() =>
+  import("./pages/PricingPage").then((m) => ({ default: m.PricingPage }))
+);
+const TermsPage = lazy(() =>
+  import("./pages/TermsPage").then((m) => ({ default: m.TermsPage }))
+);
+const PrivacyPage = lazy(() =>
+  import("./pages/PrivacyPage").then((m) => ({ default: m.PrivacyPage }))
+);
+const HomePage = lazy(() =>
+  import("./pages/HomePage").then((m) => ({ default: m.HomePage }))
+);
+const StockPage = lazy(() =>
+  import("./pages/StockPage").then((m) => ({ default: m.StockPage }))
+);
+const PropertiesPage = lazy(() =>
+  import("./pages/PropertiesPage").then((m) => ({ default: m.PropertiesPage }))
+);
+const PropertyDetailPage = lazy(() =>
+  import("./pages/PropertyDetailPage").then((m) => ({ default: m.PropertyDetailPage }))
+);
+const ShoppingListPage = lazy(() =>
+  import("./pages/ShoppingListPage").then((m) => ({ default: m.ShoppingListPage }))
+);
+const ClientsPage = lazy(() =>
+  import("./pages/ClientsPage").then((m) => ({ default: m.ClientsPage }))
+);
+const InvoicesPage = lazy(() =>
+  import("./pages/InvoicesPage").then((m) => ({ default: m.InvoicesPage }))
+);
+const SettingsPage = lazy(() =>
+  import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage }))
+);
+const ReportsPage = lazy(() =>
+  import("./pages/ReportsPage").then((m) => ({ default: m.ReportsPage }))
+);
+const AcceptInvitePage = lazy(() =>
+  import("./pages/AcceptInvitePage").then((m) => ({ default: m.AcceptInvitePage }))
+);
+const ResetPasswordPage = lazy(() =>
+  import("./pages/ResetPasswordPage").then((m) => ({ default: m.ResetPasswordPage }))
+);
+const VerifyEmailPage = lazy(() =>
+  import("./pages/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage }))
+);
+
 const isNativeApp = Capacitor.isNativePlatform();
+
+const PageFallback: React.FC = () => (
+  <div style={{ padding: "24px", color: "#64748b", fontSize: "14px" }}>Loading…</div>
+);
+
+function withSuspense(node: React.ReactNode) {
+  return <Suspense fallback={<PageFallback />}>{node}</Suspense>;
+}
 
 export const App: React.FC = () => {
   return (
@@ -34,22 +77,20 @@ export const App: React.FC = () => {
         <Routes>
           <Route
             path="/"
-            element={isNativeApp ? <LoginPage /> : <LandingPage />}
+            element={withSuspense(isNativeApp ? <LoginPage /> : <LandingPage />)}
           />
-          <Route path="/login" element={<LoginPage />} />
+          <Route path="/login" element={withSuspense(<LoginPage />)} />
           <Route path="/signup" element={<Navigate to="/login?mode=signup" replace />} />
-          <Route path="/pricing" element={<PricingPage />} />
-          <Route path="/terms" element={<TermsPage />} />
-          <Route path="/privacy" element={<PrivacyPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/pricing" element={withSuspense(<PricingPage />)} />
+          <Route path="/terms" element={withSuspense(<TermsPage />)} />
+          <Route path="/privacy" element={withSuspense(<PrivacyPage />)} />
+          <Route path="/reset-password" element={withSuspense(<ResetPasswordPage />)} />
+          <Route path="/verify-email" element={withSuspense(<VerifyEmailPage />)} />
           <Route
             path="/dashboard"
             element={
               <ProtectedRoute pageKey="home">
-                <Layout>
-                  <HomePage />
-                </Layout>
+                <Layout>{withSuspense(<HomePage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -57,9 +98,7 @@ export const App: React.FC = () => {
             path="/stock"
             element={
               <ProtectedRoute pageKey="inventory">
-                <Layout>
-                  <StockPage />
-                </Layout>
+                <Layout>{withSuspense(<StockPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -67,9 +106,7 @@ export const App: React.FC = () => {
             path="/stock/:locationId"
             element={
               <ProtectedRoute pageKey="inventory">
-                <Layout>
-                  <StockPage />
-                </Layout>
+                <Layout>{withSuspense(<StockPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -78,9 +115,7 @@ export const App: React.FC = () => {
             path="/properties"
             element={
               <ProtectedRoute pageKey="inventory">
-                <Layout>
-                  <PropertiesPage />
-                </Layout>
+                <Layout>{withSuspense(<PropertiesPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -88,9 +123,7 @@ export const App: React.FC = () => {
             path="/properties/:id"
             element={
               <ProtectedRoute pageKey="inventory">
-                <Layout>
-                  <PropertyDetailPage />
-                </Layout>
+                <Layout>{withSuspense(<PropertyDetailPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -99,9 +132,7 @@ export const App: React.FC = () => {
             element={
               <ProtectedRoute pageKey="shopping-list">
                 <ProOnlyRoute>
-                  <Layout>
-                    <ShoppingListPage />
-                  </Layout>
+                  <Layout>{withSuspense(<ShoppingListPage />)}</Layout>
                 </ProOnlyRoute>
               </ProtectedRoute>
             }
@@ -110,9 +141,7 @@ export const App: React.FC = () => {
             path="/clients"
             element={
               <ProtectedRoute pageKey="clients">
-                <Layout>
-                  <ClientsPage />
-                </Layout>
+                <Layout>{withSuspense(<ClientsPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -120,9 +149,7 @@ export const App: React.FC = () => {
             path="/billing"
             element={
               <ProtectedRoute pageKey="invoices">
-                <Layout>
-                  <InvoicesPage />
-                </Layout>
+                <Layout>{withSuspense(<InvoicesPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -132,9 +159,7 @@ export const App: React.FC = () => {
             path="/settings"
             element={
               <ProtectedRoute pageKey="settings">
-                <Layout>
-                  <SettingsPage />
-                </Layout>
+                <Layout>{withSuspense(<SettingsPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -142,9 +167,7 @@ export const App: React.FC = () => {
             path="/reports"
             element={
               <ProtectedRoute pageKey="reports">
-                <Layout>
-                  <ReportsPage />
-                </Layout>
+                <Layout>{withSuspense(<ReportsPage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -152,9 +175,7 @@ export const App: React.FC = () => {
             path="/accept-invite"
             element={
               <ProtectedRoute>
-                <Layout>
-                  <AcceptInvitePage />
-                </Layout>
+                <Layout>{withSuspense(<AcceptInvitePage />)}</Layout>
               </ProtectedRoute>
             }
           />
@@ -164,4 +185,3 @@ export const App: React.FC = () => {
     </AuthProvider>
   );
 };
-

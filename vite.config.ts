@@ -1,11 +1,11 @@
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 
 export default defineConfig({
-  base: './',
+  base: "./",
   plugins: [react()],
   server: {
-    port: 5173
+    port: 5173,
   },
   test: {
     globals: true,
@@ -13,5 +13,5 @@ export default defineConfig({
     setupFiles: "./src/test/setup.ts",
     include: ["src/**/*.{test,spec}.{ts,tsx}"],
     exclude: ["server/**", "node_modules/**", "android/**", "ios/**"],
-  }
+  },
 });

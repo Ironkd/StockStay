@@ -152,6 +152,9 @@ function mapInvoice(inv) {
     items,
     lines,
     taxRate: inv.taxRate != null ? Number(inv.taxRate) : 0,
+    subtotal: inv.subtotal != null ? Number(inv.subtotal) : 0,
+    tax: inv.tax != null ? Number(inv.tax) : 0,
+    total: inv.total != null ? Number(inv.total) : 0,
     billingPeriodStart: inv.billingPeriodStart
       ? new Date(inv.billingPeriodStart).toISOString()
       : null,
@@ -310,8 +313,8 @@ export async function generateDraftInvoicesForTeam(teamId, { clientId = null, as
         const taxAmount = subtotal
           .mul(taxRate)
           .div(100)
-          .toDecimalPlaces(MONEY_DP, Decimal.ROUND_HALF_UP);
-        const total = subtotal.add(taxAmount).toDecimalPlaces(MONEY_DP, Decimal.ROUND_HALF_UP);
+          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+        const total = subtotal.add(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
 
         const issueDate = DateTime.fromJSDate(period.end, { zone: "utc" })
           .setZone(zone)
@@ -335,9 +338,9 @@ export async function generateDraftInvoicesForTeam(teamId, { clientId = null, as
             billingPeriodStart: period.start,
             billingPeriodEnd: period.end,
             taxRate,
-            subtotal: Number(subtotal.toFixed(MONEY_DP)),
-            tax: Number(taxAmount.toFixed(MONEY_DP)),
-            total: Number(total.toFixed(MONEY_DP)),
+            subtotal: subtotal.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+            tax: taxAmount.toFixed(2),
+            total: total.toFixed(2),
             status: "draft",
             notes: "",
             lines: {
@@ -446,12 +449,12 @@ export async function updateDraftInvoice(teamId, id, { taxRate, notes, status, d
     const taxAmount = subtotal
       .mul(rate)
       .div(100)
-      .toDecimalPlaces(MONEY_DP, Decimal.ROUND_HALF_UP);
-    const total = subtotal.add(taxAmount).toDecimalPlaces(MONEY_DP, Decimal.ROUND_HALF_UP);
+      .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+    const total = subtotal.add(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
     data.taxRate = rate;
-    data.subtotal = Number(subtotal.toFixed(MONEY_DP));
-    data.tax = Number(taxAmount.toFixed(MONEY_DP));
-    data.total = Number(total.toFixed(MONEY_DP));
+    data.subtotal = subtotal.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2);
+    data.tax = taxAmount.toFixed(2);
+    data.total = total.toFixed(2);
   }
 
   const updated = await prisma.invoice.update({

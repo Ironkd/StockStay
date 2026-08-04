@@ -1,4 +1,5 @@
 import type { Client, Property } from "../types";
+import { formatCurrency } from "./format";
 
 export type MarkupInfo = {
   pct: number;
@@ -43,6 +44,7 @@ export function estimateBillBack(
   return credit ? -amount : amount;
 }
 
+/** @deprecated Prefer formatCurrency from utils/format */
 export function formatMoney(amount: number): string {
-  return amount.toFixed(2);
+  return formatCurrency(amount);
 }

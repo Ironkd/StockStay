@@ -1,6 +1,6 @@
 # Stock Stay — Requirements & Domain Specification
 
-**Version:** 1.8 (PITR runbook + Vite/Prisma within-major hygiene)  
+**Version:** 1.9 (pre-launch hardening: ACL, Decimal invoices, deps, UX)  
 **Status:** Ready for implementation planning  
 **Audience:** David (product owner), development agents, QA  
 **Last updated:** 2026-08-03
@@ -263,7 +263,7 @@ Legend: ✅ Allowed · 🔒 Owner only · 🔐 Scoped · 👁 Read only · ❌ N
 
 **Known gaps (remaining):**
 
-1. **Property update/delete** — not owner-only; members with page access can modify (viewers blocked). Owner-only property edits can be tightened later if desired.
+1. ~~Property update/delete~~ — **Done** (1.9 — owner-only; members/viewers cannot update or delete).
 2. ~~Viewer write APIs~~ — **Done** (1.5).
 3. ~~Super admin~~ — **Done** (1.5 — AdminJS at `/admin`).
 
@@ -363,7 +363,7 @@ Canonical product concept. Tracked at properties in **base units**.
 |--------------------|-------|
 | teamId | Owning team |
 | name | e.g. "Coffee Pod" |
-| category | Server-side (replace localStorage categories) |
+| category | Optional string on SupplyItem (team-scoped; not a separate Category model) |
 | baseUnitId | FK to UnitOfMeasure |
 | defaultReorderPoint, defaultReorderQuantity | Defaults for new properties |
 
@@ -641,7 +641,7 @@ Each operation is documented with: **preconditions**, **steps**, **postcondition
 
 | | |
 |---|---|
-| **Actor** | Team Owner (create); Owner or Member (edit — tighten to owner-only in target) |
+| **Actor** | Team Owner only (create / update / delete) |
 | **Preconditions** | Within plan property limit |
 | **Steps** | Enter name, location, assign billing client, link stock locations |
 | **Postconditions** | Property record with clientId and location links |
@@ -874,10 +874,10 @@ flowchart LR
 | Invoice lines | JSON blob on Invoice | Normalized InvoiceLine with property breakdown + FK to ReplenishmentLine | **Done** (scheduled); legacy JSON kept for free-form |
 | Invoice delivery | Email HTML | Email HTML + **PDF** + **CSV export** | **Done** |
 | Ledger | InventoryMovement; direct quantity edits allowed | StockTransaction; all changes via ledger service | **Done** |
-| Categories | Browser localStorage (`useCategories.ts`) | Server-side, team-scoped | Replace localStorage |
+| Categories | Browser localStorage (`useCategories.ts`) | SupplyItem.category string (team-scoped) | **Done** |
 | Sale model | Deprecated API, no UI (`/sales` redirects) | Remove | **Done** (Sale dropped; `/sales` → `/stock`) |
-| Organization | Team is top-level tenant | Organization → Teams | New entity; move Stripe fields **and** invoice branding |
-| User ↔ Team | Single teamId on User | UserMembership join table | Replace single-team link |
+| Organization | Team is top-level tenant | Organization → Teams | **Done** (org + Stripe/branding on Organization) |
+| User ↔ Team | Single teamId on User | UserMembership join table | **Done** (membership + team switching UI) |
 | Timezone | Not captured | `Team.billingTimezone` (IANA, editable in Settings) | Q1b resolved in 1.2 |
 | Plan limits | Hardcoded Free/Starter/Pro | Configurable caps including stock locations, supply items, SKUs; UI reads live | **Done** (1.3 — `plan-limits.json`) |
 | Plan downgrade | Soft / unclear | Explicit rules when usage exceeds new plan limits | **Done** (1.3 — BR-20 banner + create gates) |
@@ -886,7 +886,7 @@ flowchart LR
 | Client payment | N/A | Explicitly out of scope v1 | — |
 | Viewer role | UI label only | Enforced read-only on API | **Done** (1.5 — `VIEWER_READ_ONLY`) |
 | Super admin | None | Platform support interface | **Done** (1.5 — AdminJS `/admin`) |
-| Decimal types | Float for quantity and money | Decimal | Schema change |
+| Decimal types | Float for quantity and money | Decimal | **Done** (ledger/catalogue Decimal; Invoice `subtotal`/`tax`/`total` = `Decimal(12,2)`) |
 
 ---
 
@@ -905,9 +905,9 @@ Rules that implementation must not guess:
 | **BR-7 Billing schedule** | Per client: `weekly`, `biweekly`, or `monthly_eom`. Period boundaries use **`Team.billingTimezone`** (IANA, editable in Settings; default `America/Toronto`). Weekly = ISO Mon→Mon; biweekly = 14-day windows from Monday of the ISO week containing `Team.createdAt`; monthly_eom = calendar month. Lines included by `Replenishment.createdAt` in `[periodStart, periodEnd)`. At most one invoice per `(clientId, billingPeriodStart, billingPeriodEnd)`. |
 | **BR-8 Invoice grouping** | One invoice per client per billing period; line items broken down by property. |
 | **BR-9 Ledger-only mutations** | No API route or UI action may update stock balances without creating a StockTransaction. |
-| **BR-10 No delete with history** | Entities referenced by StockTransaction or InvoiceLine are archived, not hard-deleted. |
-| **BR-11 Decimal precision** | Use Decimal type for money and quantities in schema and ledger math. |
-| **BR-12 Tenant isolation** | All queries scoped by teamId (via organization). Property-level scoping for members via allowedPropertyIds. |
+| **BR-10 No delete with history** | Entities referenced by StockTransaction or InvoiceLine are archived, not hard-deleted. **Done** (1.9) — hard-delete returns `HAS_HISTORY` / 409 when history exists. |
+| **BR-11 Decimal precision** | Use Decimal type for money and quantities in schema and ledger math. **Done** (1.9 — includes Invoice money fields). |
+| **BR-12 Tenant isolation** | All queries scoped by teamId (via organization). Property-level scoping for members via allowedPropertyIds. **Done** (1.9 — `allowedPropertyIds` enforced server-side; E4-7 / `security-tenancy` tests). |
 | **BR-13 Client not owner** | UI and docs must not assume Client is the property owner. Property.clientId is a billing assignment. |
 | **BR-14 No negative stock** | Hard block any outflow that would make StockOnHand negative. |
 | **BR-15 Return credits** | Credits from Property→Location appear on the **next** invoice for that client; no separate credit-note document in v1. |
@@ -1057,7 +1057,7 @@ Tags: `[existing]` · `[modify]` · `[new]` · `[remove]`
 | NFR-4 | Viewer role enforced as read-only on all write API endpoints (`VIEWER_READ_ONLY`) | Must | Assessment + this doc |
 | NFR-5 | IDOR prevention: all resources scoped to user's team/org | Must | Assessment |
 | NFR-6 | Immutable audit trail (StockTransaction) for all quantity changes | Must | Assessment |
-| NFR-7 | Decimal types for financial and quantity fields | Must | Assessment |
+| NFR-7 | Decimal types for financial and quantity fields | Must | **Done** (1.9 — BR-11; Invoice `subtotal`/`tax`/`total` = `Decimal(12,2)`) |
 | NFR-8 | Database migrations reliable across dev/staging/production | Must | Assessment |
 | NFR-9 | PITR backups configured and recovery tested | Should | **Done** (1.8 — `docs/pitr-recovery.md` runbook; operator must tick staging/prod checklist; live prod restore deferred) |
 | NFR-10 | Rate limiting, Helmet, and input sanitization / validation on API write paths | Must | Existing + Strategy |
@@ -1143,7 +1143,7 @@ Uniform rule: every stock-location ↔ property movement bills or refunds. Pass-
 Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work.
 
 1. **Environment separation** — distinct dev / staging / prod DBs and secrets; remove shared demo-account path from production; document deploy per environment. See [docs/environments.md](environments.md).
-2. **Organization + UserMembership** schema and **team-switching UI** — timezone on Team shipped as `billingTimezone` with Appendix A #7
+2. **Organization + UserMembership** schema and **team-switching UI** — **Done** (timezone on Team shipped as `billingTimezone` with Appendix A #7)
 3. **Stock Location + SupplyItem + SKU + UnitOfMeasure** models, with **schema integrity** (enums, uniques, FKs, decimals) from the start — **Done** (schema + thin CRUD APIs; catalogue UI and Inventory replacement deferred)
 4. **StockTransaction ledger engine** — break-pack math, negative-stock guards, **row-level locking** on balance updates — **Done** (StockOnHand + StockTransaction + `stockLedger.js`; receive/adjust APIs; replenishment UI in step 5; PropertyStock dropped in 1.1)
 5. **Replenishment + return** workflows (API + UI), including next-invoice credits — **Done** (`Replenishment`/`ReplenishmentLine`, `replenishment.js`, Replenish/Return UI, unbilled charges & credits queue; scheduled invoice generation deferred to step 7; inter-property transfer deferred to step 6)
@@ -1185,7 +1185,7 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | Frontend routes | `src/App.tsx` |
 | Access control | `src/components/ProtectedRoute.tsx` |
 | Replenish / Return / Transfer UI | `src/components/ReplenishModal.tsx`, `src/components/ReturnStockModal.tsx`, `src/components/TransferStockModal.tsx` |
-| Categories (localStorage) | `src/hooks/useCategories.ts` |
+| Categories | `SupplyItem.category` (string field; no separate Category model) |
 
 ---
 
@@ -1211,3 +1211,4 @@ Order reflects Product Strategy Phase 2 priorities (envs early) plus domain work
 | 1.6 | 2026-08-03 | Probable | Appendix A #12: Umami analytics; in-app feedback; ToS/Privacy + sessionStorage/AdminJS disclosure; support deletion runbook |
 | 1.7 | 2026-08-03 | Probable | Appendix A #13: Section 8 test harness (API/unit/RTL + CI); Playwright deferred; `docs/test-matrix.md` |
 | 1.8 | 2026-08-03 | Probable | Appendix A #14: PITR runbook (`docs/pitr-recovery.md`); Vite 6.4.3 / Vitest 1.6.1 / Prisma 7.9.1 within-major hygiene |
+| 1.9 | 2026-08-03 | Probable | Pre-launch hardening: security ACL (`allowedPropertyIds`, owner-only property update/delete), Decimal invoices, dependency majors, API route split, UX polish; Categories / Organization / UserMembership / BR-10–12 marked Done; post-launch gaps remain (E4-3 bulk import, E4-6 locale units, E7-4/E7-6 reports, NFR-14 event logs) |

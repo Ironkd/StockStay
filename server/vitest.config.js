@@ -9,9 +9,7 @@ export default defineConfig({
     include: ["tests/**/*.test.js"],
     fileParallelism: false,
     pool: "forks",
-    poolOptions: {
-      forks: { singleFork: true },
-    },
+    maxWorkers: 1,
     testTimeout: 60_000,
     hookTimeout: 120_000,
   },

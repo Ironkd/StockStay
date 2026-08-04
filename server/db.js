@@ -461,11 +461,52 @@ export const propertyOps = {
   },
 
   async delete(id) {
-    // Note: properties are billing destinations only; no property stock cascade on delete.
-    // The app should prevent deleting properties that still have inventory.
+    const replenishmentCount = await prisma.replenishment.count({ where: { propertyId: id } });
+    if (replenishmentCount > 0) {
+      const err = new Error(
+        "Cannot delete a property with replenishment history. Keep it for audit and billing records."
+      );
+      err.code = "HAS_HISTORY";
+      throw err;
+    }
+    const invoiceLineCount = await prisma.invoiceLine.count({ where: { propertyId: id } });
+    if (invoiceLineCount > 0) {
+      const err = new Error(
+        "Cannot delete a property referenced by invoice lines. Keep it for audit and billing records."
+      );
+      err.code = "HAS_HISTORY";
+      throw err;
+    }
     return await prisma.property.delete({ where: { id } });
   },
 };
+
+const CLIENT_WRITABLE_FIELDS = [
+  "name",
+  "email",
+  "phone",
+  "address",
+  "streetAddress",
+  "city",
+  "province",
+  "postalCode",
+  "country",
+  "company",
+  "notes",
+  "defaultMarkupPercentage",
+  "billingFrequency",
+];
+
+function pickClientFields(data, { includeTeamId = false } = {}) {
+  const payload = {};
+  for (const key of CLIENT_WRITABLE_FIELDS) {
+    if (data[key] !== undefined) payload[key] = data[key];
+  }
+  if (includeTeamId && data.teamId !== undefined) {
+    payload.teamId = data.teamId;
+  }
+  return payload;
+}
 
 // Client operations (team-scoped)
 export const clientOps = {
@@ -479,14 +520,32 @@ export const clientOps = {
   },
 
   async create(data) {
-    return await prisma.client.create({ data });
+    const payload = pickClientFields(data, { includeTeamId: true });
+    return await prisma.client.create({ data: payload });
   },
 
   async update(id, data) {
-    return await prisma.client.update({ where: { id }, data });
+    const payload = pickClientFields(data, { includeTeamId: false });
+    return await prisma.client.update({ where: { id }, data: payload });
   },
 
   async delete(id) {
+    const propertyCount = await prisma.property.count({ where: { clientId: id } });
+    if (propertyCount > 0) {
+      const err = new Error(
+        "Cannot delete a client that is still assigned to properties. Reassign properties first."
+      );
+      err.code = "HAS_HISTORY";
+      throw err;
+    }
+    const invoiceCount = await prisma.invoice.count({ where: { clientId: id } });
+    if (invoiceCount > 0) {
+      const err = new Error(
+        "Cannot delete a client with invoice history. Keep the record for audit and billing."
+      );
+      err.code = "HAS_HISTORY";
+      throw err;
+    }
     return await prisma.client.delete({ where: { id } });
   },
 };
@@ -529,6 +588,9 @@ function mapInvoiceRow(inv) {
     items,
     lines,
     taxRate: inv.taxRate != null ? Number(inv.taxRate) : 0,
+    subtotal: inv.subtotal != null ? Number(inv.subtotal) : 0,
+    tax: inv.tax != null ? Number(inv.tax) : 0,
+    total: inv.total != null ? Number(inv.total) : 0,
     billingPeriodStart: inv.billingPeriodStart
       ? new Date(inv.billingPeriodStart).toISOString()
       : null,
@@ -536,6 +598,40 @@ function mapInvoiceRow(inv) {
       ? new Date(inv.billingPeriodEnd).toISOString()
       : null,
   };
+}
+
+const INVOICE_WRITABLE_FIELDS = [
+  "invoiceNumber",
+  "clientId",
+  "clientName",
+  "date",
+  "dueDate",
+  "items",
+  "billingPeriodStart",
+  "billingPeriodEnd",
+  "taxRate",
+  "subtotal",
+  "tax",
+  "total",
+  "status",
+  "notes",
+];
+
+function pickInvoiceFields(data, { includeTeamId = false } = {}) {
+  const payload = {};
+  for (const key of INVOICE_WRITABLE_FIELDS) {
+    if (data[key] !== undefined) {
+      if (key === "items") {
+        payload.items = stringifyJson(data.items || []);
+      } else {
+        payload[key] = data[key];
+      }
+    }
+  }
+  if (includeTeamId && data.teamId !== undefined) {
+    payload.teamId = data.teamId;
+  }
+  return payload;
 }
 
 export const invoiceOps = {
@@ -558,27 +654,22 @@ export const invoiceOps = {
   },
 
   async create(data) {
-    const { lines, taxRate, billingPeriodStart, billingPeriodEnd, ...rest } = data;
+    const payload = pickInvoiceFields(data, { includeTeamId: true });
+    if (payload.items === undefined) {
+      payload.items = stringifyJson([]);
+    }
+    if (payload.taxRate === undefined) payload.taxRate = 0;
+    if (payload.billingPeriodStart === undefined) payload.billingPeriodStart = null;
+    if (payload.billingPeriodEnd === undefined) payload.billingPeriodEnd = null;
     const invoice = await prisma.invoice.create({
-      data: {
-        ...rest,
-        items: stringifyJson(data.items || []),
-        taxRate: taxRate ?? 0,
-        billingPeriodStart: billingPeriodStart ?? null,
-        billingPeriodEnd: billingPeriodEnd ?? null,
-      },
+      data: payload,
       include: invoiceLineInclude,
     });
     return mapInvoiceRow(invoice);
   },
 
   async update(id, data) {
-    const payload = { ...data };
-    if (data.items !== undefined) {
-      payload.items = stringifyJson(data.items);
-    }
-    // Don't pass lines through raw update
-    delete payload.lines;
+    const payload = pickInvoiceFields(data, { includeTeamId: false });
     const invoice = await prisma.invoice.update({
       where: { id },
       data: payload,

@@ -107,7 +107,12 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         if (!input) return;
         const google = (window as Window & { google?: { maps?: { places?: { Autocomplete: new (input: HTMLInputElement, opts?: unknown) => { getPlace: () => PlaceResult; addListener: (event: string, fn: () => void) => void }; PlacesService: new (div: HTMLDivElement) => { getDetails: (req: { placeId: string; fields?: string[] }, cb: (place: PlaceResult | null, status: string) => void) => void } } } } }).google;
         if (!google?.maps?.places?.Autocomplete) return;
-        const Autocomplete = google.maps.places.Autocomplete;
+        const places = google.maps?.places;
+        if (!places?.Autocomplete) {
+          setUnavailable(true);
+          return;
+        }
+        const Autocomplete = places.Autocomplete;
         const opts: { types?: string[]; componentRestrictions?: { country: string | string[] } } = { types: ["address"] };
         if (componentRestrictions?.country) {
           opts.componentRestrictions = { country: componentRestrictions.country };
@@ -117,9 +122,9 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
 
         const fillFromPlace = (place: PlaceResult) => {
           let components = place.address_components;
-          if ((!components || !components.length) && place.place_id && google.maps.places?.PlacesService) {
+          if ((!components || !components.length) && place.place_id && places.PlacesService) {
             const div = document.createElement("div");
-            const service = new google.maps.places.PlacesService(div);
+            const service = new places.PlacesService(div);
             service.getDetails({ placeId: place.place_id, fields: ["address_components"] }, (detail, status) => {
               if (cancelled || status !== "OK" || !detail) {
                 const addr = parseAddressComponents(place.address_components);

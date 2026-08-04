@@ -16,10 +16,12 @@ import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { replenishmentApi } from "../services/replenishmentApi";
+import { useAuth } from "../contexts/AuthContext";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user, canWrite } = useAuth();
   const {
     properties,
     isLoaded: propertiesLoaded,
@@ -44,6 +46,19 @@ export const PropertyDetailPage: React.FC = () => {
   const [showTransferModal, setShowTransferModal] = useState(false);
 
   const property = getPropertyById(id);
+
+  const canAccessProperty = useMemo(() => {
+    if (!property || !user) return false;
+    if (user.teamRole === "owner") return true;
+    if (!user.allowedPropertyIds || user.allowedPropertyIds.length === 0) return true;
+    return user.allowedPropertyIds.includes(property.id);
+  }, [property, user]);
+
+  useEffect(() => {
+    if (propertiesLoaded && property && !canAccessProperty) {
+      navigate("/properties", { replace: true });
+    }
+  }, [propertiesLoaded, property, canAccessProperty, navigate]);
 
   const refreshAll = async () => {
     try {
@@ -137,7 +152,7 @@ export const PropertyDetailPage: React.FC = () => {
     );
   }
 
-  if (!property) {
+  if (!property || !canAccessProperty) {
     return (
       <div className="inventory-page">
         <div className="empty-state">
@@ -172,22 +187,24 @@ export const PropertyDetailPage: React.FC = () => {
             )}
           </p>
         </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-          <button type="button" className="secondary" onClick={() => setShowEditModal(true)}>
-            Edit property
-          </button>
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              setLinkLocationId("");
-              setLinkError("");
-              setShowLinkModal(true);
-            }}
-          >
-            Link location
-          </button>
-        </div>
+        {canWrite && (
+          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+            <button type="button" className="secondary" onClick={() => setShowEditModal(true)}>
+              Edit property
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => {
+                setLinkLocationId("");
+                setLinkError("");
+                setShowLinkModal(true);
+              }}
+            >
+              Link location
+            </button>
+          </div>
+        )}
       </div>
 
       {!property.clientId && (
@@ -198,15 +215,19 @@ export const PropertyDetailPage: React.FC = () => {
       )}
 
       <div className="stock-toolbar">
-        <button type="button" className="add-property-button" onClick={() => setShowReplenishModal(true)}>
-          Replenish
-        </button>
-        <button type="button" className="add-property-button" onClick={() => setShowReturnModal(true)}>
-          Return
-        </button>
-        <button type="button" className="add-property-button" onClick={() => setShowTransferModal(true)}>
-          Transfer
-        </button>
+        {canWrite && (
+          <>
+            <button type="button" className="add-property-button" onClick={() => setShowReplenishModal(true)}>
+              Replenish
+            </button>
+            <button type="button" className="add-property-button" onClick={() => setShowReturnModal(true)}>
+              Return
+            </button>
+            <button type="button" className="add-property-button" onClick={() => setShowTransferModal(true)}>
+              Transfer
+            </button>
+          </>
+        )}
         <button
           type="button"
           className="secondary"

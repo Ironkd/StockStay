@@ -25,7 +25,7 @@ Frontend: `npm test -- --run` from repo root.
 | E2-5 | covered | `e2-catalogue.test.js` |
 | E2-6 | covered | `e2-catalogue.test.js` |
 | E2-7 | covered | `e2-catalogue.test.js` |
-| E2-8 | todo | server-side categories |
+| E2-8 | covered | `SupplyItem.category` string field (not localStorage); catalogue create/update in `e2-catalogue.test.js` |
 | E2-9 | covered | `e2-catalogue.test.js` |
 | E2-10 | covered | `e2-catalogue.test.js` |
 | E2-11 | covered | `e2-catalogue.test.js` archive |
@@ -40,10 +40,10 @@ Frontend: `npm test -- --run` from repo root.
 | E4-1 | covered | `e4-e5-flow.test.js` |
 | E4-2 | covered | `e4-e5-flow.test.js` |
 | E4-3 | todo | bulk import |
-| E4-4 | todo | location stock export |
+| E4-4 | covered | `ReportsPage` location-stock CSV export |
 | E4-5 | covered | `e4-e5-flow.test.js` + `unit/stockLedger.test.js` |
 | E4-6 | todo | locale units |
-| E4-7 | covered | `e4-e5-flow.test.js` (ACL soft assert) |
+| E4-7 | covered | `security-tenancy.test.js` + `e4-e5-flow.test.js` (`allowedPropertyIds` server-side) |
 | E4-8 | covered | `e4-e5-flow.test.js` SKU cap |
 | E5-1 | covered | `e4-e5-flow.test.js` |
 | E5-2 | covered | `e4-e5-flow.test.js` |
@@ -69,7 +69,7 @@ Frontend: `npm test -- --run` from repo root.
 | E7-2 | covered | `e7-e8-and-removed.test.js` stock-transactions |
 | E7-3 | covered | `e7-e8-and-removed.test.js` location-low-stock |
 | E7-4 | todo | inventory value report |
-| E7-5 | todo | reports CSV |
+| E7-5 | covered | `ReportsPage` CSV (location stock + stock transactions) |
 | E7-6 | todo | usage by property |
 | E8-1 | covered | checkout 503 without Stripe |
 | E8-2 | covered | checkout 503 without Stripe |

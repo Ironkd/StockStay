@@ -436,9 +436,9 @@ model Invoice {
   billingPeriodStart  DateTime?
   billingPeriodEnd    DateTime?
   taxRate             Decimal   @default(0) @db.Decimal(9, 4)
-  subtotal            Float     @default(0)
-  tax                 Float     @default(0)
-  total               Float     @default(0)
+  subtotal            Decimal   @default(0) @db.Decimal(12, 2)
+  tax                 Decimal   @default(0) @db.Decimal(12, 2)
+  total               Decimal   @default(0) @db.Decimal(12, 2)
   status              String    @default("draft") // draft, sent, paid, overdue
   notes               String    @default("")
   createdAt           DateTime  @default(now())

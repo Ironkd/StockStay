@@ -1,25 +1,24 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-  ResponsiveContainer,
-} from "recharts";
+import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { locationSupplyThresholdsApi, skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
+import { useProperties } from "../hooks/useProperties";
 import type { LocationLowStockRow, Sku, UnbilledLine } from "../types";
+
+const LowStockCategoryChart = lazy(() =>
+  import("../components/LowStockCategoryChart").then((m) => ({
+    default: m.LowStockCategoryChart,
+  }))
+);
 
 export const HomePage: React.FC = () => {
   const { invoices } = useInvoices();
+  const { properties, isLoaded: propertiesLoaded } = useProperties();
   const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const [skus, setSkus] = useState<Sku[]>([]);
+  const [statsLoaded, setStatsLoaded] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -40,6 +39,9 @@ export const HomePage: React.FC = () => {
         setLowStock([]);
         setUnbilledLines([]);
         setSkus([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStatsLoaded(true);
       });
     return () => {
       cancelled = true;
@@ -91,16 +93,68 @@ export const HomePage: React.FC = () => {
       lowStockCount: lowStock.length,
       unbilledCount: unbilledLines.length,
       hasStockOnHand,
+      propertyCount: properties.length,
       categoryChart,
       overdueInvoices,
       overdueTotal,
       overdueCount: overdueInvoices.length,
     };
-  }, [lowStock, unbilledLines, skus, invoices]);
+  }, [lowStock, unbilledLines, skus, invoices, properties]);
+
+  const showOnboarding =
+    statsLoaded &&
+    propertiesLoaded &&
+    !stats.hasStockOnHand &&
+    stats.propertyCount === 0;
+
+  if (!statsLoaded || !propertiesLoaded) {
+    return (
+      <div className="home-page">
+        <h2>Dashboard</h2>
+        <div className="stats-grid" aria-busy="true" aria-label="Loading dashboard">
+          <div className="skeleton skeleton-block" />
+          <div className="skeleton skeleton-block" />
+          <div className="skeleton skeleton-block" />
+        </div>
+        <div className="charts-row">
+          <div className="chart-panel">
+            <div className="skeleton skeleton-line medium" />
+            <div className="skeleton skeleton-block" style={{ height: 180 }} />
+          </div>
+          <div className="chart-panel">
+            <div className="skeleton skeleton-line medium" />
+            <div className="skeleton skeleton-line" />
+            <div className="skeleton skeleton-line short" />
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="home-page">
       <h2>Dashboard</h2>
+
+      {showOnboarding && (
+        <section className="onboarding-checklist" aria-label="Getting started">
+          <h3>Get started</h3>
+          <p>Set up your workspace in a few steps so you can track stock and bill clients.</p>
+          <ol>
+            <li>
+              <Link to="/properties">Add property</Link>
+            </li>
+            <li>
+              <Link to="/stock">Add stock location</Link>
+            </li>
+            <li>
+              <Link to="/stock">Receive stock</Link>
+            </li>
+            <li>
+              <Link to="/clients">Add client</Link>
+            </li>
+          </ol>
+        </section>
+      )}
 
       <div className="stats-grid">
         <div
@@ -143,20 +197,9 @@ export const HomePage: React.FC = () => {
       <div className="charts-row">
         <div className="chart-panel">
           <h3>Low stock by category</h3>
-          {stats.categoryChart.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={stats.categoryChart}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="name" />
-                <YAxis />
-                <Tooltip />
-                <Legend />
-                <Bar dataKey="value" fill="#3b82f6" name="On hand (base)" />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="empty-state">No low-stock items at locations</div>
-          )}
+          <Suspense fallback={<div className="empty-state">Loading chart…</div>}>
+            <LowStockCategoryChart data={stats.categoryChart} />
+          </Suspense>
         </div>
 
         <div className="chart-panel">

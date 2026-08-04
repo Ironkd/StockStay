@@ -124,6 +124,15 @@ export const ShoppingListPage: React.FC = () => {
                               row.stockLocationId &&
                               navigate(`/stock/${row.stockLocationId}`)
                             }
+                            onKeyDown={(e) => {
+                              if (
+                                (e.key === "Enter" || e.key === " ") &&
+                                row.stockLocationId
+                              ) {
+                                e.preventDefault();
+                                navigate(`/stock/${row.stockLocationId}`);
+                              }
+                            }}
                             style={{ cursor: row.stockLocationId ? "pointer" : undefined }}
                           >
                             {row.stockLocation?.name ?? "Location"}

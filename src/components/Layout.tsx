@@ -19,6 +19,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   const [feedbackForm, setFeedbackForm] = useState({ name: "", email: "", message: "" });
   const [feedbackSending, setFeedbackSending] = useState(false);
   const [feedbackResult, setFeedbackResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [navOpen, setNavOpen] = useState(false);
 
   const memberships = user?.memberships ?? [];
   const activeTeamId = user?.activeTeamId || user?.teamId || "";
@@ -115,6 +116,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
     { path: "/stock", label: "Stock", icon: "📦", pageKey: "inventory" },
     { path: "/properties", label: "Properties", icon: "🏘️", pageKey: "inventory" },
+    { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
     { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
     { path: "/billing", label: "Billing", icon: "🧾", pageKey: "invoices" },
     { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
@@ -181,7 +183,16 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
         </button>
       </header>
 
-      <nav className="main-nav">
+      <button
+        type="button"
+        className="nav-menu-toggle"
+        onClick={() => setNavOpen((open) => !open)}
+        aria-expanded={navOpen}
+        aria-controls="main-nav"
+      >
+        {navOpen ? "Close menu" : "Menu"}
+      </button>
+      <nav id="main-nav" className={`main-nav${navOpen ? " nav-open" : ""}`}>
         {navItems
           .filter((item) => canSeePage(item))
           .map((item) => (
@@ -191,6 +202,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               className={`nav-link ${
                 location.pathname === item.path ? "active" : ""
               }`}
+              onClick={() => setNavOpen(false)}
             >
               <span className="nav-icon">{item.icon}</span>
               <span>{item.label}</span>

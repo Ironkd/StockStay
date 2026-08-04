@@ -196,7 +196,7 @@ export type TeamInvitationInfo = {
   teamRole: string;
   maxInventoryItems: number | null;
   status: string;
-  token: string;
+  token?: string;
   createdAt: string;
   expiresAt: string | null;
   allowedPages: string[] | null;

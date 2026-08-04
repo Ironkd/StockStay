@@ -7,9 +7,14 @@ import { teamApi } from "../services/teamApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+
+const PAGE_SIZE = 20;
 
 export const InvoicesPage: React.FC = () => {
   const { canWrite } = useAuth();
+  const toast = useToast();
   const [searchParams] = useSearchParams();
   const propertyIdFilter = searchParams.get("propertyId") || "";
   const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
@@ -22,6 +27,9 @@ export const InvoicesPage: React.FC = () => {
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const [generatingDrafts, setGeneratingDrafts] = useState(false);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
+  const [deleteInvoiceId, setDeleteInvoiceId] = useState<string | null>(null);
+  const [activePage, setActivePage] = useState(1);
+  const [sentPage, setSentPage] = useState(1);
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
@@ -142,7 +150,7 @@ export const InvoicesPage: React.FC = () => {
 
   const addItemToInvoice = () => {
     if (!currentItem.name.trim() || currentItem.quantity <= 0) {
-      alert("Please enter an item name and quantity");
+      toast.error("Please enter an item name and quantity");
       return;
     }
 
@@ -224,13 +232,13 @@ export const InvoicesPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.invoiceNumber || !formData.clientId) {
-      alert("Invoice number and client are required");
+      toast.error("Invoice number and client are required");
       return;
     }
 
     const selectedClient = clients.find((c) => c.id === formData.clientId);
     if (!selectedClient) {
-      alert("Please select a valid client");
+      toast.error("Please select a valid client");
       return;
     }
 
@@ -259,24 +267,28 @@ export const InvoicesPage: React.FC = () => {
 
     try {
       if (editingInvoice) {
-        await updateInvoice(editingInvoice.id, invoiceData);
+        await updateInvoice(editingInvoice.id, invoiceData as Parameters<typeof updateInvoice>[1]);
+      } else if (!isScheduled) {
+        await addInvoice(invoiceData as Parameters<typeof addInvoice>[0]);
       } else {
-        await addInvoice(invoiceData);
+        throw new Error("Cannot create a scheduled invoice from this form.");
       }
 
       await refreshInvoices();
 
       // If this invoice was already sent, treat saving edits as sending an updated version.
       if (wasPreviouslySent && editingInvoice) {
-        alert(
+        toast.success(
           `An updated invoice for ${editingInvoice.clientName} has been sent with the latest changes.`
         );
+      } else {
+        toast.success(editingInvoice ? "Invoice updated" : "Invoice created");
       }
 
       resetForm();
     } catch (error) {
       console.error("Error saving invoice:", error);
-      alert("There was a problem saving this invoice. Please try again.");
+      toast.error("There was a problem saving this invoice. Please try again.");
     }
   };
 
@@ -303,9 +315,14 @@ export const InvoicesPage: React.FC = () => {
   };
 
   const handleDelete = (id: string) => {
-    if (window.confirm("Are you sure you want to delete this invoice?")) {
-      removeInvoice(id);
-    }
+    setDeleteInvoiceId(id);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!deleteInvoiceId) return;
+    removeInvoice(deleteInvoiceId);
+    toast.success("Invoice deleted");
+    setDeleteInvoiceId(null);
   };
 
   const handleSendClick = (invoice: Invoice) => {
@@ -316,7 +333,7 @@ export const InvoicesPage: React.FC = () => {
     if (!sendPreviewInvoice) return;
     const clientEmail = clients.find((c) => c.id === sendPreviewInvoice.clientId)?.email?.trim();
     if (!clientEmail) {
-      alert("No email address for this client. Add an email in Clients before sending.");
+      toast.error("No email address for this client. Add an email in Clients before sending.");
       return;
     }
     setSendingInvoice(true);
@@ -324,10 +341,10 @@ export const InvoicesPage: React.FC = () => {
       await invoicesApi.send(sendPreviewInvoice.id);
       await refreshInvoices();
       setSendPreviewInvoice(null);
-      alert(`Invoice #${sendPreviewInvoice.invoiceNumber} sent to ${clientEmail}.`);
+      toast.success(`Invoice #${sendPreviewInvoice.invoiceNumber} sent to ${clientEmail}.`);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to send invoice. Please try again.";
-      alert(message);
+      toast.error(message);
     } finally {
       setSendingInvoice(false);
     }
@@ -361,6 +378,19 @@ export const InvoicesPage: React.FC = () => {
     return { activeInvoices: active, sentInvoices: sent };
   }, [invoices]);
 
+  const activeTotalPages = Math.max(1, Math.ceil(activeInvoices.length / PAGE_SIZE));
+  const sentTotalPages = Math.max(1, Math.ceil(sentInvoices.length / PAGE_SIZE));
+  const activeCurrentPage = Math.min(activePage, activeTotalPages);
+  const sentCurrentPage = Math.min(sentPage, sentTotalPages);
+  const pagedActiveInvoices = useMemo(() => {
+    const start = (activeCurrentPage - 1) * PAGE_SIZE;
+    return activeInvoices.slice(start, start + PAGE_SIZE);
+  }, [activeInvoices, activeCurrentPage]);
+  const pagedSentInvoices = useMemo(() => {
+    const start = (sentCurrentPage - 1) * PAGE_SIZE;
+    return sentInvoices.slice(start, start + PAGE_SIZE);
+  }, [sentInvoices, sentCurrentPage]);
+
   // Render invoice card component
   const renderInvoiceCard = (invoice: Invoice) => {
     return (
@@ -378,7 +408,7 @@ export const InvoicesPage: React.FC = () => {
               {invoice.status.toUpperCase()}
             </span>
             <div className="invoice-actions">
-              {invoice.status !== "sent" && (
+              {canWrite && invoice.status !== "sent" && (
                 <button
                   onClick={() => handleSendClick(invoice)}
                   title="Send to client (HTML + PDF)"
@@ -404,27 +434,34 @@ export const InvoicesPage: React.FC = () => {
                   invoicesApi
                     .exportCsv(invoice.id, invoice.invoiceNumber)
                     .catch((err) =>
-                      alert(err instanceof Error ? err.message : "Export failed")
+                      toast.error(err instanceof Error ? err.message : "Export failed")
                     )
                 }
                 title="Export CSV"
+                aria-label="Export CSV"
               >
                 ⬇️
               </button>
-              <button
-                className="icon-button"
-                onClick={() => handleEdit(invoice)}
-                title="Edit"
-              >
-                ✏️
-              </button>
-              <button
-                className="icon-button"
-                onClick={() => handleDelete(invoice.id)}
-                title="Delete"
-              >
-                🗑️
-              </button>
+              {canWrite && (
+                <>
+                  <button
+                    className="icon-button"
+                    onClick={() => handleEdit(invoice)}
+                    title="Edit"
+                    aria-label="Edit invoice"
+                  >
+                    ✏️
+                  </button>
+                  <button
+                    className="icon-button"
+                    onClick={() => handleDelete(invoice.id)}
+                    title="Delete"
+                    aria-label="Delete invoice"
+                  >
+                    🗑️
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -460,6 +497,15 @@ export const InvoicesPage: React.FC = () => {
 
   return (
     <div className="invoices-page">
+      <ConfirmDialog
+        open={Boolean(deleteInvoiceId)}
+        title="Delete invoice"
+        message="Are you sure you want to delete this invoice?"
+        confirmLabel="Delete"
+        danger
+        onConfirm={handleConfirmDelete}
+        onCancel={() => setDeleteInvoiceId(null)}
+      />
       {sendPreviewInvoice && (
         <div
           className="invoice-send-preview-overlay"
@@ -845,7 +891,7 @@ export const InvoicesPage: React.FC = () => {
                         <td>
                           <button
                             type="button"
-                            onClick={() => removeItemFromInvoice(item.id)}
+                            onClick={() => item.id && removeItemFromInvoice(item.id)}
                             className="icon-button"
                           >
                             🗑️
@@ -1105,9 +1151,34 @@ export const InvoicesPage: React.FC = () => {
             {activeInvoices.length === 0 ? (
           <div className="empty-state">No active invoices. Sent invoices are archived below.</div>
         ) : (
-          <div className="invoices-list">
-            {activeInvoices.map((invoice) => renderInvoiceCard(invoice))}
-          </div>
+          <>
+            <div className="invoices-list">
+              {pagedActiveInvoices.map((invoice) => renderInvoiceCard(invoice))}
+            </div>
+            {activeInvoices.length > PAGE_SIZE && (
+              <div className="pagination-controls">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={activeCurrentPage <= 1}
+                  onClick={() => setActivePage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <span className="pagination-status">
+                  Page {activeCurrentPage} of {activeTotalPages}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={activeCurrentPage >= activeTotalPages}
+                  onClick={() => setActivePage((p) => Math.min(activeTotalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
             )}
           </>
         )}
@@ -1142,9 +1213,34 @@ export const InvoicesPage: React.FC = () => {
             {sentInvoices.length === 0 ? (
           <div className="empty-state">No sent invoices yet. Invoices will be automatically archived here once sent.</div>
         ) : (
-          <div className="invoices-list">
-            {sentInvoices.map((invoice) => renderInvoiceCard(invoice))}
-          </div>
+          <>
+            <div className="invoices-list">
+              {pagedSentInvoices.map((invoice) => renderInvoiceCard(invoice))}
+            </div>
+            {sentInvoices.length > PAGE_SIZE && (
+              <div className="pagination-controls">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={sentCurrentPage <= 1}
+                  onClick={() => setSentPage((p) => Math.max(1, p - 1))}
+                >
+                  Prev
+                </button>
+                <span className="pagination-status">
+                  Page {sentCurrentPage} of {sentTotalPages}
+                </span>
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={sentCurrentPage >= sentTotalPages}
+                  onClick={() => setSentPage((p) => Math.min(sentTotalPages, p + 1))}
+                >
+                  Next
+                </button>
+              </div>
+            )}
+          </>
             )}
           </>
         )}

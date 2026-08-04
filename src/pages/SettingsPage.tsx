@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 import { apiRequest } from "../config/api";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { propertiesApi } from "../services/propertiesApi";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { track } from "../lib/analytics";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
 import type { Property } from "../types";
@@ -52,9 +54,16 @@ function toMaxInventoryItems(s: string): number | null {
 
 export const SettingsPage: React.FC = () => {
   const { user, updateUser, refreshUser, switchTeam } = useAuth();
+  const toast = useToast();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [confirmAction, setConfirmAction] = useState<
+    | { type: "revoke"; invitation: TeamInvitationInfo }
+    | { type: "remove"; member: TeamMemberInfo }
+    | null
+  >(null);
+  const [confirmBusy, setConfirmBusy] = useState(false);
 
   const [teamNameEdit, setTeamNameEdit] = useState("");
   const [savingName, setSavingName] = useState(false);
@@ -321,28 +330,53 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const handleRevokeInvitation = async (inv: TeamInvitationInfo) => {
-    if (!confirm(`Revoke invitation for ${inv.email}?`)) return;
-    try {
-      await teamApi.revokeInvitation(inv.id);
-      setTeamData((prev) =>
-        prev ? { ...prev, invitations: prev.invitations.filter((i) => i.id !== inv.id) } : null
-      );
-    } catch (err) {
-      console.error(err);
-    }
+  const handleRevokeInvitation = (inv: TeamInvitationInfo) => {
+    setConfirmAction({ type: "revoke", invitation: inv });
   };
 
-  const handleRemoveMember = async (member: TeamMemberInfo) => {
-    if (!confirm("Remove this member from the team?")) return;
+  const handleRemoveMember = (member: TeamMemberInfo) => {
+    setConfirmAction({ type: "remove", member });
+  };
+
+  const handleConfirmAction = async () => {
+    if (!confirmAction) return;
+    const action = confirmAction;
+    setConfirmBusy(true);
     try {
-      await teamApi.removeMember(member.id);
-      setTeamData((prev) =>
-        prev ? { ...prev, members: prev.members.filter((m) => m.id !== member.id) } : null
-      );
-      setEditingMember(null);
+      if (action.type === "revoke") {
+        await teamApi.revokeInvitation(action.invitation.id);
+        setTeamData((prev) =>
+          prev
+            ? {
+                ...prev,
+                invitations: prev.invitations.filter(
+                  (i) => i.id !== action.invitation.id
+                ),
+              }
+            : null
+        );
+        toast.success("Invitation revoked");
+      } else {
+        await teamApi.removeMember(action.member.id);
+        setTeamData((prev) =>
+          prev
+            ? {
+                ...prev,
+                members: prev.members.filter((m) => m.id !== action.member.id),
+              }
+            : null
+        );
+        setEditingMember(null);
+        toast.success("Member removed");
+      }
+      setConfirmAction(null);
     } catch (err) {
       console.error(err);
+      toast.error(
+        err instanceof Error ? err.message : "Action failed. Please try again."
+      );
+    } finally {
+      setConfirmBusy(false);
     }
   };
 
@@ -527,7 +561,13 @@ export const SettingsPage: React.FC = () => {
     return (
       <div className="settings-page">
         <h2>Settings</h2>
-        <p style={{ color: "#64748b" }}>Loading...</p>
+        <div aria-busy="true" aria-label="Loading settings">
+          <div className="skeleton skeleton-line medium" />
+          <div className="skeleton skeleton-block" />
+          <div className="skeleton skeleton-line" />
+          <div className="skeleton skeleton-line short" />
+          <div className="skeleton skeleton-block" />
+        </div>
       </div>
     );
   }
@@ -825,6 +865,28 @@ export const SettingsPage: React.FC = () => {
 
   return (
     <div className="settings-page">
+      <ConfirmDialog
+        open={Boolean(confirmAction)}
+        title={
+          confirmAction?.type === "revoke"
+            ? "Revoke invitation"
+            : "Remove member"
+        }
+        message={
+          confirmAction?.type === "revoke"
+            ? `Revoke invitation for ${confirmAction.invitation.email}?`
+            : "Remove this member from the team?"
+        }
+        confirmLabel={confirmAction?.type === "revoke" ? "Revoke" : "Remove"}
+        danger
+        busy={confirmBusy}
+        onConfirm={() => {
+          void handleConfirmAction();
+        }}
+        onCancel={() => {
+          if (!confirmBusy) setConfirmAction(null);
+        }}
+      />
       <h2>Settings</h2>
       {error && <p style={{ color: "#dc2626", marginBottom: "12px" }}>{error}</p>}
 

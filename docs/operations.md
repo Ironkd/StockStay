@@ -53,7 +53,7 @@ Build-time only (`VITE_*`). Redeploy the frontend after changing these.
 | `PORT` | No | Default `3000` |
 | `DATABASE_URL` | **Yes** | Postgres URI (Docker local or Supabase session/pooler) |
 | `JWT_SECRET` | **Yes** on staging/prod | Signs API JWTs; unique per env |
-| `CORS_ORIGIN` | **Yes** on deployed | Comma-separated frontend origin(s), no trailing slash |
+| `CORS_ORIGIN` | **Yes** on every deployed env | Comma-separated frontend origin(s), no trailing slash. **Must be set on staging and production** — if unset, the API allows all origins |
 | `APP_URL` | **Yes** for email links | Frontend origin (verification, reset, invites). Alias: `FRONTEND_URL` |
 | `RESEND_API_KEY` | No | Preferred email provider |
 | `RESEND_FROM_EMAIL` | No | e.g. `Stock Stay <onboarding@resend.dev>` |
@@ -69,7 +69,7 @@ Build-time only (`VITE_*`). Redeploy the frontend after changing these.
 | `SUPER_ADMIN_EMAILS` | No | Comma-separated User emails allowed into AdminJS. **Empty = `/admin` returns 404** |
 | `ADMIN_SESSION_SECRET` | Recommended on staging/prod | AdminJS session cookie secret; falls back to `JWT_SECRET` |
 
-**Health check:** `GET {API_ORIGIN}/api/health` should return JSON with `"status":"ok"` and `"appEnv"`.
+**Health check:** `GET {API_ORIGIN}/api/health` exists for smoke checks and should return JSON with `"status":"ok"` and `"appEnv"`.
 
 ---
 
@@ -147,6 +147,7 @@ Alpha has **no** self-serve “delete my account”. Use AdminJS per **[support-
 - AdminJS sets **session cookies** on the API host for allowlisted operators only (disclosed in Privacy Policy).
 - End-user app auth uses **sessionStorage JWTs**, not those cookies.
 - Restrict who you put on `SUPER_ADMIN_EMAILS`; treat `/admin` like production DB access.
+- **Accepted dependency exception:** `npm audit` may report AdminJS transitive advisories (TinyMCE XSS, react-router via adminjs). These are accepted for now because `/admin` is gated by `SUPER_ADMIN_EMAILS` (empty = 404). Do **not** run `npm audit fix --force` to clear them — that downgrades AdminJS and breaks the admin UI.
 
 ---
 
@@ -304,7 +305,7 @@ Playwright browser E2E is **deferred**.
 - Prefer **within-major** patches for Vite, Vitest, Prisma, and other critical deps (no surprise majors mid-sprint).
 - After bumps: run root `npm test -- --run` + `npm run build`, and `cd server && npm install --include=dev && npm test`.
 - Cadence: at least when closing an Appendix A slice, or monthly before launch.
-- Do not use `npm audit fix --force` unless an incident requires it; document leftover high/critical vulns if deferred.
+- Do **not** use `npm audit fix --force` for AdminJS advisories (TinyMCE / react-router via adminjs) — that downgrades AdminJS. Those findings are an accepted exception while `/admin` stays allowlist-gated (`SUPER_ADMIN_EMAILS`). Document any other deferred high/critical vulns.
 
 ---
 

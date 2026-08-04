@@ -39,9 +39,10 @@ type LocationSummary = {
   packsOnHand: number;
 };
 
+import { formatQty as formatQtyShared } from "../utils/format";
+
 function formatQty(n: number): string {
-  if (!Number.isFinite(n)) return "0";
-  return n.toFixed(4).replace(/\.?0+$/, "") || "0";
+  return formatQtyShared(n, 4);
 }
 
 function actorDisplayName(user?: StockTransactionActor | null): string {
@@ -911,42 +912,46 @@ export const StockPage: React.FC = () => {
             ? ` (${detailLocation.properties.length})`
             : ""}
         </button>
-        <button type="button" className="secondary" onClick={openNewLocationModal}>
-          + New location
-        </button>
-        <span style={{ flex: 1 }} />
-        <button
-          type="button"
-          className="add-property-button"
-          onClick={() => routeLocationId && openReceiveModal(routeLocationId)}
-          disabled={!routeLocationId}
-        >
-          Receive packs
-        </button>
-        <button type="button" className="secondary" onClick={openSupplyItemModal}>
-          Add supply item
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => routeLocationId && openSkuModal(routeLocationId)}
-          disabled={!routeLocationId}
-          title={
-            supplyItems.length === 0
-              ? "Add a supply item first (opens that flow)"
-              : "Add a purchasable pack (SKU) at this location"
-          }
-        >
-          Add SKU
-        </button>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => routeLocationId && openStockExistingModal(routeLocationId)}
-          disabled={!routeLocationId}
-        >
-          Stock existing SKU
-        </button>
+        {canWrite && (
+          <>
+            <button type="button" className="secondary" onClick={openNewLocationModal}>
+              + New location
+            </button>
+            <span style={{ flex: 1 }} />
+            <button
+              type="button"
+              className="add-property-button"
+              onClick={() => routeLocationId && openReceiveModal(routeLocationId)}
+              disabled={!routeLocationId}
+            >
+              Receive packs
+            </button>
+            <button type="button" className="secondary" onClick={openSupplyItemModal}>
+              Add supply item
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => routeLocationId && openSkuModal(routeLocationId)}
+              disabled={!routeLocationId}
+              title={
+                supplyItems.length === 0
+                  ? "Add a supply item first (opens that flow)"
+                  : "Add a purchasable pack (SKU) at this location"
+              }
+            >
+              Add SKU
+            </button>
+            <button
+              type="button"
+              className="secondary"
+              onClick={() => routeLocationId && openStockExistingModal(routeLocationId)}
+              disabled={!routeLocationId}
+            >
+              Stock existing SKU
+            </button>
+          </>
+        )}
       </div>
 
       <div className="property-tabs">
@@ -1068,22 +1073,26 @@ export const StockPage: React.FC = () => {
                         </div>
                       </div>
                       <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => openReorderModal(group)}
-                        >
-                          Reorder
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() =>
-                            routeLocationId && openSkuModal(routeLocationId, group.supplyItemId)
-                          }
-                        >
-                          Add SKU
-                        </button>
+                        {canWrite && (
+                          <>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() => openReorderModal(group)}
+                            >
+                              Reorder
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                routeLocationId && openSkuModal(routeLocationId, group.supplyItemId)
+                              }
+                            >
+                              Add SKU
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                     <div style={{ overflowX: "auto" }}>
@@ -1125,15 +1134,17 @@ export const StockPage: React.FC = () => {
                                   {formatQty(packs * packSize)} {group.baseUnitLabel}
                                 </td>
                                 <td>
-                                  <button
-                                    type="button"
-                                    className="secondary"
-                                    onClick={() =>
-                                      routeLocationId && openReceiveModal(routeLocationId, sku.id)
-                                    }
-                                  >
-                                    Receive
-                                  </button>
+                                  {canWrite && (
+                                    <button
+                                      type="button"
+                                      className="secondary"
+                                      onClick={() =>
+                                        routeLocationId && openReceiveModal(routeLocationId, sku.id)
+                                      }
+                                    >
+                                      Receive
+                                    </button>
+                                  )}
                                 </td>
                               </tr>
                             );
@@ -1160,9 +1171,11 @@ export const StockPage: React.FC = () => {
               }}
             >
               <h3 style={{ margin: 0 }}>Supply items</h3>
-              <button type="button" className="secondary" onClick={openSupplyItemModal}>
-                Add supply item
-              </button>
+              {canWrite && (
+                <button type="button" className="secondary" onClick={openSupplyItemModal}>
+                  Add supply item
+                </button>
+              )}
             </div>
             {supplyItems.length === 0 ? (
               <div className="empty-state">
@@ -1189,16 +1202,18 @@ export const StockPage: React.FC = () => {
                         <td>{item.baseUnit?.code || unitName(item.baseUnitId)}</td>
                         <td>{item.defaultReorderPoint ?? "—"}</td>
                         <td>
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() =>
-                              routeLocationId && openSkuModal(routeLocationId, item.id)
-                            }
-                            disabled={!routeLocationId}
-                          >
-                            Add SKU
-                          </button>
+                          {canWrite && (
+                            <button
+                              type="button"
+                              className="secondary"
+                              onClick={() =>
+                                routeLocationId && openSkuModal(routeLocationId, item.id)
+                              }
+                              disabled={!routeLocationId}
+                            >
+                              Add SKU
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1687,33 +1702,37 @@ export const StockPage: React.FC = () => {
                 {manageLocation ? ` · ${manageLocation.name}` : ""}
               </h3>
               <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-                Choose which properties this stock location can supply.
+                {canWrite
+                  ? "Choose which properties this stock location can supply."
+                  : "Properties this stock location can supply."}
               </p>
-              <div
-                style={{
-                  display: "flex",
-                  gap: "8px",
-                  marginBottom: "12px",
-                  flexWrap: "wrap",
-                }}
-              >
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={selectAllProperties}
-                  disabled={propertiesBusy || teamProperties.length === 0}
+              {canWrite && (
+                <div
+                  style={{
+                    display: "flex",
+                    gap: "8px",
+                    marginBottom: "12px",
+                    flexWrap: "wrap",
+                  }}
                 >
-                  Select all
-                </button>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={deselectAllProperties}
-                  disabled={propertiesBusy || selectedPropertyIds.size === 0}
-                >
-                  Deselect all
-                </button>
-              </div>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={selectAllProperties}
+                    disabled={propertiesBusy || teamProperties.length === 0}
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={deselectAllProperties}
+                    disabled={propertiesBusy || selectedPropertyIds.size === 0}
+                  >
+                    Deselect all
+                  </button>
+                </div>
+              )}
               {teamProperties.length === 0 ? (
                 <p style={{ color: "#64748b", fontSize: "14px" }}>
                   No properties yet. Add properties from the Properties page.
@@ -1750,14 +1769,14 @@ export const StockPage: React.FC = () => {
                             alignItems: "center",
                             gap: "10px",
                             padding: "6px 0",
-                            cursor: "pointer",
+                            cursor: canWrite ? "pointer" : "default",
                           }}
                         >
                           <input
                             type="checkbox"
                             checked={selectedPropertyIds.has(p.id)}
                             onChange={() => togglePropertySelection(p.id)}
-                            disabled={propertiesBusy}
+                            disabled={propertiesBusy || !canWrite}
                           />
                           <span>
                             {p.name}
@@ -1796,14 +1815,14 @@ export const StockPage: React.FC = () => {
                             alignItems: "center",
                             gap: "10px",
                             padding: "6px 0",
-                            cursor: "pointer",
+                            cursor: canWrite ? "pointer" : "default",
                           }}
                         >
                           <input
                             type="checkbox"
                             checked={selectedPropertyIds.has(p.id)}
                             onChange={() => togglePropertySelection(p.id)}
-                            disabled={propertiesBusy}
+                            disabled={propertiesBusy || !canWrite}
                           />
                           <span>
                             {p.name}
@@ -1828,15 +1847,17 @@ export const StockPage: React.FC = () => {
                   onClick={() => setShowPropertiesModal(false)}
                   disabled={propertiesBusy}
                 >
-                  Cancel
+                  {canWrite ? "Cancel" : "Close"}
                 </button>
-                <button
-                  type="button"
-                  onClick={handleSaveProperties}
-                  disabled={propertiesBusy}
-                >
-                  {propertiesBusy ? "Saving…" : "Save"}
-                </button>
+                {canWrite && (
+                  <button
+                    type="button"
+                    onClick={handleSaveProperties}
+                    disabled={propertiesBusy}
+                  >
+                    {propertiesBusy ? "Saving…" : "Save"}
+                  </button>
+                )}
               </div>
             </div>
           </div>

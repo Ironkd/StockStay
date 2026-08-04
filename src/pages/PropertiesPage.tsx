@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import type { Client, Property, PropertyFormValues, StockLocation } from "../types";
 import { useProperties } from "../hooks/useProperties";
 import { useAuth } from "../contexts/AuthContext";
+import { useToast } from "../contexts/ToastContext";
 import { PropertyForm } from "../components/PropertyForm";
+import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
@@ -11,6 +13,7 @@ import { stockLocationsApi } from "../services/stockLocationsApi";
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, canWrite } = useAuth();
+  const toast = useToast();
   const {
     properties,
     addProperty,
@@ -26,6 +29,8 @@ export const PropertiesPage: React.FC = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
 
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
@@ -98,20 +103,45 @@ export const PropertiesPage: React.FC = () => {
     }
   };
 
-  const handleDeleteProperty = async (property: Property, e: React.MouseEvent) => {
+  const handleDeleteProperty = (property: Property, e: React.MouseEvent) => {
     e.stopPropagation();
-    let message = `Are you sure you want to delete the property "${property.name}"?`;
-    message += "\n\nThis action cannot be undone.";
-    if (!window.confirm(message)) return;
+    setDeleteTarget(property);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
     try {
-      await removeProperty(property.id);
+      await removeProperty(deleteTarget.id);
+      toast.success("Property deleted");
+      setDeleteTarget(null);
     } catch (err) {
-      alert(err instanceof Error ? err.message : "Failed to delete property");
+      toast.error(err instanceof Error ? err.message : "Failed to delete property");
+    } finally {
+      setDeleteBusy(false);
     }
   };
 
   return (
     <div className="inventory-page">
+      <ConfirmDialog
+        open={Boolean(deleteTarget)}
+        title="Delete property"
+        message={
+          deleteTarget
+            ? `Are you sure you want to delete the property "${deleteTarget.name}"?\n\nThis action cannot be undone.`
+            : ""
+        }
+        confirmLabel="Delete"
+        danger
+        busy={deleteBusy}
+        onConfirm={() => {
+          void handleConfirmDelete();
+        }}
+        onCancel={() => {
+          if (!deleteBusy) setDeleteTarget(null);
+        }}
+      />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
         <div>
           <h2 style={{ marginBottom: "4px" }}>Properties</h2>

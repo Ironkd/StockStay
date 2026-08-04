@@ -189,8 +189,8 @@ describe("E4 / E5 receive, replenish, return", () => {
         propertyId: scenario.property.id,
         lines: [{ skuId: scenario.sku.id, baseQty: 1 }],
       });
-    // Either 403 forbidden or 201 if property ACL not enforced on this path yet
-    expect([201, 403]).toContain(res.status);
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe("PROPERTY_ACCESS_DENIED");
   });
 
   it.todo("E4-3 bulk-import supply items and SKUs");
