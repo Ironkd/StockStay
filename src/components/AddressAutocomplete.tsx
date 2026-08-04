@@ -121,7 +121,7 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
         autocompleteRef.current = autocomplete;
 
         const fillFromPlace = (place: PlaceResult) => {
-          let components = place.address_components;
+          const components = place.address_components;
           if ((!components || !components.length) && place.place_id && places.PlacesService) {
             const div = document.createElement("div");
             const service = new places.PlacesService(div);

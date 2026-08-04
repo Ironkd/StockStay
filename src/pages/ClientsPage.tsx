@@ -3,8 +3,8 @@ import { useClients } from "../hooks/useClients";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Client } from "../types";
-import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/useAuth";
+import { useToast } from "../contexts/useToast";
 
 const PAGE_SIZE = 20;
 

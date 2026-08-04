@@ -1,10 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { LoginPage } from "../pages/LoginPage";
 
-vi.mock("../contexts/AuthContext", () => ({
+vi.mock("../contexts/useAuth", () => ({
   useAuth: () => ({
     login: vi.fn(),
     logout: vi.fn(),

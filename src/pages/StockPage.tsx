@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   LocationSupplyThreshold,
@@ -20,7 +20,7 @@ import {
   supplyItemsApi,
 } from "../services/catalogueApi";
 import { propertiesApi } from "../services/propertiesApi";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/useAuth";
 
 type Tab = "onhand" | "catalogue" | "activity";
 
@@ -700,7 +700,10 @@ export const StockPage: React.FC = () => {
     }
   };
 
-  const unitName = (unitId?: string) => units.find((u) => u.id === unitId)?.code || "—";
+  const unitName = useCallback(
+    (unitId?: string) => units.find((u) => u.id === unitId)?.code || "—",
+    [units]
+  );
 
   const onHandGroups = useMemo((): OnHandGroup[] => {
     const byId = new Map<string, OnHandGroup>();
@@ -738,7 +741,7 @@ export const StockPage: React.FC = () => {
     return Array.from(byId.values()).sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-  }, [skus, supplyItems, units]);
+  }, [skus, supplyItems, unitName]);
 
   const thresholdBySupplyItem = useMemo(() => {
     const map = new Map<string, LocationSupplyThreshold>();

@@ -59,6 +59,8 @@ const VerifyEmailPage = lazy(() =>
   import("./pages/VerifyEmailPage").then((m) => ({ default: m.VerifyEmailPage }))
 );
 
+import { ErrorBoundary } from "./components/ErrorBoundary";
+
 const isNativeApp = Capacitor.isNativePlatform();
 
 const PageFallback: React.FC = () => (
@@ -66,7 +68,11 @@ const PageFallback: React.FC = () => (
 );
 
 function withSuspense(node: React.ReactNode) {
-  return <Suspense fallback={<PageFallback />}>{node}</Suspense>;
+  return (
+    <ErrorBoundary compact>
+      <Suspense fallback={<PageFallback />}>{node}</Suspense>
+    </ErrorBoundary>
+  );
 }
 
 export const App: React.FC = () => {

@@ -83,7 +83,9 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
 
     const { email, password } = req.body;
 
-    console.log(`[LOGIN] Attempting login for: ${email}`);
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[LOGIN] Attempting login for: ${email}`);
+    }
     let user;
     try {
       user = await userOps.findByEmail(email);
@@ -93,7 +95,9 @@ app.post("/api/auth/login", loginRateLimiter, loginValidation, async (req, res) 
         message: "Database error during login. Please try again.",
       });
     }
-    console.log(`[LOGIN] User found:`, user ? `Yes (${user.email})` : "No");
+    if (process.env.NODE_ENV !== "production") {
+      console.log(`[LOGIN] User found:`, user ? "Yes" : "No");
+    }
 
     if (!user) {
       return res
@@ -465,10 +469,10 @@ app.post("/api/auth/forgot-password", forgotPasswordRateLimiter, forgotPasswordV
           });
         } catch (err) {
           console.error("[FORGOT-PASSWORD] Resend error:", err.message);
-          console.log("[FORGOT-PASSWORD] Reset link (email failed):", resetLink);
+          console.error("[FORGOT-PASSWORD] Email send failed for user id:", user.id);
         }
       } else {
-        console.log("[FORGOT-PASSWORD] RESEND_API_KEY not set. Reset link:", resetLink);
+        console.error("[FORGOT-PASSWORD] RESEND_API_KEY not set; reset email not sent for user id:", user.id);
       }
     }
 

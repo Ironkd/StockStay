@@ -6,8 +6,8 @@ import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
-import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/useAuth";
+import { useToast } from "../contexts/useToast";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 
 const PAGE_SIZE = 20;
@@ -183,9 +183,9 @@ export const InvoicesPage: React.FC = () => {
     return { subtotal, taxAmount, total };
   }, [formData.items, formData.tax]);
 
-  // Generate years (current year ± 5 years)
+  // Generate years (current year ± 5 years) — snapshot once on mount
   const years = useMemo(() => {
-    const currentYear = now.getFullYear();
+    const currentYear = new Date().getFullYear();
     const yearList = [];
     for (let i = currentYear - 5; i <= currentYear + 5; i++) {
       yearList.push(i);
@@ -363,7 +363,7 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
-  const getInvoiceTitle = (invoice: Invoice) => {
+  const getInvoiceTitle = (_invoice: Invoice) => {
     // Show who the invoice is from (company/sender name), not the number
     return senderBranding?.companyName ?? "Invoice";
   };

@@ -4,7 +4,7 @@ import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { Layout } from "../components/Layout";
 
-vi.mock("../contexts/AuthContext", () => ({
+vi.mock("../contexts/useAuth", () => ({
   useAuth: () => ({
     user: {
       id: "u1",
@@ -34,6 +34,7 @@ vi.mock("../services/teamApi", () => ({
 
 vi.mock("../config/api", () => ({
   apiRequest: vi.fn(),
+  invalidateApiCache: vi.fn(),
 }));
 
 vi.mock("../lib/analytics", () => ({

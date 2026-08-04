@@ -1,6 +1,6 @@
 import React from "react";
 import { useNavigate, Link } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/useAuth";
 import { apiRequest } from "../config/api";
 import { fetchPlansConfig } from "../services/plansApi";
 import { track } from "../lib/analytics";

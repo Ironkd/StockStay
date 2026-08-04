@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
-import { useToast } from "../contexts/ToastContext";
+import { useAuth } from "../contexts/useAuth";
+import { useToast } from "../contexts/useToast";
 import { apiRequest } from "../config/api";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
@@ -147,6 +147,8 @@ export const SettingsPage: React.FC = () => {
       setProfilePostalCode(user.postalCode ?? "");
       setProfilePhone(user.phone ?? "");
     }
+    // Sync form from the specific profile fields we care about — not the whole user object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- granular fields avoid loops from updateUser()
   }, [user?.id, user?.firstName, user?.lastName, user?.email, user?.streetAddress, user?.city, user?.province, user?.postalCode, user?.phone]);
 
   // Pre-fill support form when opening modal
@@ -159,6 +161,7 @@ export const SettingsPage: React.FC = () => {
       });
       setSupportResult(null);
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- open modal + identity fields only
   }, [showSupportModal, user?.id, user?.name, user?.firstName, user?.lastName, user?.email]);
 
   const loadTeam = async () => {
@@ -192,6 +195,8 @@ export const SettingsPage: React.FC = () => {
     if (serverName && serverName !== authName) {
       refreshUser();
     }
+    // refreshUser is recreated each render; only re-check when team/user payloads change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamData, user]);
 
   useEffect(() => {
@@ -219,6 +224,8 @@ export const SettingsPage: React.FC = () => {
       footerText: (style.footerText ?? "— Stock Stay").trim(),
       logoUrl: (t.invoiceLogoUrl ?? "").trim(),
     });
+    // Prefer stable field deps over teamData.team object identity.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamData?.team?.id, teamData?.team?.name, teamData?.team?.invoiceLogoUrl, teamData?.team?.invoiceStyle, teamData?.organization?.name, teamData?.team?.organizationName, showOrgEditModal]);
 
   const handleSaveTeamName = async () => {
@@ -590,7 +597,6 @@ export const SettingsPage: React.FC = () => {
   const team = teamData?.team;
   const members = teamData?.members ?? [];
   const invitations = teamData?.invitations ?? [];
-  const pendingInvitations = invitations.filter((i) => i.status === "pending");
 
   const renderAccessForm = (
     access: AccessFormState,

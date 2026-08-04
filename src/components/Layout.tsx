@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/useAuth";
 import { teamApi } from "../services/teamApi";
 import { apiRequest } from "../config/api";
 import { track } from "../lib/analytics";
@@ -32,6 +32,8 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     }
     teamApi.getTeamName().then((r) => setHeaderTeamName(r.name)).catch(() => {});
     teamApi.getTeamLimits().then((r) => setEffectivePlan(r.effectivePlan)).catch(() => setEffectivePlan("free"));
+    // Intentionally key off identity/team ids only — avoid refetching on every profile field edit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- user object identity churns on profile updates
   }, [user?.id, user?.teamId, user?.activeTeamId]);
 
   useEffect(() => {

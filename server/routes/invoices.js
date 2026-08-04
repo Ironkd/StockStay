@@ -47,6 +47,9 @@ app.get("/api/invoices/export.csv", authenticateToken, async (req, res) => {
     if (!userHasPageAccess(currentUser, "invoices")) {
       return res.status(403).json({ message: "You do not have access to Invoices." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "No active team." });
+    }
     const idsRaw = typeof req.query.ids === "string" ? req.query.ids : "";
     const ids = idsRaw
       .split(",")
@@ -103,6 +106,9 @@ app.post("/api/invoices", authenticateToken, requireWriteAccess, async (req, res
     if (!canCreateInvoice) {
       return res.status(403).json({ message: "You do not have access to create invoices." });
     }
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "No active team." });
+    }
     const invoiceData = req.body;
 
     if (
@@ -119,7 +125,7 @@ app.post("/api/invoices", authenticateToken, requireWriteAccess, async (req, res
 
     const newInvoice = await invoiceOps.create({
       ...invoiceData,
-      teamId: currentUser?.teamId ?? undefined,
+      teamId: currentUser.teamId,
     });
     res.status(201).json(newInvoice);
   } catch (error) {

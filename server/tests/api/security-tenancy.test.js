@@ -193,4 +193,58 @@ describe("Security: tenancy and ACL", () => {
       expect(inv.token).toBeUndefined();
     }
   });
+
+  it("invoice/client findAll require a teamId (no unscoped dump)", async () => {
+    const { invoiceOps, clientOps } = await import("../../db.js");
+    expect(await invoiceOps.findAll(null)).toEqual([]);
+    expect(await invoiceOps.findAll(undefined)).toEqual([]);
+    expect(await clientOps.findAll(null)).toEqual([]);
+    expect(await clientOps.findAll("")).toEqual([]);
+  });
+
+  it("CSV export only includes the caller's team invoices", async () => {
+    const ownerA = await createOwnerContext();
+    const ownerB = await createOwnerContext();
+    const clientA = await createClient(ownerA.team.id, { name: "Client A" });
+    const clientB = await createClient(ownerB.team.id, { name: "Client B" });
+
+    await prisma.invoice.create({
+      data: {
+        id: crypto.randomUUID(),
+        teamId: ownerA.team.id,
+        invoiceNumber: "INV-TEAM-A",
+        clientId: clientA.id,
+        clientName: clientA.name,
+        date: new Date().toISOString().slice(0, 10),
+        items: "[]",
+        subtotal: 10,
+        tax: 0,
+        total: 10,
+        status: "draft",
+      },
+    });
+    await prisma.invoice.create({
+      data: {
+        id: crypto.randomUUID(),
+        teamId: ownerB.team.id,
+        invoiceNumber: "INV-TEAM-B",
+        clientId: clientB.id,
+        clientName: clientB.name,
+        date: new Date().toISOString().slice(0, 10),
+        items: "[]",
+        subtotal: 20,
+        tax: 0,
+        total: 20,
+        status: "draft",
+      },
+    });
+
+    const csv = await request(app)
+      .get("/api/invoices/export.csv")
+      .set(authHeader(ownerA.token));
+    expect(csv.status).toBe(200);
+    const text = String(csv.text || csv.body);
+    expect(text).toContain("INV-TEAM-A");
+    expect(text).not.toContain("INV-TEAM-B");
+  });
 });

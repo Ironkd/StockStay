@@ -1,25 +1,12 @@
-import React, { createContext, useContext, useState, useEffect } from "react";
-import { authApi, type AuthUser } from "../services/authApi";
-
-interface AuthContextType {
-  user: AuthUser | null;
-  login: (email: string, password: string) => Promise<boolean>;
-  logout: () => Promise<void>;
-  updateUser: (updates: Partial<AuthUser>) => void;
-  refreshUser: () => Promise<void>;
-  switchTeam: (teamId: string) => Promise<void>;
-  isAuthenticated: boolean;
-  loading: boolean;
-  /** False for teamRole viewer (NFR-4); owners/members can write. */
-  canWrite: boolean;
-}
-
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+import React, { useState, useEffect } from "react";
+import { authApi } from "../services/authApi";
+import { invalidateApiCache } from "../config/api";
+import { AuthContext } from "./authContextInstance";
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   children
 }) => {
-  const [user, setUser] = useState<AuthUser | null>(null);
+  const [user, setUser] = useState<import("../services/authApi").AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -30,7 +17,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
           const currentUser = await authApi.getCurrentUser();
           setUser(currentUser);
         }
-      } catch (error) {
+      } catch {
         sessionStorage.removeItem("auth_token");
         setUser(null);
       } finally {
@@ -41,8 +28,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
     checkAuth();
   }, []);
 
+  useEffect(() => {
+    const onSessionExpired = () => {
+      setUser(null);
+    };
+    window.addEventListener("session-expired", onSessionExpired);
+    return () => window.removeEventListener("session-expired", onSessionExpired);
+  }, []);
+
   const login = async (email: string, password: string): Promise<boolean> => {
     const response = await authApi.login(email, password);
+    invalidateApiCache();
     setUser(response.user);
     return true;
   };
@@ -50,14 +46,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
   const logout = async () => {
     try {
       await authApi.logout();
-    } catch (error) {
-      console.error("Logout error:", error);
+    } catch (err) {
+      console.error("Logout error:", err);
     } finally {
+      invalidateApiCache();
       setUser(null);
     }
   };
 
-  const updateUser = (updates: Partial<AuthUser>) => {
+  const updateUser = (updates: Partial<import("../services/authApi").AuthUser>) => {
     setUser((prev) => (prev ? { ...prev, ...updates } : null));
   };
 
@@ -68,12 +65,15 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       const currentUser = await authApi.getCurrentUser();
       setUser(currentUser);
     } catch {
+      sessionStorage.removeItem("auth_token");
+      invalidateApiCache();
       setUser(null);
     }
   };
 
   const switchTeam = async (teamId: string) => {
     const updated = await authApi.switchActiveTeam(teamId);
+    invalidateApiCache();
     setUser(updated);
     window.dispatchEvent(new Event("active-team-changed"));
   };
@@ -83,7 +83,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       if (document.visibilityState !== "visible") return;
       const token = sessionStorage.getItem("auth_token");
       if (!token) return;
-      authApi.getCurrentUser().then(setUser).catch(() => {});
+      authApi
+        .getCurrentUser()
+        .then(setUser)
+        .catch(() => {
+          sessionStorage.removeItem("auth_token");
+          invalidateApiCache();
+          setUser(null);
+        });
     };
     document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => document.removeEventListener("visibilitychange", handleVisibilityChange);
@@ -106,12 +113,4 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       {children}
     </AuthContext.Provider>
   );
-};
-
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
 };

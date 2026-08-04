@@ -1,11 +1,10 @@
 import React, {
-  createContext,
   useCallback,
-  useContext,
   useMemo,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { ToastContext, type ToastApi } from "./toastContextInstance";
 
 type ToastVariant = "success" | "error" | "info";
 
@@ -14,14 +13,6 @@ type ToastItem = {
   message: string;
   variant: ToastVariant;
 };
-
-type ToastApi = {
-  success: (message: string) => void;
-  error: (message: string) => void;
-  info: (message: string) => void;
-};
-
-const ToastContext = createContext<ToastApi | undefined>(undefined);
 
 const AUTO_DISMISS_MS = 4000;
 
@@ -81,11 +72,3 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
     </ToastContext.Provider>
   );
 };
-
-export function useToast(): ToastApi {
-  const ctx = useContext(ToastContext);
-  if (!ctx) {
-    throw new Error("useToast must be used within a ToastProvider");
-  }
-  return ctx;
-}

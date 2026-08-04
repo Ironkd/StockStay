@@ -20,14 +20,33 @@ function clearExpiredGets() {
   }
 }
 
-/** Drop cached GETs (e.g. after mutations that invalidate team/invoice lists). */
+/** Tenant-aware cache key so team switches never reuse another tenant's GET. */
+function getCacheKey(url: string, token: string | null): string {
+  const tenantHint = token ? token.slice(-16) : "anon";
+  return `${tenantHint}::${url}`;
+}
+
+/** Drop cached GETs (e.g. after mutations, logout, or team switch). */
 export function invalidateApiCache(prefix?: string) {
   if (!prefix) {
     inFlightGets.clear();
     return;
   }
   for (const key of inFlightGets.keys()) {
-    if (key.startsWith(prefix)) inFlightGets.delete(key);
+    if (key.includes(prefix) || key.endsWith(prefix) || key.includes(`::${prefix}`)) {
+      inFlightGets.delete(key);
+    }
+  }
+}
+
+function clearSessionAndRedirectToLogin() {
+  sessionStorage.removeItem("auth_token");
+  invalidateApiCache();
+  window.dispatchEvent(new Event("session-expired"));
+  const path = window.location.pathname || "";
+  if (!path.startsWith("/login") && !path.startsWith("/reset-password") && path !== "/") {
+    const next = encodeURIComponent(path + window.location.search);
+    window.location.assign(`/login?next=${next}`);
   }
 }
 
@@ -39,10 +58,11 @@ export const apiRequest = async <T>(
   const method = (options.method || "GET").toUpperCase();
   const token = getAuthToken();
   const url = `${API_BASE_URL}${endpoint}`;
+  const cacheKey = getCacheKey(url, token);
 
   if (method === "GET" && !options.signal) {
     clearExpiredGets();
-    const cached = inFlightGets.get(url);
+    const cached = inFlightGets.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
       return cached.promise as Promise<T>;
     }
@@ -83,6 +103,11 @@ export const apiRequest = async <T>(
       );
     }
 
+    if (response.status === 401) {
+      clearSessionAndRedirectToLogin();
+      throw new Error("Session expired. Please sign in again.");
+    }
+
     if (!response.ok) {
       const error = await response.json().catch(() => ({ message: "An error occurred" }));
       throw new Error(error.message || `HTTP error! status: ${response.status}`);
@@ -94,12 +119,12 @@ export const apiRequest = async <T>(
   const promise = run();
 
   if (method === "GET" && !options.signal) {
-    inFlightGets.set(url, {
+    inFlightGets.set(cacheKey, {
       promise,
       expiresAt: Date.now() + GET_DEDUP_TTL_MS,
     });
     promise.catch(() => {
-      inFlightGets.delete(url);
+      inFlightGets.delete(cacheKey);
     });
   } else if (method !== "GET") {
     invalidateApiCache();

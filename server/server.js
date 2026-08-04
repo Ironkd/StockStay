@@ -18,7 +18,6 @@ import {
 import { sendSupportEmail } from "./email.js";
 import { getAllPlans, downgradeExpiredTrials } from "./trialManager.js";
 import { handleWebhook } from "./billing.js";
-import { mountAdmin } from "./admin.js";
 import { registerAllRoutes } from "./routes/register.js";
 
 const app = express();
@@ -38,12 +37,27 @@ if (requiresJwtSecret && !process.env.JWT_SECRET) {
   process.exit(1);
 }
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
+const DEFAULT_JWT_SECRET = "your-secret-key-change-in-production";
+// Mis-set APP_ENV=local on a production Node process must not silently use the hardcoded default.
+if (isProduction && (!process.env.JWT_SECRET || JWT_SECRET === DEFAULT_JWT_SECRET)) {
+  console.error(
+    "FATAL: JWT_SECRET must be set to a non-default value when NODE_ENV=production."
+  );
+  process.exit(1);
+}
+
 // CORS: single origin or comma-separated list (e.g. https://stockstay.com,https://stockstay.ca)
-// Capacitor mobile apps use capacitor://localhost (iOS) and http://localhost (Android) – always allow these when CORS is configured
+// Capacitor mobile apps use capacitor://localhost (iOS) and http://localhost (Android) – allow when CORS is configured
 const CORS_ORIGIN = process.env.CORS_ORIGIN;
 const corsOriginsRaw = CORS_ORIGIN
   ? CORS_ORIGIN.split(",").map((o) => o.trim()).filter(Boolean)
   : [];
+if (requiresJwtSecret && corsOriginsRaw.length === 0) {
+  console.error(
+    `FATAL: CORS_ORIGIN must be set when APP_ENV=${appEnv}. Use a comma-separated allow-list of frontend origins.`
+  );
+  process.exit(1);
+}
 const capacitorOrigins = ["capacitor://localhost", "http://localhost", "https://localhost"];
 const corsOrigins =
   corsOriginsRaw.length > 0 ? [...new Set([...corsOriginsRaw, ...capacitorOrigins])] : [];
@@ -51,17 +65,16 @@ const corsOrigins =
 // Handle OPTIONS first (before any other middleware) so preflight never gets 502
 app.options(/.*/, (req, res) => {
   const origin = req.headers.origin;
-  const allowed =
-    corsOrigins.length === 0 ||
-    (origin && corsOrigins.includes(origin));
-  if (allowed && origin) {
+  // Fail closed: never reflect an origin when the allow-list is empty.
+  const allowed = corsOrigins.length > 0 && origin && corsOrigins.includes(origin);
+  if (allowed) {
     res.setHeader("Access-Control-Allow-Origin", origin);
+    res.setHeader("Access-Control-Allow-Credentials", "true");
   }
   res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   res.setHeader("Access-Control-Max-Age", "86400");
-  res.setHeader("Access-Control-Allow-Credentials", "true");
-  res.status(204).end();
+  res.status(allowed ? 204 : 403).end();
 });
 
 // Root path – respond first so "Cannot GET /" never appears
@@ -101,12 +114,12 @@ app.use(
   })
 );
 
-// Middleware – restrict origin in production for security
+// Middleware – restrict origin when configured; fail closed (deny all) when empty
 app.use(
   cors(
     corsOrigins.length > 0
       ? { origin: corsOrigins, credentials: true }
-      : undefined
+      : { origin: false }
   )
 );
 
@@ -190,6 +203,20 @@ registerAllRoutes(app, {
   requireWriteAccess,
 });
 
+// JSON 404 for unmatched API routes (after all route registration)
+app.use("/api", (_req, res) => {
+  res.status(404).json({ message: "Not found" });
+});
+
+// Global JSON error handler — middleware that calls next(err) must not fall through to HTML
+app.use((err, _req, res, _next) => {
+  console.error("[API]", err?.stack || err?.message || err);
+  const status = Number(err?.status || err?.statusCode) || 500;
+  res.status(status).json({
+    message: status >= 500 ? "Internal server error" : err?.message || "Request failed",
+  });
+});
+
 const TRIAL_CHECK_INTERVAL = 60 * 60 * 1000;
 
 async function checkAndDowngradeTrials() {
@@ -233,14 +260,21 @@ if (process.env.NODE_ENV !== "test") {
 
 let adminMountPromise = null;
 
-/** Mount AdminJS once (used by boot and by tests). */
+/** Mount AdminJS once (used by boot and by tests). Lazy-imports so API tests skip the AdminJS graph. */
 export async function ensureAdminMounted() {
   if (!adminMountPromise) {
     adminMountPromise = (async () => {
       try {
+        const { mountAdmin } = await import("./admin.js");
         await mountAdmin(app);
       } catch (err) {
         console.error("[admin] Failed to mount AdminJS:", err?.message || err);
+        if (err?.stack) console.error(err.stack);
+        // In deployed envs, fail boot so silent AdminJS breakage cannot recur.
+        // Tests keep a 503 stub so API suites stay independent of AdminJS peers.
+        if (process.env.NODE_ENV !== "test" && requiresJwtSecret) {
+          throw err;
+        }
         app.use("/admin", (_req, res) => {
           res.status(503).json({ message: "Platform admin unavailable." });
         });

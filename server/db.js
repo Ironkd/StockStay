@@ -511,8 +511,10 @@ function pickClientFields(data, { includeTeamId = false } = {}) {
 // Client operations (team-scoped)
 export const clientOps = {
   async findAll(teamId) {
-    const where = teamId != null ? { teamId } : {};
-    return await prisma.client.findMany({ where, orderBy: { createdAt: 'desc' } });
+    if (teamId == null || teamId === "") {
+      return [];
+    }
+    return await prisma.client.findMany({ where: { teamId }, orderBy: { createdAt: 'desc' } });
   },
 
   async findById(id) {
@@ -636,9 +638,11 @@ function pickInvoiceFields(data, { includeTeamId = false } = {}) {
 
 export const invoiceOps = {
   async findAll(teamId) {
-    const where = teamId != null ? { teamId } : {};
+    if (teamId == null || teamId === "") {
+      return [];
+    }
     const invoices = await prisma.invoice.findMany({
-      where,
+      where: { teamId },
       include: invoiceLineInclude,
       orderBy: { createdAt: "desc" },
     });

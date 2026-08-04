@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   Client,
-  Property,
   PropertyFormValues,
   Replenishment,
   StockLocation,
@@ -16,7 +15,7 @@ import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { replenishmentApi } from "../services/replenishmentApi";
-import { useAuth } from "../contexts/AuthContext";
+import { useAuth } from "../contexts/useAuth";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -80,7 +79,6 @@ export const PropertyDetailPage: React.FC = () => {
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
     refreshAll();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const handleStockFlowSuccess = () => {
