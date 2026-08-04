@@ -787,11 +787,26 @@ function normalizeTags(tags) {
   return [];
 }
 
+function normalizeVisibleCategories(value) {
+  if (value == null) return null;
+  if (!Array.isArray(value)) return null;
+  const cleaned = [
+    ...new Set(
+      value
+        .map((c) => (typeof c === "string" ? c.trim() : ""))
+        .filter(Boolean)
+    ),
+  ];
+  return cleaned;
+}
+
 function mapStockLocation(row) {
   if (!row) return null;
   return {
     ...row,
     tags: normalizeTags(row.tags),
+    visibleCategories: normalizeVisibleCategories(row.visibleCategories),
+    showUncategorized: row.showUncategorized !== false,
     properties: Array.isArray(row.properties)
       ? row.properties.map((link) => ({
           id: link.id,
@@ -948,6 +963,12 @@ export const stockLocationOps = {
         ...(data.name !== undefined ? { name: data.name } : {}),
         ...(data.address !== undefined ? { address: data.address } : {}),
         ...(data.tags !== undefined ? { tags: normalizeTags(data.tags) } : {}),
+        ...(data.visibleCategories !== undefined
+          ? { visibleCategories: normalizeVisibleCategories(data.visibleCategories) }
+          : {}),
+        ...(data.showUncategorized !== undefined
+          ? { showUncategorized: Boolean(data.showUncategorized) }
+          : {}),
         ...(data.archivedAt !== undefined ? { archivedAt: data.archivedAt } : {}),
       },
       include: {

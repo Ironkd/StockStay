@@ -170,14 +170,17 @@ model UnitOfMeasure {
 }
 
 model StockLocation {
-  id         String    @id @default(uuid())
-  teamId     String
-  name       String
-  address    String?
-  tags       Json      @default("[]")
-  archivedAt DateTime?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
+  id                 String    @id @default(uuid())
+  teamId             String
+  name               String
+  address            String?
+  tags               Json      @default("[]")
+  /// null = all named categories visible; otherwise whitelist of SupplyItem.category values
+  visibleCategories  Json?
+  showUncategorized  Boolean   @default(true)
+  archivedAt         DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
 
   team               Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
   properties         StockLocationProperty[]

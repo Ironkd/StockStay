@@ -2,7 +2,6 @@ import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   LocationSupplyThreshold,
-  Property,
   Sku,
   StockLocation,
   StockTransaction,
@@ -18,9 +17,10 @@ import {
   stockTransactionsApi,
   supplyItemsApi,
 } from "../services/catalogueApi";
-import { propertiesApi } from "../services/propertiesApi";
 import { useAuth } from "../contexts/useAuth";
 import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
+import { EditStockLocationModal } from "../components/EditStockLocationModal";
+import { isCategoryVisible } from "../utils/stockLocationVisibility";
 
 type Tab = "onhand" | "catalogue" | "activity";
 
@@ -36,7 +36,6 @@ type OnHandGroup = {
 
 type LocationSummary = {
   skuCount: number;
-  packsOnHand: number;
 };
 
 import { formatQty as formatQtyShared } from "../utils/format";
@@ -95,23 +94,14 @@ export const StockPage: React.FC = () => {
   const [supplyItemBaseUnitId, setSupplyItemBaseUnitId] = useState("");
 
   const [editingSupplyItem, setEditingSupplyItem] = useState<SupplyItem | null>(null);
+  const [editingLocation, setEditingLocation] = useState<StockLocation | null>(null);
   const [receiveStockedSkuIds, setReceiveStockedSkuIds] = useState<Set<string>>(new Set());
   const [thresholds, setThresholds] = useState<LocationSupplyThreshold[]>([]);
-
-  const [showPropertiesModal, setShowPropertiesModal] = useState(false);
-  const [manageLocationId, setManageLocationId] = useState<string>("");
-  const [teamProperties, setTeamProperties] = useState<Property[]>([]);
-  const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<string>>(new Set());
-  const [initialLinkedPropertyIds, setInitialLinkedPropertyIds] = useState<Set<string>>(
-    new Set()
-  );
-  const [propertiesBusy, setPropertiesBusy] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   const selectedLocationId = routeLocationId || actionLocationId;
-  const manageLocation = locations.find((l) => l.id === manageLocationId);
 
   const refreshLocations = async () => {
     try {
@@ -279,12 +269,8 @@ export const StockPage: React.FC = () => {
       for (const soh of hands) {
         const locId = soh.stockLocationId;
         if (!locId) continue;
-        const packs = Number(soh.quantity) || 0;
-        const prev = map.get(locId) || { skuCount: 0, packsOnHand: 0 };
-        map.set(locId, {
-          skuCount: prev.skuCount + 1,
-          packsOnHand: prev.packsOnHand + packs,
-        });
+        const prev = map.get(locId) || { skuCount: 0 };
+        map.set(locId, { skuCount: prev.skuCount + 1 });
       }
     }
     return map;
@@ -485,67 +471,9 @@ export const StockPage: React.FC = () => {
     setEditingSupplyItem(item);
   };
 
-  const openPropertiesModal = async (locationId: string) => {
-    setManageLocationId(locationId);
+  const openEditLocation = (loc: StockLocation) => {
     setError("");
-    setPropertiesBusy(true);
-    try {
-      const [props, locs] = await Promise.all([propertiesApi.getAll(), refreshLocations()]);
-      setTeamProperties(props);
-      const loc = locs.find((l) => l.id === locationId);
-      const linked = new Set((loc?.properties || []).map((p) => p.propertyId));
-      setSelectedPropertyIds(new Set(linked));
-      setInitialLinkedPropertyIds(new Set(linked));
-      setShowPropertiesModal(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load properties");
-    } finally {
-      setPropertiesBusy(false);
-    }
-  };
-
-  const togglePropertySelection = (propertyId: string) => {
-    setSelectedPropertyIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(propertyId)) next.delete(propertyId);
-      else next.add(propertyId);
-      return next;
-    });
-  };
-
-  const selectAllProperties = () => {
-    setSelectedPropertyIds(new Set(teamProperties.map((p) => p.id)));
-  };
-
-  const deselectAllProperties = () => {
-    setSelectedPropertyIds(new Set());
-  };
-
-  const handleSaveProperties = async () => {
-    if (!manageLocationId) return;
-    const current = initialLinkedPropertyIds;
-    const next = selectedPropertyIds;
-    const toLink = [...next].filter((id) => !current.has(id));
-    const toUnlink = [...current].filter((id) => !next.has(id));
-    setPropertiesBusy(true);
-    setError("");
-    try {
-      await Promise.all([
-        ...toLink.map((propertyId) =>
-          stockLocationsApi.linkProperty(manageLocationId, propertyId)
-        ),
-        ...toUnlink.map((propertyId) =>
-          stockLocationsApi.unlinkProperty(manageLocationId, propertyId)
-        ),
-      ]);
-      await refreshLocations();
-      setShowPropertiesModal(false);
-      setManageLocationId("");
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update linked properties");
-    } finally {
-      setPropertiesBusy(false);
-    }
+    setEditingLocation(loc);
   };
 
   const unitName = useCallback(
@@ -554,6 +482,13 @@ export const StockPage: React.FC = () => {
   );
 
   const onHandGroups = useMemo((): OnHandGroup[] => {
+    const visibilityLoc =
+      locations.find((l) => l.id === routeLocationId) ||
+      ({
+        visibleCategories: null,
+        showUncategorized: true,
+      } as Pick<StockLocation, "visibleCategories" | "showUncategorized">);
+
     const byId = new Map<string, OnHandGroup>();
     for (const sku of skus) {
       const supplyItemId = sku.supplyItemId || sku.supplyItem?.id || "unknown";
@@ -561,6 +496,7 @@ export const StockPage: React.FC = () => {
       const name =
         sku.supplyItem?.name || fromCatalogue?.name || "Unknown supply item";
       const category = sku.supplyItem?.category || fromCatalogue?.category || "";
+      if (!isCategoryVisible(category, visibilityLoc)) continue;
       const baseUnitLabel =
         fromCatalogue?.baseUnit?.code ||
         unitName(fromCatalogue?.baseUnitId || sku.supplyItem?.baseUnitId) ||
@@ -589,7 +525,17 @@ export const StockPage: React.FC = () => {
     return Array.from(byId.values()).sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-  }, [skus, supplyItems, unitName]);
+  }, [skus, supplyItems, unitName, locations, routeLocationId]);
+
+  const visibleSupplyItems = useMemo(() => {
+    const visibilityLoc =
+      locations.find((l) => l.id === routeLocationId) ||
+      ({
+        visibleCategories: null,
+        showUncategorized: true,
+      } as Pick<StockLocation, "visibleCategories" | "showUncategorized">);
+    return supplyItems.filter((item) => isCategoryVisible(item.category, visibilityLoc));
+  }, [supplyItems, locations, routeLocationId]);
 
   const thresholdBySupplyItem = useMemo(() => {
     const map = new Map<string, LocationSupplyThreshold>();
@@ -606,16 +552,6 @@ export const StockPage: React.FC = () => {
     }
     return n;
   }, [onHandGroups, thresholdBySupplyItem]);
-
-  const linkedPropertiesSorted = useMemo(() => {
-    const linked = teamProperties
-      .filter((p) => initialLinkedPropertyIds.has(p.id))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    const other = teamProperties
-      .filter((p) => !initialLinkedPropertyIds.has(p.id))
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-    return { linked, other };
-  }, [teamProperties, initialLinkedPropertyIds]);
 
   const openNewLocationModal = () => {
     setLocationName("");
@@ -665,7 +601,6 @@ export const StockPage: React.FC = () => {
                     <th>Address</th>
                     <th>Properties</th>
                     <th>SKUs</th>
-                    <th>Packs on hand</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -673,7 +608,6 @@ export const StockPage: React.FC = () => {
                   {locations.map((loc) => {
                     const summary = summariesByLocation.get(loc.id) || {
                       skuCount: 0,
-                      packsOnHand: 0,
                     };
                     const propCount = loc.properties?.length || 0;
                     return (
@@ -688,27 +622,17 @@ export const StockPage: React.FC = () => {
                         <td>{loc.address || "—"}</td>
                         <td>{propCount}</td>
                         <td>{summary.skuCount}</td>
-                        <td>{formatQty(summary.packsOnHand)}</td>
                         <td>
                           <div
                             style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}
                             onClick={(e) => e.stopPropagation()}
                           >
-                            {canWrite && (
-                              <button
-                                type="button"
-                                className="secondary"
-                                onClick={() => openReceiveModal(loc.id)}
-                              >
-                                Receive
-                              </button>
-                            )}
                             <button
                               type="button"
                               className="secondary"
-                              onClick={() => openPropertiesModal(loc.id)}
+                              onClick={() => openEditLocation(loc)}
                             >
-                              Properties
+                              Edit
                             </button>
                           </div>
                         </td>
@@ -746,19 +670,13 @@ export const StockPage: React.FC = () => {
         <button
           type="button"
           className="secondary"
-          onClick={() => routeLocationId && openPropertiesModal(routeLocationId)}
-          disabled={!routeLocationId}
+          onClick={() => detailLocation && openEditLocation(detailLocation)}
+          disabled={!detailLocation}
         >
-          Linked properties
-          {detailLocation?.properties?.length != null
-            ? ` (${detailLocation.properties.length})`
-            : ""}
+          Edit
         </button>
         {canWrite && (
           <>
-            <button type="button" className="secondary" onClick={openNewLocationModal}>
-              + New location
-            </button>
             <span style={{ flex: 1 }} />
             <button
               type="button"
@@ -782,7 +700,7 @@ export const StockPage: React.FC = () => {
           onClick={() => setActiveTab("onhand")}
         >
           On hand
-          <span className="tab-count">({skus.length})</span>
+          <span className="tab-count">({onHandGroups.reduce((n, g) => n + g.skus.length, 0)})</span>
         </button>
         <button
           type="button"
@@ -790,7 +708,7 @@ export const StockPage: React.FC = () => {
           onClick={() => setActiveTab("catalogue")}
         >
           Catalogue
-          <span className="tab-count">({supplyItems.length})</span>
+          <span className="tab-count">({visibleSupplyItems.length})</span>
         </button>
         <button
           type="button"
@@ -831,6 +749,14 @@ export const StockPage: React.FC = () => {
               <div className="empty-state">
                 <h3>Nothing here yet</h3>
                 <p>Add a supply item, then receive packs to see stock on hand.</p>
+              </div>
+            ) : onHandGroups.length === 0 ? (
+              <div className="empty-state">
+                <h3>No visible stock</h3>
+                <p>
+                  Stock exists here, but nothing matches this location’s category filters. Open
+                  Edit to change visible categories.
+                </p>
               </div>
             ) : (
               <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
@@ -995,6 +921,14 @@ export const StockPage: React.FC = () => {
                 <h3>No supply items yet</h3>
                 <p>Add a supply item to start building your catalogue.</p>
               </div>
+            ) : visibleSupplyItems.length === 0 ? (
+              <div className="empty-state">
+                <h3>No visible supply items</h3>
+                <p>
+                  Catalogue items are hidden by this location’s category filters. Open Edit to
+                  change visible categories.
+                </p>
+              </div>
             ) : (
               <div style={{ overflowX: "auto" }}>
                 <table className="inventory-table">
@@ -1007,7 +941,7 @@ export const StockPage: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {supplyItems.map((item) => (
+                    {visibleSupplyItems.map((item) => (
                       <tr key={item.id}>
                         <td>{item.name}</td>
                         <td>{item.category || "—"}</td>
@@ -1363,180 +1297,18 @@ export const StockPage: React.FC = () => {
           </div>
         )}
 
-        {showPropertiesModal && (
-          <div
-            className="modal-overlay"
-            onClick={() => !propertiesBusy && setShowPropertiesModal(false)}
-          >
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "520px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>
-                Linked properties
-                {manageLocation ? ` · ${manageLocation.name}` : ""}
-              </h3>
-              <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-                {canWrite
-                  ? "Choose which properties this stock location can supply."
-                  : "Properties this stock location can supply."}
-              </p>
-              {canWrite && (
-                <div
-                  style={{
-                    display: "flex",
-                    gap: "8px",
-                    marginBottom: "12px",
-                    flexWrap: "wrap",
-                  }}
-                >
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={selectAllProperties}
-                    disabled={propertiesBusy || teamProperties.length === 0}
-                  >
-                    Select all
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={deselectAllProperties}
-                    disabled={propertiesBusy || selectedPropertyIds.size === 0}
-                  >
-                    Deselect all
-                  </button>
-                </div>
-              )}
-              {teamProperties.length === 0 ? (
-                <p style={{ color: "#64748b", fontSize: "14px" }}>
-                  No properties yet. Add properties from the Properties page.
-                </p>
-              ) : (
-                <div
-                  style={{
-                    maxHeight: "360px",
-                    overflowY: "auto",
-                    border: "1px solid #e2e8f0",
-                    borderRadius: "8px",
-                    padding: "8px 12px",
-                  }}
-                >
-                  {linkedPropertiesSorted.linked.length > 0 && (
-                    <div style={{ marginBottom: "12px" }}>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: "#64748b",
-                          marginBottom: "6px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.03em",
-                        }}
-                      >
-                        Currently linked
-                      </div>
-                      {linkedPropertiesSorted.linked.map((p) => (
-                        <label
-                          key={p.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            padding: "6px 0",
-                            cursor: canWrite ? "pointer" : "default",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedPropertyIds.has(p.id)}
-                            onChange={() => togglePropertySelection(p.id)}
-                            disabled={propertiesBusy || !canWrite}
-                          />
-                          <span>
-                            {p.name}
-                            {p.location ? (
-                              <span style={{ color: "#94a3b8", fontSize: "13px" }}>
-                                {" "}
-                                · {p.location}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                  {linkedPropertiesSorted.other.length > 0 && (
-                    <div>
-                      <div
-                        style={{
-                          fontSize: "12px",
-                          fontWeight: 600,
-                          color: "#64748b",
-                          marginBottom: "6px",
-                          textTransform: "uppercase",
-                          letterSpacing: "0.03em",
-                        }}
-                      >
-                        {linkedPropertiesSorted.linked.length > 0
-                          ? "Other properties"
-                          : "Properties"}
-                      </div>
-                      {linkedPropertiesSorted.other.map((p) => (
-                        <label
-                          key={p.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
-                            padding: "6px 0",
-                            cursor: canWrite ? "pointer" : "default",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selectedPropertyIds.has(p.id)}
-                            onChange={() => togglePropertySelection(p.id)}
-                            disabled={propertiesBusy || !canWrite}
-                          />
-                          <span>
-                            {p.name}
-                            {p.location ? (
-                              <span style={{ color: "#94a3b8", fontSize: "13px" }}>
-                                {" "}
-                                · {p.location}
-                              </span>
-                            ) : null}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-              <div className="form-actions" style={{ marginTop: "16px" }}>
-                <button
-                  type="button"
-                  className="secondary"
-                  onClick={() => setShowPropertiesModal(false)}
-                  disabled={propertiesBusy}
-                >
-                  {canWrite ? "Cancel" : "Close"}
-                </button>
-                {canWrite && (
-                  <button
-                    type="button"
-                    onClick={handleSaveProperties}
-                    disabled={propertiesBusy}
-                  >
-                    {propertiesBusy ? "Saving…" : "Save"}
-                  </button>
-                )}
-              </div>
-            </div>
-          </div>
+        {editingLocation && (
+          <EditStockLocationModal
+            location={editingLocation}
+            supplyItems={supplyItems}
+            canWrite={canWrite}
+            onClose={() => setEditingLocation(null)}
+            onSaved={async () => {
+              const locs = await refreshLocations();
+              const updated = locs.find((l) => l.id === editingLocation.id);
+              if (updated) setEditingLocation(updated);
+            }}
+          />
         )}
 
         {editingSupplyItem && (

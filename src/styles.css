@@ -2235,6 +2235,80 @@ button.danger:hover {
   user-select: none;
 }
 
+/* Compact left-aligned checklist rows (Edit stock location, etc.) */
+.checklist-box {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 12px;
+}
+
+.checklist-box--tall {
+  max-height: 220px;
+}
+
+.checklist-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 0;
+  margin: 0;
+  text-align: left;
+}
+
+.checklist-checkbox {
+  width: 1rem !important;
+  min-width: 1rem;
+  max-width: 1rem;
+  height: 1rem;
+  margin: 2px 0 0 !important;
+  flex: 0 0 1rem;
+  padding: 0;
+  accent-color: #2563eb;
+}
+
+.checklist-label {
+  display: inline !important;
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0 !important;
+  font-size: 13px !important;
+  font-weight: 500;
+  color: #0f172a;
+  line-height: 1.4;
+  text-align: left;
+}
+
+.checklist-label-meta {
+  color: #94a3b8;
+  font-weight: 400;
+}
+
+.checklist-group-heading {
+  font-size: 12px;
+  font-weight: 600;
+  color: #64748b;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.checklist-bulk-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.checklist-bulk-actions button.secondary {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;

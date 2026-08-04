@@ -258,6 +258,9 @@ export type StockLocation = {
   name: string;
   address: string | null;
   tags: string[];
+  /** null = all named categories visible; otherwise whitelist */
+  visibleCategories: string[] | null;
+  showUncategorized: boolean;
   archivedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -268,6 +271,8 @@ export type StockLocationFormValues = {
   name: string;
   address?: string | null;
   tags?: string[];
+  visibleCategories?: string[] | null;
+  showUncategorized?: boolean;
 };
 
 export type SupplyItem = {

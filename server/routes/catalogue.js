@@ -139,6 +139,18 @@ app.patch("/api/stock-locations/:id", authenticateToken, requireCatalogueWrite, 
     if (req.body?.tags !== undefined) {
       updates.tags = Array.isArray(req.body.tags) ? req.body.tags : [];
     }
+    if (req.body?.visibleCategories !== undefined) {
+      if (req.body.visibleCategories === null) {
+        updates.visibleCategories = null;
+      } else if (Array.isArray(req.body.visibleCategories)) {
+        updates.visibleCategories = req.body.visibleCategories;
+      } else {
+        return res.status(400).json({ message: "visibleCategories must be an array or null." });
+      }
+    }
+    if (req.body?.showUncategorized !== undefined) {
+      updates.showUncategorized = Boolean(req.body.showUncategorized);
+    }
     if (req.body?.archived === true) {
       updates.archivedAt = existing.archivedAt || new Date();
     } else if (req.body?.archived === false) {
