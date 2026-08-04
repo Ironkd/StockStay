@@ -68,8 +68,17 @@ const verifyEmailRateLimiter = rateLimit({
 
 // ==================== AUTH ROUTES ====================
 
+// Lowercase/trim only — do not strip Gmail dots or +tags (unintuitive in the UI).
+const normalizeEmailOpts = {
+  gmail_remove_dots: false,
+  gmail_remove_subaddress: false,
+};
+
 const loginValidation = [
-  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+  body("email")
+    .isEmail()
+    .normalizeEmail(normalizeEmailOpts)
+    .withMessage("Please enter a valid email address"),
   body("password").notEmpty().trim().withMessage("Password is required"),
 ];
 
@@ -229,7 +238,10 @@ function passwordStrengthMessage(value) {
 }
 
 const signupValidation = [
-  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+  body("email")
+    .isEmail()
+    .normalizeEmail(normalizeEmailOpts)
+    .withMessage("Please enter a valid email address"),
   body("password")
     .isLength({ min: 8 })
     .withMessage("Password must be at least 8 characters")
@@ -428,7 +440,10 @@ app.get("/api/auth/verify-email", verifyEmailRateLimiter, async (req, res) => {
 
 // Forgot password: create token, send reset link email
 const forgotPasswordValidation = [
-  body("email").isEmail().normalizeEmail().withMessage("Please enter a valid email address"),
+  body("email")
+    .isEmail()
+    .normalizeEmail(normalizeEmailOpts)
+    .withMessage("Please enter a valid email address"),
 ];
 app.post("/api/auth/forgot-password", forgotPasswordRateLimiter, forgotPasswordValidation, async (req, res) => {
   try {
