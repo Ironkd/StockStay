@@ -24,6 +24,10 @@ export const EditStockLocationModal: React.FC<Props> = ({
     location.showUncategorized !== false
   );
   const [selectedCategories, setSelectedCategories] = useState<Set<string>>(new Set());
+  /** True after Select all, or when location already includes future categories (null). */
+  const [includeFutureCategories, setIncludeFutureCategories] = useState(
+    location.visibleCategories == null
+  );
   const [teamProperties, setTeamProperties] = useState<Property[]>([]);
   const [selectedPropertyIds, setSelectedPropertyIds] = useState<Set<string>>(new Set());
   const [initialLinkedPropertyIds, setInitialLinkedPropertyIds] = useState<Set<string>>(
@@ -43,11 +47,13 @@ export const EditStockLocationModal: React.FC<Props> = ({
   }, [supplyItems]);
 
   useEffect(() => {
-    // Initialize category selection: null = all checked
+    // Initialize category selection: null = all checked (include future)
     if (location.visibleCategories == null) {
       setSelectedCategories(new Set(availableCategories));
+      setIncludeFutureCategories(true);
     } else {
       setSelectedCategories(new Set(location.visibleCategories));
+      setIncludeFutureCategories(false);
     }
   }, [location.visibleCategories, availableCategories]);
 
@@ -87,6 +93,7 @@ export const EditStockLocationModal: React.FC<Props> = ({
   }, [teamProperties, initialLinkedPropertyIds]);
 
   const toggleCategory = (category: string) => {
+    setIncludeFutureCategories(false);
     setSelectedCategories((prev) => {
       const next = new Set(prev);
       if (next.has(category)) next.delete(category);
@@ -97,10 +104,12 @@ export const EditStockLocationModal: React.FC<Props> = ({
 
   const selectAllCategories = () => {
     setSelectedCategories(new Set(availableCategories));
+    setIncludeFutureCategories(true);
   };
 
   const deselectAllCategories = () => {
     setSelectedCategories(new Set());
+    setIncludeFutureCategories(false);
   };
 
   const togglePropertySelection = (propertyId: string) => {
@@ -133,10 +142,15 @@ export const EditStockLocationModal: React.FC<Props> = ({
       const allSelected =
         availableCategories.length > 0 &&
         availableCategories.every((c) => selectedCategories.has(c));
+      // Only null (= include future categories) when already null, or user used Select all.
       const visibleCategories =
-        availableCategories.length === 0 || allSelected
-          ? null
-          : availableCategories.filter((c) => selectedCategories.has(c));
+        availableCategories.length === 0
+          ? location.visibleCategories == null
+            ? null
+            : []
+          : includeFutureCategories && allSelected
+            ? null
+            : availableCategories.filter((c) => selectedCategories.has(c));
 
       await stockLocationsApi.update(location.id, {
         name: name.trim(),

@@ -2309,6 +2309,26 @@ button.danger:hover {
   font-size: 12px;
 }
 
+.overflow-name-cell {
+  max-width: 180px;
+  min-width: 96px;
+}
+
+.overflow-name-list {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: clip;
+  font-size: 13px;
+  color: #334155;
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .overflow-name-cell {
+    max-width: 260px;
+  }
+}
+
 .settings-actions {
   display: flex;
   gap: 8px;
@@ -2375,47 +2395,6 @@ button.danger:hover {
   margin-bottom: 20px;
   flex-wrap: wrap;
   align-items: center;
-}
-
-.stock-add-menu {
-  position: relative;
-}
-
-.stock-add-menu-panel {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 40;
-  min-width: 220px;
-  background: #fff;
-  border: 1px solid #e2e8f0;
-  border-radius: 10px;
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.stock-add-menu-panel button {
-  text-align: left;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 13px;
-  cursor: pointer;
-  color: #0f172a;
-}
-
-.stock-add-menu-panel button:hover {
-  background: #f1f5f9;
-}
-
-.stock-add-menu-divider {
-  height: 1px;
-  background: #e2e8f0;
-  margin: 4px 0;
 }
 
 .stock-checklist {

@@ -20,7 +20,9 @@ import {
 import { useAuth } from "../contexts/useAuth";
 import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
 import { EditStockLocationModal } from "../components/EditStockLocationModal";
+import { OverflowNameList } from "../components/OverflowNameList";
 import { isCategoryVisible } from "../utils/stockLocationVisibility";
+import { formatQty as formatQtyShared } from "../utils/format";
 
 type Tab = "onhand" | "catalogue" | "activity";
 
@@ -35,10 +37,11 @@ type OnHandGroup = {
 };
 
 type LocationSummary = {
-  skuCount: number;
+  categories: string[];
+  propertyNames: string[];
 };
 
-import { formatQty as formatQtyShared } from "../utils/format";
+const UNCATEGORIZED_LABEL = "Uncategorized Items";
 
 function formatQty(n: number): string {
   return formatQtyShared(n, 4);
@@ -57,6 +60,53 @@ function localDateInputValue(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+function StockEmptyState({
+  title,
+  body,
+  primaryLabel,
+  onPrimary,
+  secondaryLabel,
+  onSecondary,
+  showActions,
+}: {
+  title: string;
+  body: string;
+  primaryLabel?: string;
+  onPrimary?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+  showActions?: boolean;
+}) {
+  return (
+    <div className="empty-state">
+      <h3>{title}</h3>
+      <p>{body}</p>
+      {showActions && (onPrimary || onSecondary) ? (
+        <div
+          style={{
+            display: "flex",
+            gap: "8px",
+            justifyContent: "center",
+            flexWrap: "wrap",
+            marginTop: "12px",
+          }}
+        >
+          {onPrimary && primaryLabel ? (
+            <button type="button" onClick={onPrimary}>
+              {primaryLabel}
+            </button>
+          ) : null}
+          {onSecondary && secondaryLabel ? (
+            <button type="button" className="secondary" onClick={onSecondary}>
+              {secondaryLabel}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const StockPage: React.FC = () => {
   const { canWrite } = useAuth();
   const { locationId: routeLocationId } = useParams<{ locationId?: string }>();
@@ -65,7 +115,6 @@ export const StockPage: React.FC = () => {
 
   const [locations, setLocations] = useState<StockLocation[]>([]);
   const [locationsLoaded, setLocationsLoaded] = useState(false);
-  const [allSkus, setAllSkus] = useState<Sku[]>([]);
 
   const [supplyItems, setSupplyItems] = useState<SupplyItem[]>([]);
   const [skus, setSkus] = useState<Sku[]>([]);
@@ -97,6 +146,7 @@ export const StockPage: React.FC = () => {
   const [editingLocation, setEditingLocation] = useState<StockLocation | null>(null);
   const [receiveStockedSkuIds, setReceiveStockedSkuIds] = useState<Set<string>>(new Set());
   const [thresholds, setThresholds] = useState<LocationSupplyThreshold[]>([]);
+  const [showAllSkusByGroup, setShowAllSkusByGroup] = useState<Set<string>>(new Set());
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -113,17 +163,6 @@ export const StockPage: React.FC = () => {
       return [] as StockLocation[];
     } finally {
       setLocationsLoaded(true);
-    }
-  };
-
-  const refreshAllSkus = async () => {
-    try {
-      const rows = await skusApi.getAll();
-      setAllSkus(rows);
-      return rows;
-    } catch {
-      setAllSkus([]);
-      return [] as Sku[];
     }
   };
 
@@ -172,8 +211,6 @@ export const StockPage: React.FC = () => {
       unitsOfMeasureApi.getAll().then(setUnits).catch(() => setUnits([]));
       supplyItemsApi.getAll().then(setSupplyItems).catch(() => setSupplyItems([]));
       if (!routeLocationId) {
-        await refreshAllSkus();
-        if (cancelled) return;
         if (locs.length === 1) {
           navigate(`/stock/${locs[0].id}`, { replace: true });
         }
@@ -190,7 +227,6 @@ export const StockPage: React.FC = () => {
       setSkus([]);
       setActionLocationId("");
       setThresholds([]);
-      refreshAllSkus();
       return;
     }
     if (locationsLoaded && locations.length > 0 && !locations.some((l) => l.id === routeLocationId)) {
@@ -256,25 +292,42 @@ export const StockPage: React.FC = () => {
   useEffect(() => {
     setActivitySkuId("");
     setActiveTab("onhand");
+    setShowAllSkusByGroup(new Set());
   }, [routeLocationId]);
 
   const summariesByLocation = useMemo(() => {
-    const map = new Map<string, LocationSummary>();
-    for (const sku of allSkus) {
-      const hands = sku.stockOnHands?.length
-        ? sku.stockOnHands
-        : sku.stockOnHand
-          ? [sku.stockOnHand]
-          : [];
-      for (const soh of hands) {
-        const locId = soh.stockLocationId;
-        if (!locId) continue;
-        const prev = map.get(locId) || { skuCount: 0 };
-        map.set(locId, { skuCount: prev.skuCount + 1 });
+    const namedCategories = [
+      ...new Set(
+        supplyItems
+          .map((s) => (s.category || "").trim())
+          .filter(Boolean)
+      ),
+    ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+
+    const result = new Map<string, LocationSummary>();
+    for (const loc of locations) {
+      const categories: string[] = [];
+      if (loc.visibleCategories == null) {
+        categories.push(...namedCategories);
+      } else {
+        categories.push(
+          ...loc.visibleCategories
+            .map((c) => c.trim())
+            .filter(Boolean)
+            .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }))
+        );
       }
+      if (loc.showUncategorized !== false) {
+        categories.push(UNCATEGORIZED_LABEL);
+      }
+      const propertyNames = (loc.properties || [])
+        .map((p) => p.property?.name?.trim() || "")
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" }));
+      result.set(loc.id, { categories, propertyNames });
     }
-    return map;
-  }, [allSkus]);
+    return result;
+  }, [locations, supplyItems]);
 
   const handleCreateLocation = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -410,7 +463,6 @@ export const StockPage: React.FC = () => {
         await refreshSkusForLocation(routeLocationId);
         await refreshThresholds(routeLocationId);
       }
-      await refreshAllSkus();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to receive packs");
     } finally {
@@ -459,7 +511,6 @@ export const StockPage: React.FC = () => {
 
   const refreshAfterSupplyEdit = async () => {
     await refreshSupplyItems();
-    await refreshAllSkus();
     if (routeLocationId) {
       await refreshSkusForLocation(routeLocationId);
       await refreshThresholds(routeLocationId);
@@ -481,22 +532,39 @@ export const StockPage: React.FC = () => {
     [units]
   );
 
-  const onHandGroups = useMemo((): OnHandGroup[] => {
-    const visibilityLoc =
+  const visibilityLoc = useMemo(
+    () =>
       locations.find((l) => l.id === routeLocationId) ||
       ({
         visibleCategories: null,
         showUncategorized: true,
-      } as Pick<StockLocation, "visibleCategories" | "showUncategorized">);
+      } as Pick<StockLocation, "visibleCategories" | "showUncategorized">),
+    [locations, routeLocationId]
+  );
 
+  const onHandGroups = useMemo((): OnHandGroup[] => {
     const byId = new Map<string, OnHandGroup>();
+
+    for (const item of supplyItems) {
+      if (!isCategoryVisible(item.category, visibilityLoc)) continue;
+      byId.set(item.id, {
+        supplyItemId: item.id,
+        name: item.name,
+        category: item.category || "",
+        baseUnitLabel: item.baseUnit?.code || unitName(item.baseUnitId) || "units",
+        skus: [],
+        packsOnHand: 0,
+        baseUnitsOnHand: 0,
+      });
+    }
+
     for (const sku of skus) {
       const supplyItemId = sku.supplyItemId || sku.supplyItem?.id || "unknown";
       const fromCatalogue = supplyItems.find((s) => s.id === supplyItemId);
-      const name =
-        sku.supplyItem?.name || fromCatalogue?.name || "Unknown supply item";
       const category = sku.supplyItem?.category || fromCatalogue?.category || "";
       if (!isCategoryVisible(category, visibilityLoc)) continue;
+      const name =
+        sku.supplyItem?.name || fromCatalogue?.name || "Unknown supply item";
       const baseUnitLabel =
         fromCatalogue?.baseUnit?.code ||
         unitName(fromCatalogue?.baseUnitId || sku.supplyItem?.baseUnitId) ||
@@ -525,17 +593,12 @@ export const StockPage: React.FC = () => {
     return Array.from(byId.values()).sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
     );
-  }, [skus, supplyItems, unitName, locations, routeLocationId]);
+  }, [skus, supplyItems, unitName, visibilityLoc]);
 
-  const visibleSupplyItems = useMemo(() => {
-    const visibilityLoc =
-      locations.find((l) => l.id === routeLocationId) ||
-      ({
-        visibleCategories: null,
-        showUncategorized: true,
-      } as Pick<StockLocation, "visibleCategories" | "showUncategorized">);
-    return supplyItems.filter((item) => isCategoryVisible(item.category, visibilityLoc));
-  }, [supplyItems, locations, routeLocationId]);
+  const visibleSupplyItems = useMemo(
+    () => supplyItems.filter((item) => isCategoryVisible(item.category, visibilityLoc)),
+    [supplyItems, visibilityLoc]
+  );
 
   const thresholdBySupplyItem = useMemo(() => {
     const map = new Map<string, LocationSupplyThreshold>();
@@ -553,6 +616,37 @@ export const StockPage: React.FC = () => {
     return n;
   }, [onHandGroups, thresholdBySupplyItem]);
 
+  const onHandByCategory = useMemo(() => {
+    const map = new Map<string, OnHandGroup[]>();
+    for (const group of onHandGroups) {
+      const key = (group.category || "").trim() || UNCATEGORIZED_LABEL;
+      const list = map.get(key) || [];
+      list.push(group);
+      map.set(key, list);
+    }
+    return Array.from(map.entries())
+      .sort(([a], [b]) => {
+        if (a === UNCATEGORIZED_LABEL) return 1;
+        if (b === UNCATEGORIZED_LABEL) return -1;
+        return a.localeCompare(b, undefined, { sensitivity: "base" });
+      })
+      .map(([category, groups]) => ({
+        category,
+        groups: [...groups].sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: "base" })
+        ),
+      }));
+  }, [onHandGroups]);
+
+  const toggleShowAllSkus = (supplyItemId: string) => {
+    setShowAllSkusByGroup((prev) => {
+      const next = new Set(prev);
+      if (next.has(supplyItemId)) next.delete(supplyItemId);
+      else next.add(supplyItemId);
+      return next;
+    });
+  };
+
   const openNewLocationModal = () => {
     setLocationName("");
     setLocationAddress("");
@@ -564,12 +658,7 @@ export const StockPage: React.FC = () => {
     return (
       <div className="inventory-page">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
-          <div>
-            <h2 style={{ marginBottom: "4px" }}>Stock</h2>
-            <p style={{ margin: 0, color: "#64748b", fontSize: "14px" }}>
-              Locations hold packs (SKUs) of your supply items. Deploy stock to properties from the Properties page.
-            </p>
-          </div>
+          <h2 style={{ margin: 0 }}>Stock Locations</h2>
           {canWrite && (
             <button type="button" className="add-property-button" onClick={openNewLocationModal}>
               + New location
@@ -600,16 +689,15 @@ export const StockPage: React.FC = () => {
                     <th>Location</th>
                     <th>Address</th>
                     <th>Properties</th>
-                    <th>SKUs</th>
+                    <th>Categories</th>
                     <th></th>
                   </tr>
                 </thead>
                 <tbody>
                   {locations.map((loc) => {
-                    const summary = summariesByLocation.get(loc.id) || {
-                      skuCount: 0,
-                    };
-                    const propCount = loc.properties?.length || 0;
+                    const summary = summariesByLocation.get(loc.id);
+                    const propertyNames = summary?.propertyNames || [];
+                    const categoryNames = summary?.categories || [];
                     return (
                       <tr
                         key={loc.id}
@@ -620,8 +708,12 @@ export const StockPage: React.FC = () => {
                           <strong>{loc.name}</strong>
                         </td>
                         <td>{loc.address || "—"}</td>
-                        <td>{propCount}</td>
-                        <td>{summary.skuCount}</td>
+                        <td className="overflow-name-cell">
+                          <OverflowNameList names={propertyNames} />
+                        </td>
+                        <td className="overflow-name-cell">
+                          <OverflowNameList names={categoryNames} />
+                        </td>
                         <td>
                           <div
                             style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}
@@ -661,37 +753,40 @@ export const StockPage: React.FC = () => {
           </Link>
         )}
       </div>
-      <h2 style={{ marginBottom: "4px" }}>{detailLocation?.name || "Stock location"}</h2>
-      <p style={{ marginTop: 0, marginBottom: "16px", color: "#64748b", fontSize: "14px" }}>
-        {detailLocation?.address || "Manage packs, catalogue, and activity for this location."}
-      </p>
-
-      <div className="stock-toolbar" style={{ flexWrap: "wrap" }}>
-        <button
-          type="button"
-          className="secondary"
-          onClick={() => detailLocation && openEditLocation(detailLocation)}
-          disabled={!detailLocation}
-        >
-          Edit
-        </button>
-        {canWrite && (
-          <>
-            <span style={{ flex: 1 }} />
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          gap: "12px",
+          marginBottom: "4px",
+        }}
+      >
+        <h2 style={{ margin: 0 }}>{detailLocation?.name || "Stock location"}</h2>
+        <div style={{ display: "flex", gap: "8px", flexShrink: 0, flexWrap: "wrap" }}>
+          {canWrite && routeLocationId ? (
             <button
               type="button"
-              className="add-property-button"
-              onClick={() => routeLocationId && openReceiveModal(routeLocationId)}
-              disabled={!routeLocationId}
+              className="secondary"
+              onClick={() => openReceiveModal(routeLocationId)}
+              disabled={busy}
             >
               Receive packs
             </button>
-            <button type="button" className="secondary" onClick={openSupplyItemModal}>
-              Add supply item
-            </button>
-          </>
-        )}
+          ) : null}
+          <button
+            type="button"
+            className="secondary"
+            onClick={() => detailLocation && openEditLocation(detailLocation)}
+            disabled={!detailLocation}
+          >
+            Edit
+          </button>
+        </div>
       </div>
+      <p style={{ marginTop: 0, marginBottom: "16px", color: "#64748b", fontSize: "14px" }}>
+        {detailLocation?.address || "Manage packs, catalogue, and activity for this location."}
+      </p>
 
       <div className="property-tabs">
         <button
@@ -700,7 +795,7 @@ export const StockPage: React.FC = () => {
           onClick={() => setActiveTab("onhand")}
         >
           On hand
-          <span className="tab-count">({onHandGroups.reduce((n, g) => n + g.skus.length, 0)})</span>
+          <span className="tab-count">({onHandGroups.length})</span>
         </button>
         <button
           type="button"
@@ -722,12 +817,10 @@ export const StockPage: React.FC = () => {
       <section className="panel">
         {activeTab === "onhand" && (
           <>
-            <h3 style={{ marginTop: 0 }}>
-              On hand
-              {lowGroupCount > 0 ? (
+            {lowGroupCount > 0 ? (
+              <div style={{ marginBottom: "12px" }}>
                 <span
                   style={{
-                    marginLeft: "10px",
                     fontSize: "12px",
                     fontWeight: 600,
                     color: "#b45309",
@@ -739,161 +832,240 @@ export const StockPage: React.FC = () => {
                 >
                   {lowGroupCount} low
                 </span>
-              ) : null}
-            </h3>
-            <p style={{ marginTop: "-4px", color: "#64748b", fontSize: "13px" }}>
-              Grouped by supply item. Totals are equivalent base units across all pack sizes.
-              Edit a supply item to set reorder thresholds for this location.
-            </p>
-            {skus.length === 0 ? (
-              <div className="empty-state">
-                <h3>Nothing here yet</h3>
-                <p>Add a supply item, then receive packs to see stock on hand.</p>
               </div>
-            ) : onHandGroups.length === 0 ? (
-              <div className="empty-state">
-                <h3>No visible stock</h3>
-                <p>
-                  Stock exists here, but nothing matches this location’s category filters. Open
-                  Edit to change visible categories.
-                </p>
-              </div>
+            ) : null}
+            {visibleSupplyItems.length === 0 ? (
+              supplyItems.length === 0 ? (
+                <StockEmptyState
+                  title="Nothing here yet"
+                  body="Add a supply item, then receive packs to see stock on hand."
+                  showActions={canWrite}
+                  primaryLabel="New supply item"
+                  onPrimary={openSupplyItemModal}
+                />
+              ) : (
+                <StockEmptyState
+                  title="No visible stock"
+                  body="Nothing matches this location’s category filters."
+                  showActions={canWrite}
+                  primaryLabel="New supply item"
+                  onPrimary={openSupplyItemModal}
+                  secondaryLabel="Edit stock location"
+                  onSecondary={() => detailLocation && openEditLocation(detailLocation)}
+                />
+              )
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
-                {onHandGroups.map((group) => {
-                  const thr = thresholdBySupplyItem.get(group.supplyItemId);
-                  const point = Number(thr?.reorderPoint) || 0;
-                  const isLow = point > 0 && group.baseUnitsOnHand <= point;
-                  return (
-                  <div
-                    key={group.supplyItemId}
-                    style={{
-                      border: isLow ? "1px solid #fbbf24" : "1px solid #e2e8f0",
-                      borderRadius: "8px",
-                      overflow: "hidden",
-                    }}
-                  >
-                    <div
+              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+                {onHandByCategory.map(({ category, groups }) => (
+                  <div key={category}>
+                    <h4
                       style={{
-                        display: "flex",
-                        justifyContent: "space-between",
-                        alignItems: "center",
-                        gap: "12px",
-                        flexWrap: "wrap",
-                        padding: "12px 14px",
-                        background: isLow ? "#fffbeb" : "#f8fafc",
-                        borderBottom: "1px solid #e2e8f0",
+                        margin: "0 0 12px",
+                        fontSize: "12px",
+                        fontWeight: 600,
+                        color: "#64748b",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.04em",
                       }}
                     >
-                      <div>
-                        <strong style={{ fontSize: "15px" }}>{group.name}</strong>
-                        {isLow ? (
-                          <span
+                      {category}
+                    </h4>
+                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                      {groups.map((group) => {
+                        const thr = thresholdBySupplyItem.get(group.supplyItemId);
+                        const point = Number(thr?.reorderPoint) || 0;
+                        const isLow = point > 0 && group.baseUnitsOnHand <= point;
+                        const zeroSkus = group.skus.filter(
+                          (sku) => !(sku.stockOnHand ? Number(sku.stockOnHand.quantity) || 0 : 0)
+                        );
+                        const positiveSkus = group.skus.filter(
+                          (sku) => (sku.stockOnHand ? Number(sku.stockOnHand.quantity) || 0 : 0) > 0
+                        );
+                        const showAll =
+                          showAllSkusByGroup.has(group.supplyItemId) || positiveSkus.length === 0;
+                        const visibleSkus = showAll ? group.skus : positiveSkus;
+                        const hasNoSkus = group.skus.length === 0;
+                        const canToggleZeroSkus = positiveSkus.length > 0 && zeroSkus.length > 0;
+                        return (
+                          <div
+                            key={group.supplyItemId}
                             style={{
-                              marginLeft: "8px",
-                              fontSize: "12px",
-                              fontWeight: 600,
-                              color: "#b45309",
+                              border: isLow ? "1px solid #fbbf24" : "1px solid #e2e8f0",
+                              borderRadius: "8px",
+                              overflow: "hidden",
                             }}
                           >
-                            Low stock
-                          </span>
-                        ) : null}
-                        {group.category ? (
-                          <span style={{ marginLeft: "8px", color: "#64748b", fontSize: "13px" }}>
-                            {group.category}
-                          </span>
-                        ) : null}
-                        <div style={{ marginTop: "4px", fontSize: "13px", color: "#334155" }}>
-                          ≈ {formatQty(group.baseUnitsOnHand)} {group.baseUnitLabel}
-                          <span style={{ color: "#94a3b8" }}>
-                            {" "}
-                            · {formatQty(group.packsOnHand)} packs · {group.skus.length} SKU
-                            {group.skus.length === 1 ? "" : "s"}
-                          </span>
-                          {point > 0 ? (
-                            <span style={{ color: "#64748b" }}>
-                              {" "}
-                              · Reorder at {formatQty(point)}
-                            </span>
-                          ) : null}
-                        </div>
-                      </div>
-                      <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                        {canWrite && (
-                          <button
-                            type="button"
-                            className="secondary"
-                            onClick={() => {
-                              const item = supplyItems.find((s) => s.id === group.supplyItemId);
-                              if (item) openEditSupplyItem(item);
-                            }}
-                          >
-                            Edit
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ overflowX: "auto" }}>
-                      <table className="inventory-table" style={{ margin: 0 }}>
-                        <thead>
-                          <tr>
-                            <th>SKU</th>
-                            <th>Pack size</th>
-                            <th>Purchase price</th>
-                            <th>Unit rate</th>
-                            <th>Packs on hand</th>
-                            <th>Base equiv.</th>
-                            <th></th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {group.skus.map((sku) => {
-                            const packs = sku.stockOnHand
-                              ? Number(sku.stockOnHand.quantity) || 0
-                              : 0;
-                            const packSize = Number(sku.packSize) || 0;
-                            return (
-                              <tr key={sku.id}>
-                                <td>
-                                  {sku.name}
-                                  {sku.supplier ? (
-                                    <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                                      {sku.supplier}
-                                    </div>
+                            <div
+                              style={{
+                                display: "flex",
+                                justifyContent: "space-between",
+                                alignItems: "center",
+                                gap: "12px",
+                                flexWrap: "wrap",
+                                padding: "12px 14px",
+                                background: isLow ? "#fffbeb" : "#f8fafc",
+                                borderBottom: "1px solid #e2e8f0",
+                              }}
+                            >
+                              <div>
+                                <strong style={{ fontSize: "15px" }}>{group.name}</strong>
+                                {isLow ? (
+                                  <span
+                                    style={{
+                                      marginLeft: "8px",
+                                      fontSize: "12px",
+                                      fontWeight: 600,
+                                      color: "#b45309",
+                                    }}
+                                  >
+                                    Low stock
+                                  </span>
+                                ) : null}
+                                <div style={{ marginTop: "4px", fontSize: "13px", color: "#334155" }}>
+                                  ≈ {formatQty(group.baseUnitsOnHand)} {group.baseUnitLabel}
+                                  <span style={{ color: "#94a3b8" }}>
+                                    {" "}
+                                    · {formatQty(group.packsOnHand)} packs · {group.skus.length}{" "}
+                                    SKU
+                                    {group.skus.length === 1 ? "" : "s"}
+                                  </span>
+                                  {point > 0 ? (
+                                    <span style={{ color: "#64748b" }}>
+                                      {" "}
+                                      · Reorder at {formatQty(point)}
+                                    </span>
                                   ) : null}
-                                </td>
-                                <td>
-                                  {formatQty(packSize)} {group.baseUnitLabel}
-                                </td>
-                                <td>${Number(sku.purchasePrice).toFixed(2)}</td>
-                                <td>${Number(sku.unitRate).toFixed(4)}</td>
-                                <td>{formatQty(packs)}</td>
-                                <td>
-                                  {formatQty(packs * packSize)} {group.baseUnitLabel}
-                                </td>
-                                <td>
-                                  {canWrite && (
+                                </div>
+                              </div>
+                              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                                {canWrite && (
+                                  <button
+                                    type="button"
+                                    className="secondary"
+                                    onClick={() => {
+                                      const item = supplyItems.find(
+                                        (s) => s.id === group.supplyItemId
+                                      );
+                                      if (item) openEditSupplyItem(item);
+                                    }}
+                                  >
+                                    Edit
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            {hasNoSkus ? (
+                              <div
+                                style={{
+                                  padding: "16px 14px",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "space-between",
+                                  gap: "12px",
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
+                                  No SKUs
+                                </p>
+                                {canWrite ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const item = supplyItems.find(
+                                        (s) => s.id === group.supplyItemId
+                                      );
+                                      if (item) openEditSupplyItem(item);
+                                    }}
+                                  >
+                                    Add SKU
+                                  </button>
+                                ) : null}
+                              </div>
+                            ) : (
+                              <>
+                                <div style={{ overflowX: "auto" }}>
+                                  <table className="inventory-table" style={{ margin: 0 }}>
+                                    <thead>
+                                      <tr>
+                                        <th>SKU</th>
+                                        <th>Pack size</th>
+                                        <th>Purchase price</th>
+                                        <th>Unit rate</th>
+                                        <th>Packs on hand</th>
+                                        <th>Base equiv.</th>
+                                        <th></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {visibleSkus.map((sku) => {
+                                        const packs = sku.stockOnHand
+                                          ? Number(sku.stockOnHand.quantity) || 0
+                                          : 0;
+                                        const packSize = Number(sku.packSize) || 0;
+                                        return (
+                                          <tr key={sku.id}>
+                                            <td>
+                                              {sku.name}
+                                              {sku.supplier ? (
+                                                <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                                                  {sku.supplier}
+                                                </div>
+                                              ) : null}
+                                            </td>
+                                            <td>
+                                              {formatQty(packSize)} {group.baseUnitLabel}
+                                            </td>
+                                            <td>${Number(sku.purchasePrice).toFixed(2)}</td>
+                                            <td>${Number(sku.unitRate).toFixed(4)}</td>
+                                            <td>{formatQty(packs)}</td>
+                                            <td>
+                                              {formatQty(packs * packSize)} {group.baseUnitLabel}
+                                            </td>
+                                            <td>
+                                              {canWrite && (
+                                                <button
+                                                  type="button"
+                                                  className="secondary"
+                                                  onClick={() =>
+                                                    routeLocationId &&
+                                                    openReceiveModal(routeLocationId, sku.id)
+                                                  }
+                                                >
+                                                  Receive
+                                                </button>
+                                              )}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                                {canToggleZeroSkus ? (
+                                  <div
+                                    style={{ padding: "8px 14px", borderTop: "1px solid #e2e8f0" }}
+                                  >
                                     <button
                                       type="button"
                                       className="secondary"
-                                      onClick={() =>
-                                        routeLocationId && openReceiveModal(routeLocationId, sku.id)
-                                      }
+                                      style={{ padding: "4px 10px", fontSize: "12px" }}
+                                      onClick={() => toggleShowAllSkus(group.supplyItemId)}
                                     >
-                                      Receive
+                                      {showAllSkusByGroup.has(group.supplyItemId)
+                                        ? "Hide zero-qty SKUs"
+                                        : `Show all SKUs (${zeroSkus.length} hidden)`}
                                     </button>
-                                  )}
-                                </td>
-                              </tr>
-                            );
-                          })}
-                        </tbody>
-                      </table>
+                                  </div>
+                                ) : null}
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  );
-                })}
+                ))}
               </div>
             )}
           </>
@@ -901,67 +1073,82 @@ export const StockPage: React.FC = () => {
 
         {activeTab === "catalogue" && (
           <>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                marginBottom: "8px",
-              }}
-            >
-              <h3 style={{ margin: 0 }}>Supply items</h3>
-              {canWrite && (
-                <button type="button" className="secondary" onClick={openSupplyItemModal}>
-                  Add supply item
-                </button>
-              )}
-            </div>
             {supplyItems.length === 0 ? (
-              <div className="empty-state">
-                <h3>No supply items yet</h3>
-                <p>Add a supply item to start building your catalogue.</p>
-              </div>
+              <StockEmptyState
+                title="No supply items yet"
+                body="Add a supply item to start building your catalogue."
+                showActions={canWrite}
+                primaryLabel="New supply item"
+                onPrimary={openSupplyItemModal}
+              />
             ) : visibleSupplyItems.length === 0 ? (
-              <div className="empty-state">
-                <h3>No visible supply items</h3>
-                <p>
-                  Catalogue items are hidden by this location’s category filters. Open Edit to
-                  change visible categories.
-                </p>
-              </div>
+              <StockEmptyState
+                title="No visible supply items"
+                body="Catalogue items are hidden by this location’s category filters."
+                showActions={canWrite}
+                primaryLabel="New supply item"
+                onPrimary={openSupplyItemModal}
+                secondaryLabel="Edit stock location"
+                onSecondary={() => detailLocation && openEditLocation(detailLocation)}
+              />
             ) : (
-              <div style={{ overflowX: "auto" }}>
-                <table className="inventory-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th>Category</th>
-                      <th>Base unit</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visibleSupplyItems.map((item) => (
-                      <tr key={item.id}>
-                        <td>{item.name}</td>
-                        <td>{item.category || "—"}</td>
-                        <td>{item.baseUnit?.code || unitName(item.baseUnitId)}</td>
-                        <td>
-                          {canWrite && (
-                            <button
-                              type="button"
-                              className="secondary"
-                              onClick={() => openEditSupplyItem(item)}
-                            >
-                              Edit
-                            </button>
-                          )}
-                        </td>
+              <>
+                <div style={{ overflowX: "auto" }}>
+                  <table className="inventory-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Category</th>
+                        <th>Base unit</th>
+                        <th>Reorder point</th>
+                        <th>Suggested buy qty</th>
+                        <th></th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </thead>
+                    <tbody>
+                      {visibleSupplyItems.map((item) => {
+                        const thr = thresholdBySupplyItem.get(item.id);
+                        const unit = item.baseUnit?.code || unitName(item.baseUnitId);
+                        return (
+                          <tr key={item.id}>
+                            <td>{item.name}</td>
+                            <td>{item.category || "—"}</td>
+                            <td>{unit}</td>
+                            <td>
+                              {thr
+                                ? `${formatQty(Number(thr.reorderPoint))} ${unit}`
+                                : "—"}
+                            </td>
+                            <td>
+                              {thr
+                                ? `${formatQty(Number(thr.reorderQuantity))} ${unit}`
+                                : "—"}
+                            </td>
+                            <td>
+                              {canWrite && (
+                                <button
+                                  type="button"
+                                  className="secondary"
+                                  onClick={() => openEditSupplyItem(item)}
+                                >
+                                  Edit
+                                </button>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {canWrite && (
+                  <div style={{ marginTop: "16px" }}>
+                    <button type="button" className="secondary" onClick={openSupplyItemModal}>
+                      New supply item
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </>
         )}
@@ -971,14 +1158,13 @@ export const StockPage: React.FC = () => {
             <div
               style={{
                 display: "flex",
-                justifyContent: "space-between",
+                justifyContent: "flex-end",
                 alignItems: "center",
                 marginBottom: "8px",
                 flexWrap: "wrap",
                 gap: "8px",
               }}
             >
-              <h3 style={{ margin: 0 }}>Activity</h3>
               <label style={{ display: "flex", flexDirection: "column" }}>
                 <span style={{ fontSize: "12px", color: "#64748b" }}>Filter by SKU</span>
                 <select
