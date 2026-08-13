@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { locationSupplyThresholdsApi } from "../services/catalogueApi";
 import type { LocationLowStockRow } from "../types";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 export const ShoppingListPage: React.FC = () => {
   const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
@@ -55,8 +56,8 @@ export const ShoppingListPage: React.FC = () => {
   if (loading) {
     return (
       <div className="shopping-list-page">
-        <h2>Shopping List</h2>
-        <div className="empty-state">Loading...</div>
+        <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
+        <div className="empty-state">Loading…</div>
       </div>
     );
   }
@@ -64,8 +65,11 @@ export const ShoppingListPage: React.FC = () => {
   if (error) {
     return (
       <div className="shopping-list-page">
-        <h2>Shopping List</h2>
-        <div className="empty-state error">{error}</div>
+        <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
+        <div className="empty-state error">
+          <h3>Could not load shopping list</h3>
+          <p>{error}</p>
+        </div>
       </div>
     );
   }
@@ -77,16 +81,15 @@ export const ShoppingListPage: React.FC = () => {
 
   return (
     <div className="shopping-list-page">
-      <div className="shopping-list-header">
-        <h2>Shopping List</h2>
-        <p className="shopping-list-subtitle">
-          Supply items at stock locations at or below reorder point. Receive packs at the
-          location to clear items off the list.
-        </p>
-        <button type="button" className="clear-button" onClick={() => navigate("/stock")}>
-          View Stock
-        </button>
-      </div>
+      <SectionHeader
+        title="Shopping List"
+        description="Supply items at stock locations at or below reorder point. Receive packs at the location to clear items off the list."
+        actions={
+          <button type="button" className="clear-button" onClick={() => navigate("/stock")}>
+            View Stock
+          </button>
+        }
+      />
 
       {totalLowStock === 0 ? (
         <div className="empty-state">

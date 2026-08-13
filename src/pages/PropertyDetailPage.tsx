@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   Client,
@@ -16,6 +16,7 @@ import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { useAuth } from "../contexts/useAuth";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -41,6 +42,7 @@ export const PropertyDetailPage: React.FC = () => {
   const [linkError, setLinkError] = useState("");
 
   const [showReplenishModal, setShowReplenishModal] = useState(false);
+  const [replenishSupplyItemId, setReplenishSupplyItemId] = useState("");
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
 
@@ -59,11 +61,11 @@ export const PropertyDetailPage: React.FC = () => {
     }
   }, [propertiesLoaded, property, canAccessProperty, navigate]);
 
-  const refreshAll = async () => {
+  const refreshAll = useCallback(async () => {
     try {
       const [locs, reps, unbilled] = await Promise.all([
         stockLocationsApi.getAll(),
-        replenishmentApi.list({ limit: 30 }),
+        replenishmentApi.list({ limit: 200, propertyId: id }),
         replenishmentApi.listUnbilled(),
       ]);
       setStockLocations(locs);
@@ -74,26 +76,51 @@ export const PropertyDetailPage: React.FC = () => {
       setRecentMoves([]);
       setUnbilledLines([]);
     }
-  };
+  }, [id]);
 
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
     refreshAll();
-  }, [id]);
+  }, [id, refreshAll]);
 
   const handleStockFlowSuccess = () => {
     refreshAll();
   };
 
-  const propertyMoves = useMemo(
-    () => recentMoves.filter((r) => r.propertyId === id).slice(0, 15),
+  const propertyHistory = useMemo(
+    () => recentMoves.filter((r) => r.propertyId === id),
     [recentMoves, id]
   );
+
+  const propertyMoves = useMemo(() => propertyHistory.slice(0, 15), [propertyHistory]);
 
   const propertyUnbilled = useMemo(
     () => unbilledLines.filter((line) => line.property?.id === id),
     [unbilledLines, id]
   );
+
+  const allocatedSupplyItems = useMemo(() => {
+    const bySupplyItem = new Map<
+      string,
+      { id: string; name: string; baseQty: number; skuNames: Set<string> }
+    >();
+    for (const line of propertyUnbilled) {
+      const sign = line.isCredit || line.direction === "return" ? -1 : 1;
+      const id = line.supplyItemId;
+      const current = bySupplyItem.get(id) || {
+        id,
+        name: line.supplyItem?.name || "Supply item",
+        baseQty: 0,
+        skuNames: new Set<string>(),
+      };
+      current.baseQty += sign * (Number(line.baseQtyDeployed) || 0);
+      if (line.sku?.name) current.skuNames.add(line.sku.name);
+      bySupplyItem.set(id, current);
+    }
+    return Array.from(bySupplyItem.values())
+      .filter((item) => item.baseQty > 0.000001)
+      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
+  }, [propertyUnbilled]);
 
   const linkedLocations = useMemo(
     () => stockLocations.filter((loc) => (loc.properties || []).some((p) => p.propertyId === id)),
@@ -171,11 +198,12 @@ export const PropertyDetailPage: React.FC = () => {
         </Link>
       </div>
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", flexWrap: "wrap", gap: "12px" }}>
-        <div>
-          <h2 style={{ marginBottom: "4px" }}>{property.name}</h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: "14px" }}>{property.location || "—"}</p>
-          <p style={{ margin: "4px 0 0", fontSize: "14px" }}>
+      <SectionHeader
+        title={property.name}
+        description={
+          <>
+            {property.location || "—"}
+            <br />
             Client:{" "}
             {clients.find((c) => c.id === property.clientId)?.name || (
               <span style={{ color: "#b45309" }}>None assigned</span>
@@ -183,10 +211,11 @@ export const PropertyDetailPage: React.FC = () => {
             {property.markupPercentage != null && property.markupPercentage !== "" && (
               <span style={{ color: "#64748b" }}> · Markup override {String(property.markupPercentage)}%</span>
             )}
-          </p>
-        </div>
-        {canWrite && (
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+          </>
+        }
+        actions={
+          canWrite ? (
+            <>
             <button type="button" className="secondary" onClick={() => setShowEditModal(true)}>
               Edit property
             </button>
@@ -201,9 +230,10 @@ export const PropertyDetailPage: React.FC = () => {
             >
               Link location
             </button>
-          </div>
-        )}
-      </div>
+            </>
+          ) : null
+        }
+      />
 
       {!property.clientId && (
         <div style={{ padding: "10px 14px", borderRadius: "10px", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "13px", marginBottom: "16px" }}>
@@ -212,12 +242,9 @@ export const PropertyDetailPage: React.FC = () => {
         </div>
       )}
 
-      <div className="stock-toolbar">
+      <div className="stock-toolbar property-secondary-actions">
         {canWrite && (
           <>
-            <button type="button" className="add-property-button" onClick={() => setShowReplenishModal(true)}>
-              Replenish
-            </button>
             <button type="button" className="add-property-button" onClick={() => setShowReturnModal(true)}>
               Return
             </button>
@@ -235,18 +262,56 @@ export const PropertyDetailPage: React.FC = () => {
         </button>
       </div>
 
-      <section className="panel">
-        <h3 style={{ marginTop: 0 }}>
-          Billing destination
-          {linkedLocations.length > 0
-            ? ` · linked to ${linkedLocations.map((l) => l.name).join(", ")}`
-            : ""}
-        </h3>
-        <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
-          Properties track bill-back from replenish / return / transfer. On-hand and low-stock
-          alerts live at stock locations.
-          {linkedLocations.length === 0 ? " Link a stock location to deploy supplies here." : ""}
-        </p>
+      <section className="panel property-allocation-panel">
+        <SectionHeader
+          title="Allocated supplies"
+          description="See what has been allocated since the last invoice, then replenish an item without re-selecting the property."
+          compact
+        />
+        {allocatedSupplyItems.length === 0 ? (
+          <div className="empty-state">
+            <h3>No unbilled allocations</h3>
+            <p>Choose a supply item from a linked stock location to allocate stock for the next invoice.</p>
+            {canWrite && linkedLocations.length > 0 ? (
+              <button
+                type="button"
+                className="add-property-button"
+                onClick={() => {
+                  setReplenishSupplyItemId("");
+                  setShowReplenishModal(true);
+                }}
+              >
+                Allocate stock
+              </button>
+            ) : null}
+          </div>
+        ) : (
+          <div className="property-supply-grid">
+            {allocatedSupplyItems.map((item) => (
+              <article key={item.id} className="property-supply-card">
+                <div>
+                  <strong>{item.name}</strong>
+                  <p>
+                    {item.baseQty.toFixed(2)} base units since last invoice
+                    {item.skuNames.size > 0 ? ` · ${Array.from(item.skuNames).join(", ")}` : ""}
+                  </p>
+                </div>
+                {canWrite ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    onClick={() => {
+                      setReplenishSupplyItemId(item.id);
+                      setShowReplenishModal(true);
+                    }}
+                  >
+                    Allocate more
+                  </button>
+                ) : null}
+              </article>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="panel">
@@ -378,6 +443,8 @@ export const PropertyDetailPage: React.FC = () => {
           properties={properties}
           clients={clients}
           stockLocations={stockLocations}
+          initialPropertyId={property.id}
+          initialSupplyItemId={replenishSupplyItemId || undefined}
           onClose={() => setShowReplenishModal(false)}
           onSuccess={handleStockFlowSuccess}
         />

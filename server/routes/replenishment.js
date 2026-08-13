@@ -53,7 +53,13 @@ app.get("/api/replenishments", authenticateToken, requireInventoryRead, async (r
     const limit = req.query.limit ? Number(req.query.limit) : 50;
     const transferGroupId =
       typeof req.query.transferGroupId === "string" ? req.query.transferGroupId : undefined;
-    const rows = await listReplenishments(req.currentUser.teamId, { limit, transferGroupId });
+    const propertyId =
+      typeof req.query.propertyId === "string" ? req.query.propertyId : undefined;
+    const rows = await listReplenishments(req.currentUser.teamId, {
+      limit,
+      transferGroupId,
+      propertyId,
+    });
     res.json(
       filterByPropertyAccess(req.currentUser, rows, (row) => row.propertyId ?? row.property?.id)
     );

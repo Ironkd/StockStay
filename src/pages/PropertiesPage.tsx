@@ -9,6 +9,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -142,19 +143,17 @@ export const PropertiesPage: React.FC = () => {
           if (!deleteBusy) setDeleteTarget(null);
         }}
       />
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-        <div>
-          <h2 style={{ marginBottom: "4px" }}>Properties</h2>
-          <p style={{ margin: 0, color: "#64748b", fontSize: "14px" }}>
-            Deploy stock to properties and bill clients back for what they use.
-          </p>
-        </div>
-        {canWrite && (
-          <button type="button" className="add-property-button" onClick={handleAddProperty}>
-            + Add property
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        title="Properties"
+        description="Deploy stock to properties and bill clients back for what they use."
+        actions={
+          canWrite ? (
+            <button type="button" className="add-property-button" onClick={handleAddProperty}>
+              + Add property
+            </button>
+          ) : null
+        }
+      />
 
       {showUpgradeModal && (
         <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>

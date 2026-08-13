@@ -5,6 +5,7 @@ import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
 import { useProperties } from "../hooks/useProperties";
 import type { LocationLowStockRow, Sku, UnbilledLine } from "../types";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 const LowStockCategoryChart = lazy(() =>
   import("../components/LowStockCategoryChart").then((m) => ({
@@ -110,7 +111,7 @@ export const HomePage: React.FC = () => {
   if (!statsLoaded || !propertiesLoaded) {
     return (
       <div className="home-page">
-        <h2>Dashboard</h2>
+        <SectionHeader title="Dashboard" description="A quick view of stock, billing, and workspace activity." />
         <div className="stats-grid" aria-busy="true" aria-label="Loading dashboard">
           <div className="skeleton skeleton-block" />
           <div className="skeleton skeleton-block" />
@@ -133,7 +134,16 @@ export const HomePage: React.FC = () => {
 
   return (
     <div className="home-page">
-      <h2>Dashboard</h2>
+      <SectionHeader
+        title="Dashboard"
+        description="A quick view of stock, billing, and workspace activity."
+        actions={
+          <>
+            <Link className="nav-button secondary" to="/stock">View stock</Link>
+            <Link className="nav-button secondary" to="/billing">View billing</Link>
+          </>
+        }
+      />
 
       {showOnboarding && (
         <section className="onboarding-checklist" aria-label="Getting started">

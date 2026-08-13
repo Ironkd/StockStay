@@ -342,7 +342,7 @@ export const ReportsPage: React.FC = () => {
           </label>
         </div>
         {loadingStocks ? (
-          <p>Loading location stock…</p>
+          <div className="empty-state">Loading location stock…</div>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">
@@ -384,7 +384,7 @@ export const ReportsPage: React.FC = () => {
           </div>
         )}
         {!loadingStocks && locationOnHandRows.length === 0 && (
-          <p className="report-empty">No location stock matches the filters.</p>
+          <div className="empty-state report-empty">No location stock matches the filters.</div>
         )}
       </section>
 
@@ -458,12 +458,12 @@ export const ReportsPage: React.FC = () => {
           </label>
         </div>
         {loadingTransactions ? (
-          <p>Loading transactions…</p>
+          <div className="empty-state">Loading transactions…</div>
         ) : transactions.length === 0 ? (
-          <p className="report-empty">
+          <div className="empty-state report-empty">
             No transactions found. Receive stock, replenish properties, or adjust quantities to
             see history.
-          </p>
+          </div>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">

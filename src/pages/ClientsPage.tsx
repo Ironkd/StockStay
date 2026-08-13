@@ -5,6 +5,7 @@ import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { Client } from "../types";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 const PAGE_SIZE = 20;
 
@@ -142,20 +143,23 @@ export const ClientsPage: React.FC = () => {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" }}>
-        <h2>Clients</h2>
-        {canWrite && (
-          <button
-            className="clear-button"
-            onClick={() => {
-              resetForm();
-              setShowForm(!showForm);
-            }}
-          >
-            {showForm ? "Cancel" : "Add Client"}
-          </button>
-        )}
-      </div>
+      <SectionHeader
+        title="Clients"
+        description="Manage the people and companies you bill for stock usage."
+        actions={
+          canWrite ? (
+            <button
+              className="clear-button"
+              onClick={() => {
+                resetForm();
+                setShowForm(!showForm);
+              }}
+            >
+              {showForm ? "Cancel" : "Add Client"}
+            </button>
+          ) : null
+        }
+      />
 
       {showForm && canWrite && (
         <section className="panel">

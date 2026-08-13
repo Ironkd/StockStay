@@ -20,11 +20,13 @@ export const replenishmentApi = {
   list: async (opts?: {
     limit?: number;
     transferGroupId?: string;
+    propertyId?: string;
   }): Promise<Replenishment[]> => {
     return apiRequest<Replenishment[]>(
       `/replenishments${toQuery({
         limit: opts?.limit,
         transferGroupId: opts?.transferGroupId,
+        propertyId: opts?.propertyId,
       })}`
     );
   },

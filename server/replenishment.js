@@ -675,11 +675,12 @@ export async function getReplenishment(teamId, id) {
   return mapReplenishment(row);
 }
 
-export async function listReplenishments(teamId, { limit = 50, transferGroupId } = {}) {
+export async function listReplenishments(teamId, { limit = 50, transferGroupId, propertyId } = {}) {
   const rows = await prisma.replenishment.findMany({
     where: {
       teamId,
       ...(transferGroupId ? { transferGroupId } : {}),
+      ...(propertyId ? { propertyId } : {}),
     },
     include: replenishmentInclude,
     orderBy: { createdAt: "desc" },

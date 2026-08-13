@@ -9,6 +9,7 @@ import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { ConfirmDialog } from "../components/ui/ConfirmDialog";
+import { SectionHeader } from "../components/ui/SectionHeader";
 
 const PAGE_SIZE = 20;
 
@@ -654,12 +655,17 @@ export const InvoicesPage: React.FC = () => {
         </div>
       )}
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px", gap: "12px", flexWrap: "wrap" }}>
-        <div>
-          <h2>Billing</h2>
-          <p style={{ marginTop: "4px", fontSize: "0.9em", color: "#64748b" }}>
+      <SectionHeader
+        title="Billing"
+        description={
+          <>
             Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
-          </p>
+            {generateMessage && (
+              <span style={{ display: "block", marginTop: "8px", color: "#0369a1" }}>{generateMessage}</span>
+            )}
+          </>
+        }
+        actions={
           <div className="invoice-totals-bar">
             <span className="invoice-total-item">
               <strong>Monthly total</strong> ({monthNames[selectedMonth - 1]} {selectedYear}):{" "}
@@ -670,11 +676,9 @@ export const InvoicesPage: React.FC = () => {
               {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(yearlyTotal)}
             </span>
           </div>
-          {generateMessage && (
-            <p style={{ marginTop: "8px", fontSize: "13px", color: "#0369a1" }}>{generateMessage}</p>
-          )}
-        </div>
-        <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+        }
+      />
+      <div className="section-header-actions billing-page-actions">
           {canWrite && (
             <button
               type="button"
@@ -726,7 +730,6 @@ export const InvoicesPage: React.FC = () => {
             </button>
           )}
         </div>
-      </div>
 
       {showForm && (
         <section className="panel">
@@ -949,14 +952,18 @@ export const InvoicesPage: React.FC = () => {
           </h3>
           <button
             type="button"
-            className="icon-button"
+            className="collapse-toggle"
             onClick={(e) => {
               e.stopPropagation();
               toggleSection("unbilled");
             }}
             title={sectionVisibility.unbilled ? "Hide section" : "Show section"}
+            aria-label={sectionVisibility.unbilled ? "Collapse section" : "Expand section"}
+            aria-expanded={sectionVisibility.unbilled}
           >
-            {sectionVisibility.unbilled ? "↓" : "↑"}
+            <span className="sr-only">
+              {sectionVisibility.unbilled ? "Collapse section" : "Expand section"}
+            </span>
           </button>
         </div>
         {sectionVisibility.unbilled && (
@@ -1051,19 +1058,14 @@ export const InvoicesPage: React.FC = () => {
                 e.stopPropagation();
                 toggleSection("soldByMonth");
               }}
-              style={{
-                backgroundColor: "#3b82f6",
-                color: "white",
-                border: "none",
-                fontSize: "1.2em",
-                cursor: "pointer",
-                padding: "6px 12px",
-                borderRadius: "4px",
-                fontWeight: "500"
-              }}
+              className="collapse-toggle"
               title={sectionVisibility.soldByMonth ? "Hide section" : "Show section"}
+              aria-label={sectionVisibility.soldByMonth ? "Collapse section" : "Expand section"}
+              aria-expanded={sectionVisibility.soldByMonth}
             >
-              {sectionVisibility.soldByMonth ? "↓" : "↑"}
+              <span className="sr-only">
+                {sectionVisibility.soldByMonth ? "Collapse section" : "Expand section"}
+              </span>
             </button>
           </div>
         </div>
@@ -1131,19 +1133,14 @@ export const InvoicesPage: React.FC = () => {
               e.stopPropagation();
               toggleSection("activeInvoices");
             }}
-            style={{
-              backgroundColor: "#3b82f6",
-              color: "white",
-              border: "none",
-              fontSize: "1.2em",
-              cursor: "pointer",
-              padding: "6px 12px",
-              borderRadius: "4px",
-              fontWeight: "500"
-            }}
+            className="collapse-toggle"
             title={sectionVisibility.activeInvoices ? "Hide section" : "Show section"}
+            aria-label={sectionVisibility.activeInvoices ? "Collapse section" : "Expand section"}
+            aria-expanded={sectionVisibility.activeInvoices}
           >
-            {sectionVisibility.activeInvoices ? "↓" : "↑"}
+            <span className="sr-only">
+              {sectionVisibility.activeInvoices ? "Collapse section" : "Expand section"}
+            </span>
           </button>
         </div>
         {sectionVisibility.activeInvoices && (
@@ -1193,19 +1190,14 @@ export const InvoicesPage: React.FC = () => {
               e.stopPropagation();
               toggleSection("sentInvoices");
             }}
-            style={{
-              backgroundColor: "#3b82f6",
-              color: "white",
-              border: "none",
-              fontSize: "1.2em",
-              cursor: "pointer",
-              padding: "6px 12px",
-              borderRadius: "4px",
-              fontWeight: "500"
-            }}
+            className="collapse-toggle"
             title={sectionVisibility.sentInvoices ? "Hide section" : "Show section"}
+            aria-label={sectionVisibility.sentInvoices ? "Collapse section" : "Expand section"}
+            aria-expanded={sectionVisibility.sentInvoices}
           >
-            {sectionVisibility.sentInvoices ? "↓" : "↑"}
+            <span className="sr-only">
+              {sectionVisibility.sentInvoices ? "Collapse section" : "Expand section"}
+            </span>
           </button>
         </div>
         {sectionVisibility.sentInvoices && (

@@ -17,6 +17,8 @@ type Props = {
   clients?: Client[];
   /** When provided, skip refetching locations */
   stockLocations?: StockLocation[];
+  initialPropertyId?: string;
+  initialSupplyItemId?: string;
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -36,10 +38,12 @@ export const ReplenishModal: React.FC<Props> = ({
   properties,
   clients = [],
   stockLocations: stockLocationsProp,
+  initialPropertyId,
+  initialSupplyItemId,
   onClose,
   onSuccess,
 }) => {
-  const [propertyId, setPropertyId] = useState("");
+  const [propertyId, setPropertyId] = useState(initialPropertyId || "");
   const [stockLocationId, setStockLocationId] = useState("");
   const [locations, setLocations] = useState<StockLocation[]>(stockLocationsProp || []);
   const [skus, setSkus] = useState<Sku[]>([]);
@@ -160,22 +164,29 @@ export const ReplenishModal: React.FC<Props> = ({
     >
       <form onSubmit={handleSubmit} className="inventory-form">
         <div className="form-grid">
-          <label>
-            <span>Property *</span>
-            <select
-              value={propertyId}
-              onChange={(e) => setPropertyId(e.target.value)}
-              required
-            >
-              <option value="">Select property…</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {!p.clientId ? " (no billing client)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          {initialPropertyId ? (
+            <div className="context-field">
+              <span>Property</span>
+              <strong>{selectedProperty?.name || "Selected property"}</strong>
+            </div>
+          ) : (
+            <label>
+              <span>Property *</span>
+              <select
+                value={propertyId}
+                onChange={(e) => setPropertyId(e.target.value)}
+                required
+              >
+                <option value="">Select property…</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {!p.clientId ? " (no billing client)" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <label>
             <span>Stock location *</span>
             <select
@@ -257,7 +268,9 @@ export const ReplenishModal: React.FC<Props> = ({
                     disabled={!stockLocationId}
                   >
                     <option value="">Select SKU…</option>
-                    {skus.map((s) => (
+                    {skus
+                      .filter((s) => !initialSupplyItemId || s.supplyItemId === initialSupplyItemId)
+                      .map((s) => (
                       <option key={s.id} value={s.id}>
                         {s.name}
                         {s.stockOnHand
