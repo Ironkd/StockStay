@@ -608,6 +608,139 @@ export const locationSupplyThresholdOps = {
   },
 };
 
+/**
+ * PropertySupplyItem: the standing list of supply items a property is stocked with,
+ * each with an optional par quantity. Mirrors locationSupplyThresholdOps one level up.
+ */
+async function sumUnbilledAllocatedBase(teamId, propertyId, supplyItemId) {
+  const lines = await prisma.replenishmentLine.findMany({
+    where: {
+      supplyItemId,
+      invoiced: false,
+      billable: true,
+      replenishment: { teamId, propertyId },
+    },
+    select: { baseQtyDeployed: true, billBackAmount: true, replenishment: { select: { direction: true } } },
+  });
+  let total = new Decimal(0);
+  for (const line of lines) {
+    const sign =
+      toDecimal(line.billBackAmount).lt(0) || line.replenishment.direction === "return" ? -1 : 1;
+    total = total.add(toDecimal(line.baseQtyDeployed).mul(sign));
+  }
+  return quantizeQty(total);
+}
+
+export const propertySupplyItemOps = {
+  async listByProperty(teamId, propertyId) {
+    const property = await prisma.property.findFirst({ where: { id: propertyId, teamId } });
+    if (!property) return null;
+
+    const [rows, unbilledLines] = await Promise.all([
+      prisma.propertySupplyItem.findMany({
+        where: { propertyId },
+        include: {
+          supplyItem: {
+            select: { id: true, name: true, category: true, baseUnitId: true, archivedAt: true },
+          },
+        },
+        orderBy: { updatedAt: "desc" },
+      }),
+      prisma.replenishmentLine.findMany({
+        where: {
+          invoiced: false,
+          billable: true,
+          replenishment: { teamId, propertyId },
+        },
+        select: {
+          supplyItemId: true,
+          baseQtyDeployed: true,
+          billBackAmount: true,
+          sku: { select: { name: true } },
+          replenishment: { select: { direction: true } },
+        },
+      }),
+    ]);
+
+    const allocatedSinceInvoice = new Map();
+    const skuNamesBySupplyItem = new Map();
+    for (const line of unbilledLines) {
+      const sign =
+        toDecimal(line.billBackAmount).lt(0) || line.replenishment.direction === "return" ? -1 : 1;
+      const current = allocatedSinceInvoice.get(line.supplyItemId) || new Decimal(0);
+      allocatedSinceInvoice.set(
+        line.supplyItemId,
+        current.add(toDecimal(line.baseQtyDeployed).mul(sign))
+      );
+      if (line.sku?.name) {
+        const names = skuNamesBySupplyItem.get(line.supplyItemId) || new Set();
+        names.add(line.sku.name);
+        skuNamesBySupplyItem.set(line.supplyItemId, names);
+      }
+    }
+
+    return rows.map((r) => ({
+      ...r,
+      parQuantity: decimalToStringThreshold(r.parQuantity),
+      allocatedSinceInvoice: decimalToStringThreshold(
+        allocatedSinceInvoice.get(r.supplyItemId) || new Decimal(0)
+      ),
+      recentSkuNames: Array.from(skuNamesBySupplyItem.get(r.supplyItemId) || []),
+    }));
+  },
+
+  async upsert(teamId, propertyId, supplyItemId, { parQuantity }) {
+    const property = await prisma.property.findFirst({ where: { id: propertyId, teamId } });
+    if (!property) {
+      throw new LedgerValidationError("Property not found for team");
+    }
+    const supplyItem = await prisma.supplyItem.findFirst({
+      where: { id: supplyItemId, teamId, archivedAt: null },
+    });
+    if (!supplyItem) {
+      throw new LedgerValidationError("Supply item not found for team");
+    }
+    const par = quantizeQty(parQuantity ?? 0);
+    if (par.lt(0)) {
+      throw new LedgerValidationError("parQuantity cannot be negative");
+    }
+    const row = await prisma.propertySupplyItem.upsert({
+      where: {
+        propertyId_supplyItemId: { propertyId, supplyItemId },
+      },
+      create: {
+        propertyId,
+        supplyItemId,
+        parQuantity: par,
+      },
+      update: {
+        parQuantity: par,
+      },
+      include: {
+        supplyItem: { select: { id: true, name: true, category: true, baseUnitId: true } },
+      },
+    });
+    const allocatedBase = await sumUnbilledAllocatedBase(teamId, propertyId, supplyItemId);
+    return {
+      ...row,
+      parQuantity: decimalToStringThreshold(row.parQuantity),
+      allocatedSinceInvoice: decimalToStringThreshold(allocatedBase),
+      recentSkuNames: [],
+    };
+  },
+
+  async remove(teamId, propertyId, supplyItemId) {
+    const property = await prisma.property.findFirst({ where: { id: propertyId, teamId } });
+    if (!property) {
+      throw new LedgerValidationError("Property not found for team");
+    }
+    const result = await prisma.propertySupplyItem.deleteMany({
+      where: { propertyId, supplyItemId },
+    });
+    return result.count > 0;
+  },
+};
+
 export const stockTransactionOps = {
   async findAllByTeam(teamId, opts = {}) {
     const where = { teamId };

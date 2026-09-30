@@ -16,6 +16,8 @@ import {
   isTrialExpired,
   toPlanLimitResponse,
 } from "../trialManager.js";
+import { propertySupplyItemOps, LedgerValidationError } from "../stockLedger.js";
+import { mapStockDomainError } from "../middleware/catalogueAuth.js";
 
 /**
  * @param {import("express").Express} app
@@ -26,6 +28,8 @@ export function registerPropertyRoutes(app, deps) {
     authenticateToken,
     loadCurrentUser,
     userHasPageAccess,
+    requireInventoryRead,
+    requireInventoryWrite,
   } = deps;
 
 
@@ -241,4 +245,78 @@ app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
     res.status(500).json({ message: "Error deleting property" });
   }
 });
+
+// ==================== PROPERTY SUPPLY ITEM ROUTES ====================
+// Standing list of supply items a property is stocked with, each with an optional
+// par quantity, plus the net quantity allocated since the last invoice.
+
+app.get(
+  "/api/properties/:id/supply-items",
+  authenticateToken,
+  requireInventoryRead,
+  async (req, res) => {
+    try {
+      if (!assertPropertyAccess(res, req.currentUser, req.params.id)) return;
+      const rows = await propertySupplyItemOps.listByProperty(req.currentUser.teamId, req.params.id);
+      if (!rows) {
+        return res.status(404).json({ message: "Property not found." });
+      }
+      res.json(rows);
+    } catch (error) {
+      console.error("Error listing property supply items:", error);
+      res.status(500).json({ message: "Error listing property supply items" });
+    }
+  }
+);
+
+app.put(
+  "/api/properties/:id/supply-items/:supplyItemId",
+  authenticateToken,
+  requireInventoryWrite,
+  async (req, res) => {
+    try {
+      if (!assertPropertyAccess(res, req.currentUser, req.params.id)) return;
+      const row = await propertySupplyItemOps.upsert(
+        req.currentUser.teamId,
+        req.params.id,
+        req.params.supplyItemId,
+        { parQuantity: req.body?.parQuantity }
+      );
+      res.json(row);
+    } catch (error) {
+      if (error instanceof LedgerValidationError) {
+        return res.status(400).json({ message: error.message, code: error.code });
+      }
+      if (mapStockDomainError(res, error)) return;
+      console.error("Error updating property supply item:", error);
+      res.status(500).json({ message: "Error updating property supply item" });
+    }
+  }
+);
+
+app.delete(
+  "/api/properties/:id/supply-items/:supplyItemId",
+  authenticateToken,
+  requireInventoryWrite,
+  async (req, res) => {
+    try {
+      if (!assertPropertyAccess(res, req.currentUser, req.params.id)) return;
+      const removed = await propertySupplyItemOps.remove(
+        req.currentUser.teamId,
+        req.params.id,
+        req.params.supplyItemId
+      );
+      if (!removed) {
+        return res.status(404).json({ message: "Property supply item not found." });
+      }
+      res.json({ message: "Property supply item removed." });
+    } catch (error) {
+      if (error instanceof LedgerValidationError) {
+        return res.status(400).json({ message: error.message, code: error.code });
+      }
+      console.error("Error removing property supply item:", error);
+      res.status(500).json({ message: "Error removing property supply item" });
+    }
+  }
+);
 }

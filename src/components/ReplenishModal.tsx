@@ -3,6 +3,7 @@ import type { Client, Property, Sku, StockLocation } from "../types";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
+import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { effectiveMarkup, estimateBillBack, formatMoney } from "../utils/billBack";
 import { StockFlowModal } from "./StockFlowModal";
 
@@ -50,6 +51,7 @@ export const ReplenishModal: React.FC<Props> = ({
   const [lines, setLines] = useState<LineDraft[]>([newLine()]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [stockedSupplyItemIds, setStockedSupplyItemIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (stockLocationsProp) {
@@ -103,6 +105,17 @@ export const ReplenishModal: React.FC<Props> = ({
       .catch(() => setSkus([]));
   }, [stockLocationId]);
 
+  useEffect(() => {
+    if (!propertyId) {
+      setStockedSupplyItemIds(new Set());
+      return;
+    }
+    propertySupplyItemsApi
+      .listByProperty(propertyId)
+      .then((rows) => setStockedSupplyItemIds(new Set(rows.map((r) => r.supplyItemId))))
+      .catch(() => setStockedSupplyItemIds(new Set()));
+  }, [propertyId]);
+
   const estimatedTotal = useMemo(() => {
     return lines.reduce((sum, line) => {
       const sku = skus.find((s) => s.id === line.skuId);
@@ -144,6 +157,16 @@ export const ReplenishModal: React.FC<Props> = ({
         stockLocationId,
         lines: payloadLines,
       });
+      const newSupplyItemIds = new Set(
+        payloadLines
+          .map((l) => skus.find((s) => s.id === l.skuId)?.supplyItemId)
+          .filter((sid): sid is string => Boolean(sid) && !stockedSupplyItemIds.has(sid!))
+      );
+      await Promise.all(
+        Array.from(newSupplyItemIds).map((supplyItemId) =>
+          propertySupplyItemsApi.upsert(propertyId, supplyItemId, { parQuantity: 0 }).catch(() => undefined)
+        )
+      );
       onSuccess();
       onClose();
     } catch (err) {

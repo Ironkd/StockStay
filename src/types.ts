@@ -21,6 +21,11 @@ export type PropertyFormValues = {
     email: string;
     defaultMarkupPercentage?: number;
   } | null;
+  /** Optional create-form selections; saved separately after property creation. */
+  stockedSupplyItems?: Array<{
+    supplyItemId: string;
+    parQuantity: number | string;
+  }>;
 };
 
 export type BillingFrequency = "weekly" | "biweekly" | "monthly_eom";
@@ -385,6 +390,27 @@ export type LocationLowStockRow = {
     category: string;
     baseUnitId: string;
     baseUnit?: { id: string; code: string; name: string };
+  };
+};
+
+/** Standing list of supply items a property is stocked with (Stock section-style, property-level). */
+export type PropertySupplyItem = {
+  id: string;
+  propertyId: string;
+  supplyItemId: string;
+  parQuantity: string;
+  /** Net base units allocated to the property since the last invoice. */
+  allocatedSinceInvoice: string;
+  /** SKUs used for recent unbilled allocations of this item, for display context. */
+  recentSkuNames: string[];
+  createdAt: string;
+  updatedAt: string;
+  supplyItem?: {
+    id: string;
+    name: string;
+    category: string;
+    baseUnitId: string;
+    archivedAt?: string | null;
   };
 };
 
