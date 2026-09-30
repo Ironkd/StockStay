@@ -1,10 +1,13 @@
 import React, { useEffect, useState } from "react";
-import { Client, Property, PropertyFormValues, StockLocation } from "../types";
+import { Client, Property, PropertyFormValues, StockLocation, SupplyItem } from "../types";
 
 type Props = {
   initialValues?: Property;
   clients?: Client[];
   stockLocations?: StockLocation[];
+  supplyItems?: SupplyItem[];
+  supplyItemsLoading?: boolean;
+  supplyItemsLoadError?: boolean;
   /** Pre-select location ids when creating (default: first location) */
   defaultStockLocationIds?: string[];
   onSubmit: (values: PropertyFormValues) => void | Promise<void>;
@@ -24,6 +27,9 @@ export const PropertyForm: React.FC<Props> = ({
   initialValues,
   clients = [],
   stockLocations = [],
+  supplyItems = [],
+  supplyItemsLoading = false,
+  supplyItemsLoadError = false,
   defaultStockLocationIds,
   onSubmit,
   onCancel,
@@ -56,6 +62,13 @@ export const PropertyForm: React.FC<Props> = ({
   const [newClientEmail, setNewClientEmail] = useState("");
   const [newClientMarkup, setNewClientMarkup] = useState("0");
   const [busy, setBusy] = useState(false);
+  const [stockedItemsOpen, setStockedItemsOpen] = useState(false);
+  const [stockedSupplyItems, setStockedSupplyItems] = useState<
+    Array<{ supplyItemId: string; parQuantity: string }>
+  >([]);
+  const activeSupplyItems = supplyItems
+    .filter((item) => !item.archivedAt)
+    .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
   useEffect(() => {
     if (initialValues) return;
@@ -89,6 +102,22 @@ export const PropertyForm: React.FC<Props> = ({
         : [...current, id];
       return { ...prev, stockLocationIds: next };
     });
+  };
+
+  const toggleStockedItem = (supplyItemId: string) => {
+    setStockedSupplyItems((current) =>
+      current.some((item) => item.supplyItemId === supplyItemId)
+        ? current.filter((item) => item.supplyItemId !== supplyItemId)
+        : [...current, { supplyItemId, parQuantity: "0" }]
+    );
+  };
+
+  const updateStockedItemPar = (supplyItemId: string, parQuantity: string) => {
+    setStockedSupplyItems((current) =>
+      current.map((item) =>
+        item.supplyItemId === supplyItemId ? { ...item, parQuantity } : item
+      )
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -133,6 +162,12 @@ export const PropertyForm: React.FC<Props> = ({
         markupPercentage: markup,
         stockLocationIds: initialValues ? undefined : values.stockLocationIds || [],
         newClient,
+        stockedSupplyItems: initialValues
+          ? undefined
+          : stockedSupplyItems.map((item) => ({
+              supplyItemId: item.supplyItemId,
+              parQuantity: Number(item.parQuantity) || 0,
+            })),
       });
       if (!initialValues) {
         setValues({
@@ -143,6 +178,8 @@ export const PropertyForm: React.FC<Props> = ({
         setNewClientName("");
         setNewClientEmail("");
         setNewClientMarkup("0");
+        setStockedSupplyItems([]);
+        setStockedItemsOpen(false);
       }
     } finally {
       setBusy(false);
@@ -273,6 +310,79 @@ export const PropertyForm: React.FC<Props> = ({
             ))}
           </div>
         </div>
+      )}
+
+      {!initialValues && (
+        <section className="property-create-stocked-items">
+          <button
+            type="button"
+            className="property-create-stocked-items-toggle"
+            aria-expanded={stockedItemsOpen}
+            aria-controls="property-create-stocked-items-content"
+            onClick={() => setStockedItemsOpen((open) => !open)}
+          >
+            <span>Set up stocked items (optional)</span>
+            <span className="property-create-stocked-items-summary">
+              {stockedSupplyItems.length > 0
+                ? `${stockedSupplyItems.length} selected`
+                : stockedItemsOpen
+                  ? "Hide"
+                  : "Add now"}
+            </span>
+          </button>
+          <p className="property-create-stocked-items-description">
+            Choose the supplies this property receives and set par quantities. You can skip this and add them later.
+          </p>
+          {stockedItemsOpen && (
+            <div id="property-create-stocked-items-content" className="property-create-stocked-items-content">
+              {supplyItemsLoadError ? (
+                <p className="property-create-stocked-items-message" role="alert">
+                  Supply items could not be loaded. You can add them from the property page after creating it.
+                </p>
+              ) : supplyItemsLoading ? (
+                <p className="property-create-stocked-items-message">Loading supply items…</p>
+              ) : activeSupplyItems.length === 0 ? (
+                <p className="property-create-stocked-items-message">
+                  No supply items are available yet. You can add them from the Stock section first.
+                </p>
+              ) : (
+                <div className="property-create-stocked-items-list">
+                  {activeSupplyItems.map((item) => {
+                      const selected = stockedSupplyItems.find(
+                        (stockedItem) => stockedItem.supplyItemId === item.id
+                      );
+                      return (
+                        <div key={item.id} className="property-create-stocked-item">
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(selected)}
+                              onChange={() => toggleStockedItem(item.id)}
+                            />
+                            <span>{item.name}</span>
+                          </label>
+                          {selected && (
+                            <label className="property-create-stocked-item-par">
+                              <span>Par quantity</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={selected.parQuantity}
+                                onChange={(event) =>
+                                  updateStockedItemPar(item.id, event.target.value)
+                                }
+                              />
+                            </label>
+                          )}
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
       )}
 
       <div className="form-actions">

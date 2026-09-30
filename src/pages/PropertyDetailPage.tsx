@@ -3,8 +3,10 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import type {
   Client,
   PropertyFormValues,
+  PropertySupplyItem,
   Replenishment,
   StockLocation,
+  SupplyItem,
   UnbilledLine,
 } from "../types";
 import { useProperties } from "../hooks/useProperties";
@@ -15,6 +17,8 @@ import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { replenishmentApi } from "../services/replenishmentApi";
+import { supplyItemsApi } from "../services/catalogueApi";
+import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { useAuth } from "../contexts/useAuth";
 import { SectionHeader } from "../components/ui/SectionHeader";
 
@@ -34,6 +38,8 @@ export const PropertyDetailPage: React.FC = () => {
   const [stockLocations, setStockLocations] = useState<StockLocation[]>([]);
   const [recentMoves, setRecentMoves] = useState<Replenishment[]>([]);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
+  const [stockedItems, setStockedItems] = useState<PropertySupplyItem[]>([]);
+  const [allSupplyItems, setAllSupplyItems] = useState<SupplyItem[]>([]);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [showLinkModal, setShowLinkModal] = useState(false);
@@ -45,6 +51,14 @@ export const PropertyDetailPage: React.FC = () => {
   const [replenishSupplyItemId, setReplenishSupplyItemId] = useState("");
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+
+  const [addItemSupplyItemId, setAddItemSupplyItemId] = useState("");
+  const [addItemParQty, setAddItemParQty] = useState("");
+  const [addItemBusy, setAddItemBusy] = useState(false);
+  const [addItemError, setAddItemError] = useState("");
+  const [parEditId, setParEditId] = useState("");
+  const [parEditValue, setParEditValue] = useState("");
+  const [itemActionBusyId, setItemActionBusyId] = useState("");
 
   const property = getPropertyById(id);
 
@@ -62,24 +76,29 @@ export const PropertyDetailPage: React.FC = () => {
   }, [propertiesLoaded, property, canAccessProperty, navigate]);
 
   const refreshAll = useCallback(async () => {
+    if (!id) return;
     try {
-      const [locs, reps, unbilled] = await Promise.all([
+      const [locs, reps, unbilled, stocked] = await Promise.all([
         stockLocationsApi.getAll(),
         replenishmentApi.list({ limit: 200, propertyId: id }),
         replenishmentApi.listUnbilled(),
+        propertySupplyItemsApi.listByProperty(id),
       ]);
       setStockLocations(locs);
       setRecentMoves(reps);
       setUnbilledLines(unbilled);
+      setStockedItems(stocked);
     } catch {
       setStockLocations([]);
       setRecentMoves([]);
       setUnbilledLines([]);
+      setStockedItems([]);
     }
   }, [id]);
 
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
+    supplyItemsApi.getAll().then(setAllSupplyItems).catch(() => setAllSupplyItems([]));
     refreshAll();
   }, [id, refreshAll]);
 
@@ -99,28 +118,23 @@ export const PropertyDetailPage: React.FC = () => {
     [unbilledLines, id]
   );
 
-  const allocatedSupplyItems = useMemo(() => {
-    const bySupplyItem = new Map<
-      string,
-      { id: string; name: string; baseQty: number; skuNames: Set<string> }
-    >();
-    for (const line of propertyUnbilled) {
-      const sign = line.isCredit || line.direction === "return" ? -1 : 1;
-      const id = line.supplyItemId;
-      const current = bySupplyItem.get(id) || {
-        id,
-        name: line.supplyItem?.name || "Supply item",
-        baseQty: 0,
-        skuNames: new Set<string>(),
-      };
-      current.baseQty += sign * (Number(line.baseQtyDeployed) || 0);
-      if (line.sku?.name) current.skuNames.add(line.sku.name);
-      bySupplyItem.set(id, current);
-    }
-    return Array.from(bySupplyItem.values())
-      .filter((item) => item.baseQty > 0.000001)
-      .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
-  }, [propertyUnbilled]);
+  const sortedStockedItems = useMemo(
+    () =>
+      [...stockedItems].sort((a, b) =>
+        (a.supplyItem?.name || "").localeCompare(b.supplyItem?.name || "", undefined, {
+          sensitivity: "base",
+        })
+      ),
+    [stockedItems]
+  );
+
+  const availableItemsToAdd = useMemo(
+    () =>
+      allSupplyItems
+        .filter((s) => !s.archivedAt && !stockedItems.some((row) => row.supplyItemId === s.id))
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" })),
+    [allSupplyItems, stockedItems]
+  );
 
   const linkedLocations = useMemo(
     () => stockLocations.filter((loc) => (loc.properties || []).some((p) => p.propertyId === id)),
@@ -166,6 +180,61 @@ export const PropertyDetailPage: React.FC = () => {
       setLinkError(err instanceof Error ? err.message : "Failed to link location");
     } finally {
       setLinkBusy(false);
+    }
+  };
+
+  const handleAddStockedItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!id || !addItemSupplyItemId) {
+      setAddItemError("Select a supply item.");
+      return;
+    }
+    setAddItemBusy(true);
+    setAddItemError("");
+    try {
+      await propertySupplyItemsApi.upsert(id, addItemSupplyItemId, {
+        parQuantity: addItemParQty || 0,
+      });
+      setAddItemSupplyItemId("");
+      setAddItemParQty("");
+      await refreshAll();
+    } catch (err) {
+      setAddItemError(err instanceof Error ? err.message : "Failed to add item");
+    } finally {
+      setAddItemBusy(false);
+    }
+  };
+
+  const handleStartParEdit = (row: PropertySupplyItem) => {
+    setParEditId(row.id);
+    setParEditValue(row.parQuantity);
+  };
+
+  const handleSaveParEdit = async (row: PropertySupplyItem) => {
+    if (!id) return;
+    setItemActionBusyId(row.id);
+    try {
+      await propertySupplyItemsApi.upsert(id, row.supplyItemId, { parQuantity: parEditValue || 0 });
+      setParEditId("");
+      await refreshAll();
+    } catch {
+      // keep the field open so the user can retry
+    } finally {
+      setItemActionBusyId("");
+    }
+  };
+
+  const handleRemoveStockedItem = async (row: PropertySupplyItem) => {
+    if (!id) return;
+    if (!window.confirm(`Remove ${row.supplyItem?.name || "this item"} from this property's stocked items?`)) {
+      return;
+    }
+    setItemActionBusyId(row.id);
+    try {
+      await propertySupplyItemsApi.remove(id, row.supplyItemId);
+      await refreshAll();
+    } finally {
+      setItemActionBusyId("");
     }
   };
 
@@ -264,52 +333,124 @@ export const PropertyDetailPage: React.FC = () => {
 
       <section className="panel property-allocation-panel">
         <SectionHeader
-          title="Allocated supplies"
-          description="See what has been allocated since the last invoice, then replenish an item without re-selecting the property."
+          title="Stocked items"
+          description="The supply items this property is stocked with. Allocate stock without re-selecting the property, and see what's gone out since the last invoice."
           compact
         />
-        {allocatedSupplyItems.length === 0 ? (
-          <div className="empty-state">
-            <h3>No unbilled allocations</h3>
-            <p>Choose a supply item from a linked stock location to allocate stock for the next invoice.</p>
-            {canWrite && linkedLocations.length > 0 ? (
-              <button
-                type="button"
-                className="add-property-button"
-                onClick={() => {
-                  setReplenishSupplyItemId("");
-                  setShowReplenishModal(true);
-                }}
+
+        {canWrite && (
+          <form className="property-add-item-form" onSubmit={handleAddStockedItem}>
+            <label>
+              <span>Add a stocked item</span>
+              <select
+                value={addItemSupplyItemId}
+                onChange={(e) => setAddItemSupplyItemId(e.target.value)}
               >
-                Allocate stock
-              </button>
-            ) : null}
+                <option value="">
+                  {availableItemsToAdd.length === 0 ? "All supply items already added" : "Select supply item…"}
+                </option>
+                {availableItemsToAdd.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              <span>Par quantity</span>
+              <input
+                type="number"
+                min="0"
+                step="any"
+                placeholder="Optional"
+                value={addItemParQty}
+                onChange={(e) => setAddItemParQty(e.target.value)}
+              />
+            </label>
+            <button type="submit" className="secondary" disabled={addItemBusy || !addItemSupplyItemId}>
+              {addItemBusy ? "Adding…" : "Add item"}
+            </button>
+          </form>
+        )}
+        {addItemError && <p style={{ color: "#b91c1c", fontSize: "13px" }}>{addItemError}</p>}
+
+        {sortedStockedItems.length === 0 ? (
+          <div className="empty-state">
+            <h3>No stocked items yet</h3>
+            <p>Add the supply items this property receives, so everyone can see what it&apos;s stocked with at a glance.</p>
           </div>
         ) : (
           <div className="property-supply-grid">
-            {allocatedSupplyItems.map((item) => (
-              <article key={item.id} className="property-supply-card">
-                <div>
-                  <strong>{item.name}</strong>
+            {sortedStockedItems.map((item) => {
+              const allocated = Number(item.allocatedSinceInvoice) || 0;
+              const isEditingPar = parEditId === item.id;
+              const isBusy = itemActionBusyId === item.id;
+              return (
+                <article key={item.id} className="property-supply-card">
+                  <div className="property-supply-card-header">
+                    <strong>{item.supplyItem?.name || "Supply item"}</strong>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        className="property-supply-card-remove"
+                        onClick={() => handleRemoveStockedItem(item)}
+                        disabled={isBusy}
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
                   <p>
-                    {item.baseQty.toFixed(2)} base units since last invoice
-                    {item.skuNames.size > 0 ? ` · ${Array.from(item.skuNames).join(", ")}` : ""}
+                    {allocated > 0.000001
+                      ? `${allocated.toFixed(2)} base units allocated since last invoice`
+                      : "No allocations since last invoice"}
+                    {item.recentSkuNames.length > 0 ? ` · ${item.recentSkuNames.join(", ")}` : ""}
                   </p>
-                </div>
-                {canWrite ? (
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => {
-                      setReplenishSupplyItemId(item.id);
-                      setShowReplenishModal(true);
-                    }}
-                  >
-                    Allocate more
-                  </button>
-                ) : null}
-              </article>
-            ))}
+                  <div className="property-supply-card-par">
+                    <span>Par quantity</span>
+                    {isEditingPar ? (
+                      <div className="property-supply-card-par-edit">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={parEditValue}
+                          onChange={(e) => setParEditValue(e.target.value)}
+                          autoFocus
+                        />
+                        <button type="button" className="secondary" onClick={() => handleSaveParEdit(item)} disabled={isBusy}>
+                          Save
+                        </button>
+                        <button type="button" className="icon-button" onClick={() => setParEditId("")} aria-label="Cancel">
+                          ✕
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="property-supply-card-par-value"
+                        onClick={() => canWrite && handleStartParEdit(item)}
+                        disabled={!canWrite}
+                      >
+                        {Number(item.parQuantity) > 0 ? Number(item.parQuantity).toFixed(2) : "Not set"}
+                      </button>
+                    )}
+                  </div>
+                  {canWrite ? (
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => {
+                        setReplenishSupplyItemId(item.supplyItemId);
+                        setShowReplenishModal(true);
+                      }}
+                    >
+                      {allocated > 0.000001 ? "Allocate more" : "Allocate stock"}
+                    </button>
+                  ) : null}
+                </article>
+              );
+            })}
           </div>
         )}
       </section>

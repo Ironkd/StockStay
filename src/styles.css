@@ -233,9 +233,8 @@ main {
 
 .property-supply-card {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
+  flex-direction: column;
+  gap: 10px;
   padding: 16px;
   border: 1px solid var(--color-gray-200);
   border-radius: 12px;
@@ -243,10 +242,199 @@ main {
 }
 
 .property-supply-card p {
-  margin: 5px 0 0;
+  margin: 0;
   color: var(--color-gray-500);
   font-size: 13px;
   line-height: 1.45;
+}
+
+.property-supply-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.property-supply-card-header strong {
+  font-size: 15px;
+}
+
+.property-supply-card-remove {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--color-gray-400);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.property-supply-card-remove:hover:not(:disabled) {
+  color: var(--color-danger);
+}
+
+.property-supply-card-par {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-gray-500);
+}
+
+.property-supply-card-par-value {
+  background: none;
+  border: none;
+  padding: 2px 4px;
+  font-weight: 600;
+  color: var(--color-gray-800);
+  cursor: pointer;
+  border-radius: 6px;
+}
+
+.property-supply-card-par-value:hover:not(:disabled) {
+  background: var(--color-gray-200);
+}
+
+.property-supply-card-par-value:disabled {
+  cursor: default;
+  color: var(--color-gray-600);
+}
+
+.property-supply-card-par-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.property-supply-card-par-edit input {
+  width: 80px;
+  padding: 4px 6px;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 6px;
+}
+
+.property-add-item-form {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  border: 1px dashed var(--color-gray-300);
+  border-radius: 12px;
+  background: var(--color-gray-50);
+}
+
+.property-add-item-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--color-gray-500);
+}
+
+.property-add-item-form select,
+.property-add-item-form input {
+  padding: 8px 10px;
+  border: 1px solid var(--color-gray-300);
+  border-radius: 8px;
+  min-width: 200px;
+}
+
+.property-add-item-form input[type="number"] {
+  min-width: 120px;
+}
+
+.property-create-stocked-items {
+  padding: 14px 16px;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 12px;
+  background: var(--color-gray-50);
+}
+
+.property-create-stocked-items-toggle {
+  width: 100%;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-gray-800);
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  text-align: left;
+  font-weight: 600;
+  box-shadow: none;
+}
+
+.property-create-stocked-items-toggle:hover {
+  background: transparent;
+}
+
+.property-create-stocked-items-summary {
+  flex: 0 0 auto;
+  color: var(--color-gray-500);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.property-create-stocked-items-description,
+.property-create-stocked-items-message {
+  margin: 6px 0 0;
+  color: var(--color-gray-500);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.property-create-stocked-items-content {
+  margin-top: 12px;
+}
+
+.property-create-stocked-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.property-create-stocked-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-gray-200);
+  border-radius: 8px;
+  background: var(--color-gray-0);
+}
+
+.property-create-stocked-item > label:first-child {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: var(--color-gray-700);
+  font-size: 13px;
+}
+
+.property-create-stocked-item input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.property-create-stocked-item-par {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-gray-500);
+  font-size: 12px;
+}
+
+.property-create-stocked-item-par input[type="number"] {
+  width: 100px;
+  padding: 7px 9px;
 }
 
 .context-field {
@@ -376,6 +564,18 @@ textarea:focus {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
+}
+
+@media (max-width: 480px) {
+  .property-create-stocked-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .property-create-stocked-item-par {
+    padding-left: 24px;
+  }
 }
 
 button {

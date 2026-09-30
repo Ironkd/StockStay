@@ -148,14 +148,31 @@ model Property {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  team           Team                    @relation(fields: [teamId], references: [id])
-  client         Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
-  stockLocations StockLocationProperty[]
-  replenishments Replenishment[]
-  invoiceLines   InvoiceLine[]
+  team               Team                    @relation(fields: [teamId], references: [id])
+  client             Client?                 @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  stockLocations     StockLocationProperty[]
+  replenishments     Replenishment[]
+  invoiceLines       InvoiceLine[]
+  supplyItems        PropertySupplyItem[]
 
   @@index([teamId])
   @@index([clientId])
+}
+
+model PropertySupplyItem {
+  id           String   @id @default(uuid())
+  propertyId   String
+  supplyItemId String
+  parQuantity  Decimal  @default(0) @db.Decimal(18, 6)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  property   Property   @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  supplyItem SupplyItem @relation(fields: [supplyItemId], references: [id], onDelete: Restrict)
+
+  @@unique([propertyId, supplyItemId])
+  @@index([propertyId])
+  @@index([supplyItemId])
 }
 
 model UnitOfMeasure {
@@ -219,11 +236,12 @@ model SupplyItem {
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
-  team               Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
-  baseUnit           UnitOfMeasure             @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
-  skus               Sku[]
-  locationThresholds LocationSupplyThreshold[]
-  replenishmentLines ReplenishmentLine[]
+  team                Team                      @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  baseUnit            UnitOfMeasure             @relation(fields: [baseUnitId], references: [id], onDelete: Restrict)
+  skus                Sku[]
+  locationThresholds  LocationSupplyThreshold[]
+  replenishmentLines  ReplenishmentLine[]
+  propertySupplyItems PropertySupplyItem[]
 
   @@unique([teamId, name])
   @@index([teamId])
