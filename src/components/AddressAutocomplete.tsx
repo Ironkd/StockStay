@@ -27,6 +27,10 @@ type AddressAutocompleteProps = {
   style?: React.CSSProperties;
   /** Whether the field is required (HTML required attribute). */
   required?: boolean;
+  /** Hide the built-in label so a parent FormField can provide it. */
+  hideLabel?: boolean;
+  /** Optional aria-describedby id from a parent field wrapper. */
+  describedBy?: string;
 };
 
 /** Minimal types for Google Place result (loaded at runtime). */
@@ -81,6 +85,8 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
   componentRestrictions,
   style,
   required,
+  hideLabel = false,
+  describedBy,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const autocompleteRef = useRef<unknown>(null);
@@ -156,51 +162,38 @@ export const AddressAutocomplete: React.FC<AddressAutocompleteProps> = ({
     };
   }, [componentRestrictions]);
 
-  if (unavailable) {
-    return (
-      <label style={{ display: "block", marginBottom: "8px", ...style }}>
-        <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>{label}</span>
-        <input
-          type="text"
-          id={id}
-          className={className}
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          required={required}
-          style={{
-            width: "100%",
-            padding: "8px 12px",
-            borderRadius: "8px",
-            border: "1px solid rgba(148, 163, 184, 0.7)",
-            fontSize: "14px",
-          }}
-        />
-      </label>
-    );
+  const inputStyle = {
+    width: "100%",
+    padding: "8px 12px",
+    borderRadius: "8px",
+    border: "1px solid rgba(148, 163, 184, 0.7)",
+    fontSize: "14px",
+  } as const;
+
+  const inputNode = (
+    <input
+      ref={unavailable ? undefined : inputRef}
+      type="text"
+      id={id}
+      className={className}
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      autoComplete={unavailable ? undefined : "off"}
+      required={required}
+      aria-describedby={describedBy}
+      style={inputStyle}
+    />
+  );
+
+  if (hideLabel) {
+    return inputNode;
   }
 
   return (
     <label style={{ display: "block", marginBottom: "8px", ...style }}>
       <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>{label}</span>
-      <input
-        ref={inputRef}
-        type="text"
-        id={id}
-        className={className}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        required={required}
-        style={{
-          width: "100%",
-          padding: "8px 12px",
-          borderRadius: "8px",
-          border: "1px solid rgba(148, 163, 184, 0.7)",
-          fontSize: "14px",
-        }}
-      />
+      {inputNode}
     </label>
   );
 };

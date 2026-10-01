@@ -3,12 +3,22 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { apiRequest } from "../config/api";
-import { Icon } from "../components/ui/Icon";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Icon,
+  Modal,
+  SectionHeader,
+  Tabs,
+} from "../components/ui";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { propertiesApi } from "../services/propertiesApi";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { track } from "../lib/analytics";
 import type { TeamData, TeamMemberInfo, TeamInvitationInfo } from "../types";
 import type { Property } from "../types";
@@ -23,11 +33,32 @@ const PAGE_KEYS = [
   { key: "settings", label: "Settings" },
 ] as const;
 
+const BILLING_TIMEZONES = [
+  { value: "America/Toronto", label: "America/Toronto (Eastern)" },
+  { value: "America/Winnipeg", label: "America/Winnipeg (Central)" },
+  { value: "America/Edmonton", label: "America/Edmonton (Mountain)" },
+  { value: "America/Vancouver", label: "America/Vancouver (Pacific)" },
+  { value: "America/Halifax", label: "America/Halifax (Atlantic)" },
+  { value: "America/St_Johns", label: "America/St_Johns (Newfoundland)" },
+  { value: "America/New_York", label: "America/New_York" },
+  { value: "America/Chicago", label: "America/Chicago" },
+  { value: "America/Denver", label: "America/Denver" },
+  { value: "America/Los_Angeles", label: "America/Los_Angeles" },
+  { value: "UTC", label: "UTC" },
+] as const;
+
 type AccessFormState = {
   teamRole: "member" | "viewer";
   allowedPages: string[];
   allowedPropertyIds: string[];
   maxInventoryItems: string;
+};
+
+type SettingsTab = "profile" | "organization" | "billing" | "client-facing" | "support";
+
+type TransferOption = {
+  key: string;
+  label: string;
 };
 
 const emptyAccessForm: AccessFormState = {
@@ -53,12 +84,55 @@ function toMaxInventoryItems(s: string): number | null {
   return n;
 }
 
+function roleTone(role: string) {
+  if (role === "owner") return "info" as const;
+  if (role === "viewer") return "warning" as const;
+  return "neutral" as const;
+}
+
+function invitationTone(status: string) {
+  if (status === "pending") return "warning" as const;
+  if (status === "accepted") return "success" as const;
+  return "neutral" as const;
+}
+
+const AccessSelectionColumn: React.FC<{
+  title: string;
+  items: TransferOption[];
+  emptyLabel: string;
+  onSelect: (key: string) => void;
+  mode: "add" | "remove";
+}> = ({ title, items, emptyLabel, onSelect, mode }) => (
+  <div className="settings-access-column">
+    <span className="settings-access-label">{title}</span>
+    <div className="settings-access-list" role="list">
+      {items.length === 0 ? (
+        <p className="settings-access-empty">{emptyLabel}</p>
+      ) : (
+        items.map((item) => (
+          <Button
+            key={item.key}
+            variant="ghost"
+            size="sm"
+            type="button"
+            className={`settings-access-item ${mode === "remove" ? "settings-access-item-remove" : "settings-access-item-add"}`}
+            onClick={() => onSelect(item.key)}
+          >
+            {item.label}
+          </Button>
+        ))
+      )}
+    </div>
+  </div>
+);
+
 export const SettingsPage: React.FC = () => {
   const { user, updateUser, refreshUser, switchTeam } = useAuth();
   const toast = useToast();
   const [teamData, setTeamData] = useState<TeamData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<SettingsTab>("profile");
   const [confirmAction, setConfirmAction] = useState<
     | { type: "revoke"; invitation: TeamInvitationInfo }
     | { type: "remove"; member: TeamMemberInfo }
@@ -135,7 +209,7 @@ export const SettingsPage: React.FC = () => {
 
   const isTeamOwner = user?.teamRole === "owner";
   const isOrgOwner = Boolean(user?.isOrgOwner || teamData?.team?.isOrgOwner);
-  const isOwner = isTeamOwner; // invites / members still team-owner gated
+  const isOwner = isTeamOwner;
 
   useEffect(() => {
     if (user) {
@@ -148,11 +222,9 @@ export const SettingsPage: React.FC = () => {
       setProfilePostalCode(user.postalCode ?? "");
       setProfilePhone(user.phone ?? "");
     }
-    // Sync form from the specific profile fields we care about — not the whole user object.
     // eslint-disable-next-line react-hooks/exhaustive-deps -- granular fields avoid loops from updateUser()
   }, [user?.id, user?.firstName, user?.lastName, user?.email, user?.streetAddress, user?.city, user?.province, user?.postalCode, user?.phone]);
 
-  // Pre-fill support form when opening modal
   useEffect(() => {
     if (showSupportModal && user) {
       setSupportForm({
@@ -185,8 +257,10 @@ export const SettingsPage: React.FC = () => {
       await loadTeam();
       if (!cancelled) setLoading(false);
     };
-    load();
-    return () => { cancelled = true; };
+    void load();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -196,7 +270,6 @@ export const SettingsPage: React.FC = () => {
     if (serverName && serverName !== authName) {
       refreshUser();
     }
-    // refreshUser is recreated each render; only re-check when team/user payloads change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamData, user]);
 
@@ -206,10 +279,11 @@ export const SettingsPage: React.FC = () => {
     propertiesApi.getAll().then((list) => {
       if (!cancelled) setProperties(list);
     }).catch(() => {});
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [isOwner]);
 
-  // Sync org edit form when team data or modal opens
   useEffect(() => {
     if (!teamData?.team || !showOrgEditModal) return;
     const t = teamData.team;
@@ -225,7 +299,6 @@ export const SettingsPage: React.FC = () => {
       footerText: (style.footerText ?? "— Stock Stay").trim(),
       logoUrl: (t.invoiceLogoUrl ?? "").trim(),
     });
-    // Prefer stable field deps over teamData.team object identity.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [teamData?.team?.id, teamData?.team?.name, teamData?.team?.invoiceLogoUrl, teamData?.team?.invoiceStyle, teamData?.organization?.name, teamData?.team?.organizationName, showOrgEditModal]);
 
@@ -287,7 +360,6 @@ export const SettingsPage: React.FC = () => {
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Failed to open billing portal";
       setError(msg);
-      // If it's a network/CORS failure, show hint (error is displayed in the panel)
       if (/load failed|request url|cors|vite_api_base_url/i.test(msg)) {
         setError(
           `${msg} If your app and API are on different domains, add this site's URL (${window.location.origin}) to the backend CORS_ORIGIN env var (e.g. on Railway: Variables → CORS_ORIGIN).`
@@ -357,9 +429,7 @@ export const SettingsPage: React.FC = () => {
           prev
             ? {
                 ...prev,
-                invitations: prev.invitations.filter(
-                  (i) => i.id !== action.invitation.id
-                ),
+                invitations: prev.invitations.filter((i) => i.id !== action.invitation.id),
               }
             : null
         );
@@ -461,25 +531,25 @@ export const SettingsPage: React.FC = () => {
     }
   };
 
-  const openEditMember = (m: TeamMemberInfo) => {
-    setEditingMember(m);
+  const openEditMember = (member: TeamMemberInfo) => {
+    setEditingMember(member);
     setEditingInvitation(null);
     setEditAccess({
-      teamRole: (m.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
-      allowedPages: m.allowedPages ?? [],
-      allowedPropertyIds: m.allowedPropertyIds ?? [],
-      maxInventoryItems: m.maxInventoryItems != null ? String(m.maxInventoryItems) : "",
+      teamRole: (member.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
+      allowedPages: member.allowedPages ?? [],
+      allowedPropertyIds: member.allowedPropertyIds ?? [],
+      maxInventoryItems: member.maxInventoryItems != null ? String(member.maxInventoryItems) : "",
     });
   };
 
-  const openEditInvitation = (inv: TeamInvitationInfo) => {
-    setEditingInvitation(inv);
+  const openEditInvitation = (invitation: TeamInvitationInfo) => {
+    setEditingInvitation(invitation);
     setEditingMember(null);
     setEditAccess({
-      teamRole: (inv.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
-      allowedPages: inv.allowedPages ?? [],
-      allowedPropertyIds: inv.allowedPropertyIds ?? [],
-      maxInventoryItems: inv.maxInventoryItems != null ? String(inv.maxInventoryItems) : "",
+      teamRole: (invitation.teamRole === "viewer" ? "viewer" : "member") as "member" | "viewer",
+      allowedPages: invitation.allowedPages ?? [],
+      allowedPropertyIds: invitation.allowedPropertyIds ?? [],
+      maxInventoryItems: invitation.maxInventoryItems != null ? String(invitation.maxInventoryItems) : "",
     });
   };
 
@@ -497,7 +567,9 @@ export const SettingsPage: React.FC = () => {
           prev
             ? {
                 ...prev,
-                members: prev.members.map((m) => (m.id === updated.id ? { ...m, ...updated } : m)),
+                members: prev.members.map((member) =>
+                  member.id === updated.id ? { ...member, ...updated } : member
+                ),
               }
             : null
         );
@@ -520,8 +592,8 @@ export const SettingsPage: React.FC = () => {
           prev
             ? {
                 ...prev,
-                invitations: prev.invitations.map((i) =>
-                  i.id === updated.id ? { ...i, ...updated } : i
+                invitations: prev.invitations.map((invitation) =>
+                  invitation.id === updated.id ? { ...invitation, ...updated } : invitation
                 ),
               }
             : null
@@ -550,7 +622,7 @@ export const SettingsPage: React.FC = () => {
       });
       setSupportResult({ ok: true, message: "Message sent. We'll get back to you soon." });
       track("feedback_sent", { source: "settings" });
-      setSupportForm((f) => ({ ...f, message: "" }));
+      setSupportForm((form) => ({ ...form, message: "" }));
       setTimeout(() => {
         setShowSupportModal(false);
         setSupportResult(null);
@@ -563,6 +635,45 @@ export const SettingsPage: React.FC = () => {
     } finally {
       setSupportSending(false);
     }
+  };
+
+  const saveProfile = async () => {
+    setProfileError(null);
+    setProfileSaving(true);
+    try {
+      const updated = await authApi.updateProfile({
+        firstName: profileFirstName.trim(),
+        lastName: profileLastName.trim(),
+        email: profileEmail.trim(),
+        streetAddress: profileStreet.trim(),
+        city: profileCity.trim(),
+        province: profileProvince.trim(),
+        postalCode: profilePostalCode.trim(),
+        phone: profilePhone.trim(),
+      });
+      updateUser(updated);
+      await refreshUser();
+    } catch (err) {
+      setProfileError(err instanceof Error ? err.message : "Failed to update profile");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const openInviteModal = () => {
+    setShowInviteModal(true);
+    setLastInviteLink(null);
+    setInviteError(null);
+    setInviteAccess(emptyAccessForm);
+  };
+
+  const closeEditAccessModal = () => {
+    setEditingMember(null);
+    setEditingInvitation(null);
+  };
+
+  const closeSupportModal = () => {
+    if (!supportSending) setShowSupportModal(false);
   };
 
   if (loading) {
@@ -584,13 +695,14 @@ export const SettingsPage: React.FC = () => {
     const isLikelyBackend = /not found|404|failed to fetch|network error/i.test(error);
     return (
       <div className="settings-page">
-        <h2>Settings</h2>
-        <p style={{ color: "#dc2626" }}>{error}</p>
-        {isLikelyBackend && (
-          <p style={{ color: "#64748b", fontSize: "14px", marginTop: "12px" }}>
-            If you&apos;re on production, the backend may need to be redeployed so that <code>/api/team</code> is available. Check that your API URL is correct and that the latest server is deployed.
+        <SectionHeader title="Settings" />
+        <p className="form-banner error">{error}</p>
+        {isLikelyBackend ? (
+          <p className="settings-error-note">
+            If you&apos;re on production, the backend may need to be redeployed so that <code>/api/team</code> is available.
+            Check that your API URL is correct and that the latest server is deployed.
           </p>
-        )}
+        ) : null}
       </div>
     );
   }
@@ -598,287 +710,154 @@ export const SettingsPage: React.FC = () => {
   const team = teamData?.team;
   const members = teamData?.members ?? [];
   const invitations = teamData?.invitations ?? [];
+  const organizationTeams = team
+    ? teamData?.organizationTeams ?? [{
+        id: team.id,
+        name: team.name,
+        memberCount: members.length,
+        isActive: true,
+        isMember: true,
+        myTeamRole: user?.teamRole,
+      }]
+    : [];
 
   const renderAccessForm = (
     access: AccessFormState,
     setAccess: React.Dispatch<React.SetStateAction<AccessFormState>>
-  ) => (
-    <>
-      <div style={{ marginBottom: "12px" }}>
-        <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-          Role
-        </span>
-        <select
-          value={access.teamRole}
-          onChange={(e) => setAccess((a) => ({ ...a, teamRole: e.target.value as "member" | "viewer" }))}
-        >
-          <option value="member">Member</option>
-          <option value="viewer">Viewer</option>
-        </select>
-      </div>
-      <div style={{ marginBottom: "12px" }}>
-        <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-          Pages they can view (click to add; leave Selected empty for full access)
-        </span>
-        <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
-            <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-              Available
-            </span>
-            <div
-              style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border: "1px solid rgba(148, 163, 184, 0.7)",
-                background: "rgba(248, 250, 252, 0.9)",
-                minHeight: "120px",
-                maxHeight: "180px",
-                overflowY: "auto",
-              }}
+  ) => {
+    const availablePageOptions = PAGE_KEYS
+      .filter(({ key }) => !access.allowedPages.includes(key))
+      .map(({ key, label }) => ({ key, label }));
+    const selectedPageOptions = access.allowedPages.map((key) => ({
+      key,
+      label: PAGE_KEYS.find((page) => page.key === key)?.label ?? key,
+    }));
+    const availablePropertyOptions = properties
+      .filter((property) => !access.allowedPropertyIds.includes(property.id))
+      .map((property) => ({ key: property.id, label: property.name }));
+    const selectedPropertyOptions = access.allowedPropertyIds
+      .map((id) => {
+        const property = properties.find((item) => item.id === id);
+        return property ? { key: property.id, label: property.name } : null;
+      })
+      .filter((option): option is TransferOption => option !== null);
+
+    return (
+      <>
+        <FormField label="Role" required>
+          {({ id, "aria-describedby": describedBy }) => (
+            <select
+              id={id}
+              aria-describedby={describedBy}
+              value={access.teamRole}
+              onChange={(e) =>
+                setAccess((current) => ({
+                  ...current,
+                  teamRole: e.target.value as "member" | "viewer",
+                }))
+              }
             >
-              {PAGE_KEYS.filter(({ key }) => !access.allowedPages.includes(key)).map(({ key, label }) => (
-                <button
-                  key={key}
-                  type="button"
-                  onClick={() =>
-                    setAccess((a) => ({ ...a, allowedPages: [...a.allowedPages, key] }))
-                  }
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "6px 8px",
-                    margin: "2px 0",
-                    textAlign: "left",
-                    border: "none",
-                    borderRadius: "6px",
-                    background: "transparent",
-                    fontSize: "13px",
-                    cursor: "pointer",
-                    color: "#334155",
-                  }}
-                  onMouseOver={(e) => {
-                    e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
-                  }}
-                  onMouseOut={(e) => {
-                    e.currentTarget.style.background = "transparent";
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
-              {PAGE_KEYS.filter(({ key }) => !access.allowedPages.includes(key)).length === 0 && (
-                <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
-                  All selected
-                </p>
-              )}
-            </div>
-          </div>
-          <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
-            <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-              Selected
-            </span>
-            <div
-              style={{
-                padding: "6px 10px",
-                borderRadius: "8px",
-                border: "1px solid rgba(148, 163, 184, 0.7)",
-                background: "rgba(248, 250, 252, 0.9)",
-                minHeight: "120px",
-                maxHeight: "180px",
-                overflowY: "auto",
-              }}
-            >
-              {access.allowedPages.length === 0 && (
-                <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
-                  None (full access)
-                </p>
-              )}
-              {access.allowedPages.map((key) => {
-                const label = PAGE_KEYS.find((p) => p.key === key)?.label ?? key;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() =>
-                      setAccess((a) => ({
-                        ...a,
-                        allowedPages: a.allowedPages.filter((k) => k !== key),
-                      }))
-                    }
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      padding: "6px 8px",
-                      margin: "2px 0",
-                      textAlign: "left",
-                      border: "none",
-                      borderRadius: "6px",
-                      background: "transparent",
-                      fontSize: "13px",
-                      cursor: "pointer",
-                      color: "#334155",
-                    }}
-                    onMouseOver={(e) => {
-                      e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
-                    }}
-                    onMouseOut={(e) => {
-                      e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
+              <option value="member">Member</option>
+              <option value="viewer">Viewer</option>
+            </select>
+          )}
+        </FormField>
+
+        <div className="settings-access-group">
+          <p className="settings-helper-text">
+            Pages they can view. Leave Selected empty for full access.
+          </p>
+          <div className="settings-access-grid">
+            <AccessSelectionColumn
+              title="Available"
+              items={availablePageOptions}
+              emptyLabel="All selected"
+              mode="add"
+              onSelect={(key) =>
+                setAccess((current) => ({
+                  ...current,
+                  allowedPages: [...current.allowedPages, key],
+                }))
+              }
+            />
+            <AccessSelectionColumn
+              title="Selected"
+              items={selectedPageOptions}
+              emptyLabel="None (full access)"
+              mode="remove"
+              onSelect={(key) =>
+                setAccess((current) => ({
+                  ...current,
+                  allowedPages: current.allowedPages.filter((pageKey) => pageKey !== key),
+                }))
+              }
+            />
           </div>
         </div>
-      </div>
-      {properties.length > 0 && (
-        <div style={{ marginBottom: "12px" }}>
-          <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "6px" }}>
-            Properties they can access (click to add; leave Selected empty for all)
-          </span>
-          <div style={{ display: "flex", gap: "12px", alignItems: "flex-start", flexWrap: "wrap" }}>
-            <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-                Available
-              </span>
-              <div
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid rgba(148, 163, 184, 0.7)",
-                  background: "rgba(248, 250, 252, 0.9)",
-                  minHeight: "120px",
-                  maxHeight: "180px",
-                  overflowY: "auto",
-                }}
-              >
-                {properties
-                  .filter((w) => !access.allowedPropertyIds.includes(w.id))
-                  .map((w) => (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() =>
-                        setAccess((a) => ({ ...a, allowedPropertyIds: [...a.allowedPropertyIds, w.id] }))
-                      }
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "6px 8px",
-                        margin: "2px 0",
-                        textAlign: "left",
-                        border: "none",
-                        borderRadius: "6px",
-                        background: "transparent",
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        color: "#334155",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = "rgba(59, 130, 246, 0.1)";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      {w.name}
-                    </button>
-                  ))}
-                {properties.filter((w) => !access.allowedPropertyIds.includes(w.id)).length === 0 && (
-                  <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
-                    All selected
-                  </p>
-                )}
-              </div>
-            </div>
-            <div style={{ flex: "1 1 140px", minWidth: "120px" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-                Selected
-              </span>
-              <div
-                style={{
-                  padding: "6px 10px",
-                  borderRadius: "8px",
-                  border: "1px solid rgba(148, 163, 184, 0.7)",
-                  background: "rgba(248, 250, 252, 0.9)",
-                  minHeight: "120px",
-                  maxHeight: "180px",
-                  overflowY: "auto",
-                }}
-              >
-                {access.allowedPropertyIds.length === 0 && (
-                  <p style={{ fontSize: "12px", color: "#94a3b8", margin: "8px 0", padding: "0 8px" }}>
-                    None (all properties)
-                  </p>
-                )}
-                {access.allowedPropertyIds.map((id) => {
-                  const w = properties.find((x) => x.id === id);
-                  if (!w) return null;
-                  return (
-                    <button
-                      key={w.id}
-                      type="button"
-                      onClick={() =>
-                        setAccess((a) => ({
-                          ...a,
-                          allowedPropertyIds: a.allowedPropertyIds.filter((i) => i !== w.id),
-                        }))
-                      }
-                      style={{
-                        display: "block",
-                        width: "100%",
-                        padding: "6px 8px",
-                        margin: "2px 0",
-                        textAlign: "left",
-                        border: "none",
-                        borderRadius: "6px",
-                        background: "transparent",
-                        fontSize: "13px",
-                        cursor: "pointer",
-                        color: "#334155",
-                      }}
-                      onMouseOver={(e) => {
-                        e.currentTarget.style.background = "rgba(239, 68, 68, 0.1)";
-                      }}
-                      onMouseOut={(e) => {
-                        e.currentTarget.style.background = "transparent";
-                      }}
-                    >
-                      {w.name}
-                    </button>
-                  );
-                })}
-              </div>
+
+        {properties.length > 0 ? (
+          <div className="settings-access-group">
+            <p className="settings-helper-text">
+              Properties they can access. Leave Selected empty for all properties.
+            </p>
+            <div className="settings-access-grid">
+              <AccessSelectionColumn
+                title="Available"
+                items={availablePropertyOptions}
+                emptyLabel="All selected"
+                mode="add"
+                onSelect={(key) =>
+                  setAccess((current) => ({
+                    ...current,
+                    allowedPropertyIds: [...current.allowedPropertyIds, key],
+                  }))
+                }
+              />
+              <AccessSelectionColumn
+                title="Selected"
+                items={selectedPropertyOptions}
+                emptyLabel="None (all properties)"
+                mode="remove"
+                onSelect={(key) =>
+                  setAccess((current) => ({
+                    ...current,
+                    allowedPropertyIds: current.allowedPropertyIds.filter((id) => id !== key),
+                  }))
+                }
+              />
             </div>
           </div>
-        </div>
-      )}
-      <div style={{ marginBottom: "12px" }}>
-        <label>
-          <span style={{ fontSize: "13px", color: "#64748b" }}>Max inventory items (optional)</span>
-          <input
-            type="number"
-            min={0}
-            value={access.maxInventoryItems}
-            onChange={(e) => setAccess((a) => ({ ...a, maxInventoryItems: e.target.value }))}
-            placeholder="No limit"
-          />
-        </label>
-      </div>
-    </>
-  );
+        ) : null}
+
+        <FormField label="Max inventory items (optional)">
+          {({ id, "aria-describedby": describedBy }) => (
+            <input
+              id={id}
+              aria-describedby={describedBy}
+              type="number"
+              min={0}
+              value={access.maxInventoryItems}
+              onChange={(e) =>
+                setAccess((current) => ({
+                  ...current,
+                  maxInventoryItems: e.target.value,
+                }))
+              }
+              placeholder="No limit"
+            />
+          )}
+        </FormField>
+      </>
+    );
+  };
+
+  const invoiceStyle = team?.invoiceStyle;
 
   return (
     <div className="settings-page">
       <ConfirmDialog
         open={Boolean(confirmAction)}
-        title={
-          confirmAction?.type === "revoke"
-            ? "Revoke invitation"
-            : "Remove member"
-        }
+        title={confirmAction?.type === "revoke" ? "Revoke invitation" : "Remove member"}
         message={
           confirmAction?.type === "revoke"
             ? `Revoke invitation for ${confirmAction.invitation.email}?`
@@ -894,895 +873,1060 @@ export const SettingsPage: React.FC = () => {
           if (!confirmBusy) setConfirmAction(null);
         }}
       />
-      <h2>Settings</h2>
-      {error && <p style={{ color: "#dc2626", marginBottom: "12px" }}>{error}</p>}
 
-      <section className="panel" style={{ marginBottom: "24px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <div>
-            <h3 style={{ fontSize: "16px", margin: "0 0 4px" }}>Clients</h3>
-            <p style={{ margin: 0, color: "#64748b", fontSize: "13px" }}>
-              Manage billing clients and their default markup / billing frequency.
-            </p>
-          </div>
-          <Link to="/clients" className="secondary" style={{ textDecoration: "none", padding: "8px 16px", borderRadius: "999px", border: "1px solid rgba(148, 163, 184, 0.6)" }}>
-            Manage clients →
-          </Link>
-        </div>
-      </section>
+      <SectionHeader
+        title="Settings"
+        description="Manage your account, organization, billing, client-facing defaults, and support access."
+      />
 
-      <section className="panel" style={{ marginBottom: "24px" }}>
-        <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Profile</h3>
-        {profileError && (
-          <p style={{ color: "#dc2626", marginBottom: "12px", fontSize: "14px" }}>{profileError}</p>
-        )}
-        <div style={{ display: "flex", flexDirection: "column", gap: "12px", maxWidth: "400px" }}>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>First name</span>
-            <input
-              type="text"
-              value={profileFirstName}
-              onChange={(e) => setProfileFirstName(e.target.value)}
-              placeholder="First name"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
+      {error ? <p className="form-banner error">{error}</p> : null}
+
+      <Tabs
+        items={[
+          { key: "profile", label: "Profile" },
+          { key: "organization", label: "Organization & Team", count: members.length + invitations.length },
+          { key: "billing", label: "Billing & Plan" },
+          { key: "client-facing", label: "Client-Facing" },
+          { key: "support", label: "Support" },
+        ]}
+        active={activeTab}
+        onChange={(key) => setActiveTab(key as SettingsTab)}
+      />
+
+      <div className="settings-tab-panel">
+        {activeTab === "profile" ? (
+          <Card>
+            <SectionHeader
+              title="Profile"
+              description="Update your personal details and contact information."
+              compact
             />
-          </label>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Last name</span>
-            <input
-              type="text"
-              value={profileLastName}
-              onChange={(e) => setProfileLastName(e.target.value)}
-              placeholder="Last name"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email</span>
-            <input
-              type="email"
-              value={profileEmail}
-              onChange={(e) => setProfileEmail(e.target.value)}
-              placeholder="your@email.com"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <AddressAutocomplete
-            label="Street address"
-            value={profileStreet}
-            onChange={setProfileStreet}
-            placeholder="Street address or start typing to search"
-            onSelect={(addr) => {
-              setProfileStreet(addr.streetAddress);
-              setProfileCity(addr.city);
-              setProfileProvince(addr.province);
-              setProfilePostalCode(addr.postalCode);
-            }}
-            style={{ width: "100%" }}
-          />
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>City</span>
-            <input
-              type="text"
-              value={profileCity}
-              onChange={(e) => setProfileCity(e.target.value)}
-              placeholder="City"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Province</span>
-            <input
-              type="text"
-              value={profileProvince}
-              onChange={(e) => setProfileProvince(e.target.value)}
-              placeholder="Province"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Postal code</span>
-            <input
-              type="text"
-              value={profilePostalCode}
-              onChange={(e) => setProfilePostalCode(e.target.value)}
-              placeholder="Postal code"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <label>
-            <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Phone number</span>
-            <input
-              type="tel"
-              value={profilePhone}
-              onChange={(e) => setProfilePhone(e.target.value)}
-              placeholder="e.g. +1 234 567 8900"
-              style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-            />
-          </label>
-          <button
-            type="button"
-            className="nav-button primary"
-            onClick={async () => {
-              setProfileError(null);
-              setProfileSaving(true);
-              try {
-                const updated = await authApi.updateProfile({
-                  firstName: profileFirstName.trim(),
-                  lastName: profileLastName.trim(),
-                  email: profileEmail.trim(),
-                  streetAddress: profileStreet.trim(),
-                  city: profileCity.trim(),
-                  province: profileProvince.trim(),
-                  postalCode: profilePostalCode.trim(),
-                  phone: profilePhone.trim(),
-                });
-                updateUser(updated);
-                await refreshUser();
-              } catch (err) {
-                setProfileError(err instanceof Error ? err.message : "Failed to update profile");
-              } finally {
-                setProfileSaving(false);
-              }
-            }}
-            disabled={profileSaving}
-          >
-            {profileSaving ? "Saving..." : "Save profile"}
-          </button>
-        </div>
-      </section>
-
-      {team && (
-        <section className="panel" style={{ marginBottom: "24px" }} aria-label="Organization and teams">
-          {orgPanel === "overview" ? (
-            <>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "12px", flexWrap: "wrap", marginBottom: "16px" }}>
-                <div>
-                  <h3 style={{ fontSize: "16px", margin: "0 0 4px 0" }}>Organization & teams</h3>
-                  <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
-                    Manage your organization and the teams under it.
-                  </p>
-                </div>
-                {isOrgOwner && (
-                  <button
-                    type="button"
-                    className="nav-button secondary"
-                    onClick={() => setShowOrgEditModal(true)}
-                  >
-                    Edit organization
-                  </button>
-                )}
-              </div>
-
-              <div
-                style={{
-                  padding: "14px 16px",
-                  borderRadius: "10px",
-                  background: "rgba(248, 250, 252, 0.9)",
-                  border: "1px solid rgba(148, 163, 184, 0.35)",
-                  marginBottom: "20px",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", flexWrap: "wrap", alignItems: "baseline" }}>
-                  <div>
-                    <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>
-                      Organization
-                    </div>
-                    <div style={{ fontSize: "18px", fontWeight: 600, color: "#0f172a" }}>
-                      {teamData?.organization?.name ?? team.organizationName ?? "Organization"}
-                    </div>
-                  </div>
-                  <div style={{ fontSize: "13px", color: "#475569" }}>
-                    Plan: <strong style={{ textTransform: "capitalize" }}>{team.effectivePlan}</strong>
-                    {team.isOnTrial && team.trialStatus ? ` · Trial (${team.trialStatus})` : ""}
-                  </div>
-                </div>
-
-                {isOrgOwner ? (
-                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
-                    <p style={{ margin: "0 0 10px 0", fontSize: "13px", color: "#64748b" }}>
-                      You are an organization admin. Billing, branding, and new teams are managed from Edit organization.
-                    </p>
-                    <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                      {team.billingPortalAvailable && (
-                        <button
-                          type="button"
-                          className="nav-button secondary"
-                          onClick={handleManageSubscription}
-                          disabled={billingLoading}
-                        >
-                          {billingLoading ? "Opening..." : "Manage subscription"}
-                        </button>
-                      )}
-                      {(team.effectivePlan === "free" || team.effectivePlan === "starter") && (
-                        <button
-                          type="button"
-                          className="nav-button primary"
-                          onClick={handleUpgrade}
-                          disabled={checkoutLoading}
-                        >
-                          {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
-                        </button>
-                      )}
-                    </div>
-                    {(team.effectivePlan === "starter" || team.effectivePlan === "pro") && team.effectiveMaxUsers != null && (
-                      <div style={{ marginTop: "12px", fontSize: "13px", color: "#475569" }}>
-                        Active team size: <strong>{members.length}</strong> of <strong>{team.effectiveMaxUsers}</strong> users
-                        {extraUserSlotsError && (
-                          <p style={{ color: "#b91c1c", margin: "6px 0 0 0" }}>{extraUserSlotsError}</p>
-                        )}
-                        <div style={{ marginTop: "8px", display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
-                          <label style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                            Extra user slots
-                            <select
-                              value={team.extraUserSlots ?? 0}
-                              disabled={extraUserSlotsLoading}
-                              onChange={async (e) => {
-                                const quantity = Number(e.target.value);
-                                setExtraUserSlotsLoading(true);
-                                setExtraUserSlotsError(null);
-                                try {
-                                  await teamApi.updateExtraUserSlots(quantity);
-                                  await loadTeam();
-                                } catch (err) {
-                                  setExtraUserSlotsError(
-                                    err instanceof Error ? err.message : "Failed to update slots"
-                                  );
-                                } finally {
-                                  setExtraUserSlotsLoading(false);
-                                }
-                              }}
-                            >
-                              {Array.from(
-                                { length: (team.effectivePlan === "starter" ? 2 : 3) + 1 },
-                                (_, i) => (
-                                  <option key={i} value={i}>
-                                    {i}
-                                  </option>
-                                )
-                              )}
-                            </select>
-                          </label>
-                          {extraUserSlotsLoading && <span style={{ fontSize: "12px", color: "#64748b" }}>Saving…</span>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div style={{ marginTop: "14px", paddingTop: "14px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
-                    <div style={{ fontSize: "12px", color: "#64748b", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "8px" }}>
-                      Organization admins
-                    </div>
-                    {(teamData?.organization?.owners?.length ?? 0) > 0 ? (
-                      <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                        {teamData!.organization!.owners.map((owner) => (
-                          <li key={owner.id} style={{ padding: "4px 0", fontSize: "14px", color: "#334155" }}>
-                            <strong>{owner.name || "Admin"}</strong>
-                            {owner.email ? (
-                              <>
-                                {" · "}
-                                <a href={`mailto:${owner.email}`} style={{ color: "#2563eb" }}>
-                                  {owner.email}
-                                </a>
-                              </>
-                            ) : null}
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
-                        Contact your organization admin for billing or organization changes.
-                      </p>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "8px", flexWrap: "wrap", marginBottom: "10px" }}>
-                <h4 style={{ margin: 0, fontSize: "14px", fontWeight: 600 }}>Teams</h4>
-                {switchingTeam && <span style={{ fontSize: "12px", color: "#64748b" }}>Opening team…</span>}
-              </div>
-              <ul style={{ listStyle: "none", padding: 0, margin: "0 0 16px 0" }}>
-                {(teamData?.organizationTeams ?? [{ id: team.id, name: team.name, memberCount: members.length, isActive: true, isMember: true, myTeamRole: user?.teamRole }]).map((t) => (
-                  <li key={t.id} style={{ marginBottom: "8px" }}>
-                    <button
-                      type="button"
-                      onClick={() => openTeamDetail(t.id)}
-                      disabled={switchingTeam || t.isMember === false}
-                      style={{
-                        width: "100%",
-                        textAlign: "left",
-                        padding: "12px 14px",
-                        borderRadius: "10px",
-                        border: t.isActive ? "1px solid rgba(37, 99, 235, 0.45)" : "1px solid rgba(148, 163, 184, 0.35)",
-                        background: t.isActive ? "rgba(239, 246, 255, 0.9)" : "#fff",
-                        cursor: switchingTeam || t.isMember === false ? "not-allowed" : "pointer",
-                        opacity: t.isMember === false ? 0.55 : 1,
-                      }}
-                    >
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: "8px", flexWrap: "wrap", alignItems: "baseline" }}>
-                        <span style={{ fontWeight: 600, color: "#0f172a" }}>{t.name}</span>
-                        <span style={{ fontSize: "12px", color: "#64748b" }}>
-                          {t.isActive ? "Current · " : ""}
-                          {typeof t.memberCount === "number" ? `${t.memberCount} member${t.memberCount === 1 ? "" : "s"}` : ""}
-                          {t.myTeamRole ? ` · ${t.myTeamRole}` : t.isMember === false ? " · not a member" : ""}
-                        </span>
-                      </div>
-                      <div style={{ marginTop: "4px", fontSize: "12px", color: "#2563eb" }}>
-                        {t.isMember === false ? "You need an invite to open this team" : "View / edit details →"}
-                      </div>
-                    </button>
-                  </li>
-                ))}
-              </ul>
-
-              {isOrgOwner && team.organizationId && (
-                <div style={{ paddingTop: "12px", borderTop: "1px solid rgba(148, 163, 184, 0.3)" }}>
-                  <p style={{ margin: "0 0 10px 0", fontSize: "13px", color: "#64748b" }}>
-                    Create another team under this organization. You can switch teams from the header anytime.
-                  </p>
-                  <div style={{ display: "flex", gap: "8px", flexWrap: "wrap", alignItems: "center" }}>
-                    <input
-                      type="text"
-                      value={newTeamName}
-                      onChange={(e) => setNewTeamName(e.target.value)}
-                      placeholder="New team name"
-                      style={{ maxWidth: "260px" }}
-                    />
-                    <button
-                      type="button"
-                      className="nav-button primary"
-                      disabled={creatingTeam || !newTeamName.trim()}
-                      onClick={async () => {
-                        if (!team.organizationId || !newTeamName.trim()) return;
-                        setCreatingTeam(true);
-                        setCreateTeamError(null);
-                        try {
-                          const result = await teamApi.createOrganizationTeam(
-                            team.organizationId,
-                            newTeamName.trim()
-                          );
-                          updateUser(result.user);
-                          setNewTeamName("");
-                          await loadTeam();
-                          setOrgPanel("team");
-                          window.dispatchEvent(new Event("active-team-changed"));
-                        } catch (err) {
-                          setCreateTeamError(
-                            err instanceof Error ? err.message : "Failed to create team"
-                          );
-                        } finally {
-                          setCreatingTeam(false);
-                        }
-                      }}
-                    >
-                      {creatingTeam ? "Creating..." : "Create team"}
-                    </button>
-                  </div>
-                  {createTeamError && (
-                    <p style={{ color: "#b91c1c", fontSize: "13px", marginTop: "8px" }}>{createTeamError}</p>
-                  )}
-                </div>
-              )}
-            </>
-          ) : (
-            <>
-              <div style={{ display: "flex", alignItems: "center", gap: "10px", marginBottom: "16px", flexWrap: "wrap" }}>
-                <button
-                  type="button"
-                  className="nav-button secondary"
-                  onClick={() => setOrgPanel("overview")}
-                >
-                  ← Back
-                </button>
-                <div>
-                  <h3 style={{ fontSize: "16px", margin: 0 }}>Team details</h3>
-                  <p style={{ margin: "2px 0 0 0", fontSize: "13px", color: "#64748b" }}>
-                    {teamData?.organization?.name ?? team.organizationName}
-                  </p>
-                </div>
-              </div>
-
-              <div style={{ marginBottom: "20px" }}>
-                <label style={{ display: "block", marginBottom: "8px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Team name</span>
-                  {isTeamOwner ? (
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                      <input
-                        type="text"
-                        value={teamNameEdit}
-                        onChange={(e) => setTeamNameEdit(e.target.value)}
-                        placeholder="Team name"
-                        style={{ maxWidth: "280px" }}
-                      />
-                      <button
-                        type="button"
-                        className="nav-button primary"
-                        onClick={handleSaveTeamName}
-                        disabled={savingName || teamNameEdit.trim() === team.name}
-                      >
-                        {savingName ? "Saving..." : "Save name"}
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: "16px", fontWeight: 600 }}>{team.name}</div>
-                  )}
-                </label>
-                <p style={{ margin: "8px 0 0 0", fontSize: "13px", color: "#64748b" }}>
-                  Plan: <strong style={{ textTransform: "capitalize" }}>{team.effectivePlan}</strong>
-                  {typeof team.propertyCount === "number" && (
-                    <> · {team.propertyCount} propert{team.propertyCount === 1 ? "y" : "ies"}</>
-                  )}
-                </p>
-                <label style={{ display: "block", marginTop: "16px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>
-                    Billing timezone
-                  </span>
-                  {isTeamOwner ? (
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
-                      <select
-                        value={billingTimezoneEdit}
-                        onChange={(e) => setBillingTimezoneEdit(e.target.value)}
-                        style={{ maxWidth: "320px", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                      >
-                        <option value="America/Toronto">America/Toronto (Eastern)</option>
-                        <option value="America/Winnipeg">America/Winnipeg (Central)</option>
-                        <option value="America/Edmonton">America/Edmonton (Mountain)</option>
-                        <option value="America/Vancouver">America/Vancouver (Pacific)</option>
-                        <option value="America/Halifax">America/Halifax (Atlantic)</option>
-                        <option value="America/St_Johns">America/St_Johns (Newfoundland)</option>
-                        <option value="America/New_York">America/New_York</option>
-                        <option value="America/Chicago">America/Chicago</option>
-                        <option value="America/Denver">America/Denver</option>
-                        <option value="America/Los_Angeles">America/Los_Angeles</option>
-                        <option value="UTC">UTC</option>
-                      </select>
-                      <button
-                        type="button"
-                        className="nav-button primary"
-                        onClick={handleSaveBillingTimezone}
-                        disabled={
-                          savingTimezone ||
-                          billingTimezoneEdit === (team.billingTimezone || "America/Toronto")
-                        }
-                      >
-                        {savingTimezone ? "Saving..." : "Save timezone"}
-                      </button>
-                    </div>
-                  ) : (
-                    <div style={{ fontSize: "14px" }}>{team.billingTimezone || "America/Toronto"}</div>
-                  )}
-                  <p style={{ margin: "6px 0 0 0", fontSize: "12px", color: "#94a3b8" }}>
-                    Weekly / biweekly / monthly invoice periods close at midnight in this timezone.
-                  </p>
-                </label>
-              </div>
-
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
-                <h4 style={{ fontSize: "14px", margin: 0 }}>Members</h4>
-                {isOwner && (
-                  <button
-                    type="button"
-                    className="nav-button primary"
-                    onClick={() => {
-                      setShowInviteModal(true);
-                      setLastInviteLink(null);
-                      setInviteError(null);
-                      setInviteAccess(emptyAccessForm);
-                    }}
-                  >
-                    Invite member
-                  </button>
-                )}
-              </div>
-              <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
-                {members.map((m) => (
-                  <li
-                    key={m.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 0",
-                      borderBottom: "1px solid rgba(148,163,184,0.25)",
-                      flexWrap: "wrap",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ color: "#64748b" }}>
-                      {m.email ?? m.name ?? "Teammate"} · {m.teamRole}
-                      {m.id === user?.id && " (you)"}
-                    </span>
-                    <span style={{ fontSize: "12px", color: "#10b981", fontWeight: 500 }}>Accepted</span>
-                    {isOwner && m.id !== user?.id && (
-                      <span style={{ display: "flex", gap: "8px" }}>
-                        <button type="button" className="nav-button secondary" onClick={() => openEditMember(m)}>
-                          Edit
-                        </button>
-                        <button type="button" className="nav-button secondary" onClick={() => handleRemoveMember(m)}>
-                          Remove
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                ))}
-                {invitations.map((inv) => (
-                  <li
-                    key={inv.id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 0",
-                      borderBottom: "1px solid rgba(148,163,184,0.25)",
-                      flexWrap: "wrap",
-                      gap: "8px",
-                    }}
-                  >
-                    <span style={{ color: "#64748b" }}>{inv.email} · {inv.teamRole}</span>
-                    <span
-                      style={{
-                        fontSize: "12px",
-                        color: inv.status === "pending" ? "#f59e0b" : "#64748b",
-                        fontWeight: 500,
-                      }}
-                    >
-                      {inv.status === "pending" ? "Pending" : inv.status}
-                    </span>
-                    {isOwner && inv.status === "pending" && (
-                      <span style={{ display: "flex", gap: "8px" }}>
-                        <button type="button" className="nav-button secondary" onClick={() => openEditInvitation(inv)}>
-                          Edit
-                        </button>
-                        <button type="button" className="nav-button secondary" onClick={() => handleRevokeInvitation(inv)}>
-                          Revoke
-                        </button>
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ul>
-              {members.length === 0 && invitations.length === 0 && (
-                <p style={{ color: "#64748b", fontSize: "13px", marginTop: "8px" }}>
-                  No members or pending invitations.
-                </p>
-              )}
-            </>
-          )}
-        </section>
-      )}
-
-      <section id="support" className="panel" style={{ marginBottom: "24px" }} aria-label="Support">
-        <h3 style={{ fontSize: "16px", marginBottom: "12px" }}>Support</h3>
-        <p style={{ color: "#64748b", margin: "0 0 12px 0", fontSize: "14px" }}>
-          Have a question or need help? Send us a message and we'll reply at support@stockstay.com.
-        </p>
-        <button
-          type="button"
-          className="nav-button secondary"
-          onClick={() => setShowSupportModal(true)}
-          aria-label="Open contact support form"
-        >
-          Contact support
-        </button>
-      </section>
-
-      {showInviteModal && (
-        <div className="modal-overlay" onClick={() => setShowInviteModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Invite team member</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => setShowInviteModal(false)}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <form onSubmit={handleInviteSubmit} className="inventory-form">
-              <div style={{ marginBottom: "16px" }}>
-                <label>
-                  <span>Email *</span>
+            {profileError ? <p className="form-banner error">{profileError}</p> : null}
+            <form
+              className="stacked-form settings-form settings-form-narrow"
+              onSubmit={(e) => {
+                e.preventDefault();
+                void saveProfile();
+              }}
+            >
+              <FormField label="First name">
+                {({ id, "aria-describedby": describedBy }) => (
                   <input
-                    type="email"
-                    value={inviteEmail}
-                    onChange={(e) => setInviteEmail(e.target.value)}
-                    placeholder="teammate@example.com"
-                    required
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={profileFirstName}
+                    onChange={(e) => setProfileFirstName(e.target.value)}
+                    placeholder="First name"
                   />
-                </label>
+                )}
+              </FormField>
+              <FormField label="Last name">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={profileLastName}
+                    onChange={(e) => setProfileLastName(e.target.value)}
+                    placeholder="Last name"
+                  />
+                )}
+              </FormField>
+              <FormField label="Email">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="email"
+                    value={profileEmail}
+                    onChange={(e) => setProfileEmail(e.target.value)}
+                    placeholder="your@email.com"
+                  />
+                )}
+              </FormField>
+              <FormField label="Street address">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <AddressAutocomplete
+                    id={id}
+                    hideLabel
+                    describedBy={describedBy}
+                    value={profileStreet}
+                    onChange={setProfileStreet}
+                    placeholder="Street address or start typing to search"
+                    onSelect={(address) => {
+                      setProfileStreet(address.streetAddress);
+                      setProfileCity(address.city);
+                      setProfileProvince(address.province);
+                      setProfilePostalCode(address.postalCode);
+                    }}
+                  />
+                )}
+              </FormField>
+              <FormField label="City">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={profileCity}
+                    onChange={(e) => setProfileCity(e.target.value)}
+                    placeholder="City"
+                  />
+                )}
+              </FormField>
+              <FormField label="Province">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={profileProvince}
+                    onChange={(e) => setProfileProvince(e.target.value)}
+                    placeholder="Province"
+                  />
+                )}
+              </FormField>
+              <FormField label="Postal code">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={profilePostalCode}
+                    onChange={(e) => setProfilePostalCode(e.target.value)}
+                    placeholder="Postal code"
+                  />
+                )}
+              </FormField>
+              <FormField label="Phone number">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="tel"
+                    value={profilePhone}
+                    onChange={(e) => setProfilePhone(e.target.value)}
+                    placeholder="e.g. +1 234 567 8900"
+                  />
+                )}
+              </FormField>
+              <div className="form-actions">
+                <Button type="submit" disabled={profileSaving}>
+                  {profileSaving ? "Saving..." : "Save profile"}
+                </Button>
               </div>
-              {renderAccessForm(inviteAccess, setInviteAccess)}
-              {inviteError && <p style={{ color: "#dc2626", fontSize: "13px", marginBottom: "8px" }}>{inviteError}</p>}
-              {lastInviteLink && (
-                <div style={{ marginBottom: "12px" }}>
-                  <p style={{ fontSize: "12px", color: "#64748b", marginBottom: "4px" }}>Invitation link (share with invitee):</p>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      type="text"
-                      readOnly
-                      value={lastInviteLink}
-                      style={{ fontSize: "12px", flex: 1 }}
-                    />
-                    <button
-                      type="button"
-                      className="nav-button secondary"
-                      onClick={() => navigator.clipboard.writeText(lastInviteLink)}
-                    >
-                      Copy
-                    </button>
+            </form>
+          </Card>
+        ) : null}
+
+        {activeTab === "organization" ? (
+          team ? (
+            orgPanel === "overview" ? (
+              <>
+                <Card>
+                  <SectionHeader
+                    title="Organization & Team"
+                    description="Switch teams, review membership, and manage organization-level teams."
+                    compact
+                    actions={
+                      switchingTeam ? <span className="settings-inline-status">Opening team...</span> : undefined
+                    }
+                  />
+                  <div className="settings-summary-card">
+                    <div>
+                      <p className="settings-summary-label">Organization</p>
+                      <p className="settings-summary-title">
+                        {teamData?.organization?.name ?? team.organizationName ?? "Organization"}
+                      </p>
+                    </div>
+                    <div className="settings-summary-badges">
+                      <Badge tone="info">{organizationTeams.length} teams</Badge>
+                      <Badge tone="neutral">{members.length} members</Badge>
+                    </div>
                   </div>
+                  <ul className="settings-team-list">
+                    {organizationTeams.map((organizationTeam) => (
+                      <li key={organizationTeam.id}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          className={`settings-team-button${organizationTeam.isActive ? " settings-team-button-active" : ""}`}
+                          onClick={() => {
+                            void openTeamDetail(organizationTeam.id);
+                          }}
+                          disabled={switchingTeam || organizationTeam.isMember === false}
+                        >
+                          <span className="settings-team-button-copy">
+                            <span className="settings-team-button-row">
+                              <span className="settings-team-button-name">{organizationTeam.name}</span>
+                              <span className="settings-team-button-badges">
+                                {organizationTeam.isActive ? <Badge tone="info">Current</Badge> : null}
+                                {organizationTeam.isMember === false ? <Badge tone="warning">Invite required</Badge> : null}
+                              </span>
+                            </span>
+                            <span className="settings-team-button-meta">
+                              {typeof organizationTeam.memberCount === "number"
+                                ? `${organizationTeam.memberCount} member${organizationTeam.memberCount === 1 ? "" : "s"}`
+                                : ""}
+                              {organizationTeam.myTeamRole ? ` · ${organizationTeam.myTeamRole}` : ""}
+                              {organizationTeam.isMember === false ? " · not a member" : ""}
+                            </span>
+                            <span className="settings-team-button-link">
+                              {organizationTeam.isMember === false ? "You need an invite to open this team" : "View and edit team details"}
+                            </span>
+                          </span>
+                          <Icon name="chevron-right" size={16} />
+                        </Button>
+                      </li>
+                    ))}
+                  </ul>
+                </Card>
+
+                {isOrgOwner && team.organizationId ? (
+                  <Card>
+                    <SectionHeader
+                      title="Create team"
+                      description="Add another team under this organization. You can switch teams from the header anytime."
+                      compact
+                    />
+                    {createTeamError ? <p className="form-banner error">{createTeamError}</p> : null}
+                    <div className="settings-inline-form">
+                      <FormField label="New team name" className="settings-inline-field">
+                        {({ id, "aria-describedby": describedBy }) => (
+                          <input
+                            id={id}
+                            aria-describedby={describedBy}
+                            type="text"
+                            value={newTeamName}
+                            onChange={(e) => setNewTeamName(e.target.value)}
+                            placeholder="New team name"
+                          />
+                        )}
+                      </FormField>
+                      <Button
+                        type="button"
+                        disabled={creatingTeam || !newTeamName.trim()}
+                        onClick={async () => {
+                          if (!team.organizationId || !newTeamName.trim()) return;
+                          setCreatingTeam(true);
+                          setCreateTeamError(null);
+                          try {
+                            const result = await teamApi.createOrganizationTeam(
+                              team.organizationId,
+                              newTeamName.trim()
+                            );
+                            updateUser(result.user);
+                            setNewTeamName("");
+                            await loadTeam();
+                            setOrgPanel("team");
+                            window.dispatchEvent(new Event("active-team-changed"));
+                          } catch (err) {
+                            setCreateTeamError(
+                              err instanceof Error ? err.message : "Failed to create team"
+                            );
+                          } finally {
+                            setCreatingTeam(false);
+                          }
+                        }}
+                      >
+                        {creatingTeam ? "Creating..." : "Create team"}
+                      </Button>
+                    </div>
+                  </Card>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <Card>
+                  <SectionHeader
+                    title="Team details"
+                    description={teamData?.organization?.name ?? team.organizationName}
+                    compact
+                    actions={
+                      <Button type="button" variant="secondary" onClick={() => setOrgPanel("overview")}>
+                        <Icon name="back" size={16} />
+                        <span>Back</span>
+                      </Button>
+                    }
+                  />
+                  <div className="settings-detail-stack">
+                    <div>
+                      <div className="settings-inline-form">
+                        <FormField label="Team name" className="settings-inline-field">
+                          {({ id, "aria-describedby": describedBy }) =>
+                            isTeamOwner ? (
+                              <input
+                                id={id}
+                                aria-describedby={describedBy}
+                                type="text"
+                                value={teamNameEdit}
+                                onChange={(e) => setTeamNameEdit(e.target.value)}
+                                placeholder="Team name"
+                              />
+                            ) : (
+                              <input
+                                id={id}
+                                aria-describedby={describedBy}
+                                type="text"
+                                value={team.name}
+                                disabled
+                                readOnly
+                              />
+                            )
+                          }
+                        </FormField>
+                        {isTeamOwner ? (
+                          <Button
+                            type="button"
+                            disabled={savingName || teamNameEdit.trim() === team.name}
+                            onClick={() => {
+                              void handleSaveTeamName();
+                            }}
+                          >
+                            {savingName ? "Saving..." : "Save name"}
+                          </Button>
+                        ) : null}
+                      </div>
+                      <p className="settings-helper-text">
+                        Plan: <strong className="settings-capitalize">{team.effectivePlan}</strong>
+                        {typeof team.propertyCount === "number"
+                          ? ` · ${team.propertyCount} propert${team.propertyCount === 1 ? "y" : "ies"}`
+                          : ""}
+                      </p>
+                    </div>
+
+                    <div>
+                      <div className="settings-inline-form">
+                        <FormField
+                          label="Billing timezone"
+                          hint="Weekly / biweekly / monthly invoice periods close at midnight in this timezone."
+                          className="settings-inline-field"
+                        >
+                          {({ id, "aria-describedby": describedBy }) =>
+                            isTeamOwner ? (
+                              <select
+                                id={id}
+                                aria-describedby={describedBy}
+                                value={billingTimezoneEdit}
+                                onChange={(e) => setBillingTimezoneEdit(e.target.value)}
+                              >
+                                {BILLING_TIMEZONES.map((timezone) => (
+                                  <option key={timezone.value} value={timezone.value}>
+                                    {timezone.label}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              <input
+                                id={id}
+                                aria-describedby={describedBy}
+                                type="text"
+                                value={team.billingTimezone || "America/Toronto"}
+                                disabled
+                                readOnly
+                              />
+                            )
+                          }
+                        </FormField>
+                        {isTeamOwner ? (
+                          <Button
+                            type="button"
+                            disabled={
+                              savingTimezone ||
+                              billingTimezoneEdit === (team.billingTimezone || "America/Toronto")
+                            }
+                            onClick={() => {
+                              void handleSaveBillingTimezone();
+                            }}
+                          >
+                            {savingTimezone ? "Saving..." : "Save timezone"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+                  </div>
+                </Card>
+
+                <Card>
+                  <SectionHeader
+                    title="Team members"
+                    description="Manage accepted members and pending invitations for this team."
+                    compact
+                    actions={
+                      isOwner ? (
+                        <Button type="button" onClick={openInviteModal}>
+                          <Icon name="add" size={16} />
+                          <span>Invite member</span>
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+
+                  {members.length === 0 && invitations.length === 0 ? (
+                    <EmptyState
+                      title="No members or invitations"
+                      body="Invite teammates to collaborate on this team."
+                      primaryLabel={isOwner ? "Invite member" : undefined}
+                      onPrimary={isOwner ? openInviteModal : undefined}
+                    />
+                  ) : (
+                    <div className="settings-list-stack">
+                      <div>
+                        <h3 className="settings-subsection-title">Accepted members</h3>
+                        <ul className="settings-member-list">
+                          {members.map((member) => (
+                            <li key={member.id} className="settings-member-row">
+                              <div className="settings-member-copy">
+                                <p className="settings-member-name">
+                                  {member.email ?? member.name ?? "Teammate"}
+                                  {member.id === user?.id ? <span className="settings-member-you">(you)</span> : null}
+                                </p>
+                                <div className="settings-member-badges">
+                                  <Badge tone={roleTone(member.teamRole)}>{member.teamRole}</Badge>
+                                  <Badge tone="success">Accepted</Badge>
+                                </div>
+                              </div>
+                              {isOwner && member.id !== user?.id ? (
+                                <div className="settings-actions">
+                                  <Button type="button" variant="secondary" onClick={() => openEditMember(member)}>
+                                    Edit
+                                  </Button>
+                                  <Button type="button" variant="danger" onClick={() => handleRemoveMember(member)}>
+                                    Remove
+                                  </Button>
+                                </div>
+                              ) : null}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+
+                      <div>
+                        <h3 className="settings-subsection-title">Pending invitations</h3>
+                        {invitations.length === 0 ? (
+                          <p className="settings-helper-text">No pending invitations.</p>
+                        ) : (
+                          <ul className="settings-member-list">
+                            {invitations.map((invitation) => (
+                              <li key={invitation.id} className="settings-member-row">
+                                <div className="settings-member-copy">
+                                  <p className="settings-member-name">{invitation.email}</p>
+                                  <div className="settings-member-badges">
+                                    <Badge tone={roleTone(invitation.teamRole)}>{invitation.teamRole}</Badge>
+                                    <Badge tone={invitationTone(invitation.status)}>{invitation.status}</Badge>
+                                  </div>
+                                </div>
+                                {isOwner && invitation.status === "pending" ? (
+                                  <div className="settings-actions">
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      onClick={() => openEditInvitation(invitation)}
+                                    >
+                                      Edit
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="danger"
+                                      onClick={() => handleRevokeInvitation(invitation)}
+                                    >
+                                      Revoke
+                                    </Button>
+                                  </div>
+                                ) : null}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Card>
+              </>
+            )
+          ) : (
+            <Card>
+              <EmptyState title="No team data" body="We couldn't load your team details." error />
+            </Card>
+          )
+        ) : null}
+
+        {activeTab === "billing" ? (
+          team ? (
+            <Card>
+              <SectionHeader
+                title="Billing & Plan"
+                description="Review your plan, seat limits, and subscription management options."
+                compact
+              />
+              <div className="settings-summary-card settings-summary-card-split">
+                <div>
+                  <p className="settings-summary-label">Organization</p>
+                  <p className="settings-summary-title">
+                    {teamData?.organization?.name ?? team.organizationName ?? "Organization"}
+                  </p>
+                </div>
+                <div className="settings-summary-badges">
+                  <Badge tone="info" className="settings-capitalize">{team.effectivePlan}</Badge>
+                  {team.isOnTrial && team.trialStatus ? (
+                    <Badge tone="warning">Trial ({team.trialStatus})</Badge>
+                  ) : null}
+                </div>
+              </div>
+
+              {isOrgOwner ? (
+                <div className="settings-detail-stack">
+                  <p className="settings-helper-text">
+                    You are an organization admin. Billing, plan changes, and extra seats are managed here.
+                  </p>
+                  <div className="settings-actions">
+                    {team.billingPortalAvailable ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        disabled={billingLoading}
+                        onClick={() => {
+                          void handleManageSubscription();
+                        }}
+                      >
+                        {billingLoading ? "Opening..." : "Manage subscription"}
+                      </Button>
+                    ) : null}
+                    {team.effectivePlan === "free" || team.effectivePlan === "starter" ? (
+                      <Button
+                        type="button"
+                        disabled={checkoutLoading}
+                        onClick={() => {
+                          void handleUpgrade();
+                        }}
+                      >
+                        {checkoutLoading ? "Redirecting..." : "Upgrade to Pro"}
+                      </Button>
+                    ) : null}
+                  </div>
+                  {team.effectiveMaxUsers != null ? (
+                    <div className="stats-list">
+                      <div className="stat-item">
+                        <span>Active team size</span>
+                        <strong>
+                          {members.length} of {team.effectiveMaxUsers} users
+                        </strong>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {(team.effectivePlan === "starter" || team.effectivePlan === "pro") && team.effectiveMaxUsers != null ? (
+                    <div className="settings-inline-form settings-inline-form-compact">
+                      <FormField
+                        label="Extra user slots"
+                        hint="Seats update as soon as your subscription change is saved."
+                        className="settings-inline-field"
+                      >
+                        {({ id, "aria-describedby": describedBy }) => (
+                          <select
+                            id={id}
+                            aria-describedby={describedBy}
+                            value={team.extraUserSlots ?? 0}
+                            disabled={extraUserSlotsLoading}
+                            onChange={async (e) => {
+                              const quantity = Number(e.target.value);
+                              setExtraUserSlotsLoading(true);
+                              setExtraUserSlotsError(null);
+                              try {
+                                await teamApi.updateExtraUserSlots(quantity);
+                                await loadTeam();
+                              } catch (err) {
+                                setExtraUserSlotsError(
+                                  err instanceof Error ? err.message : "Failed to update slots"
+                                );
+                              } finally {
+                                setExtraUserSlotsLoading(false);
+                              }
+                            }}
+                          >
+                            {Array.from(
+                              { length: (team.effectivePlan === "starter" ? 2 : 3) + 1 },
+                              (_, index) => (
+                                <option key={index} value={index}>
+                                  {index}
+                                </option>
+                              )
+                            )}
+                          </select>
+                        )}
+                      </FormField>
+                      {extraUserSlotsLoading ? (
+                        <span className="settings-inline-status">Saving...</span>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {extraUserSlotsError ? <p className="form-banner error">{extraUserSlotsError}</p> : null}
+                </div>
+              ) : (
+                <div className="settings-detail-stack">
+                  <p className="settings-helper-text">
+                    Contact your organization admin for billing, subscription, or seat changes.
+                  </p>
+                  {(teamData?.organization?.owners?.length ?? 0) > 0 ? (
+                    <ul className="settings-owner-list">
+                      {teamData?.organization?.owners.map((owner) => (
+                        <li key={owner.id} className="settings-owner-row">
+                          <div>
+                            <p className="settings-member-name">{owner.name || "Admin"}</p>
+                            {owner.email ? (
+                              <a href={`mailto:${owner.email}`} className="settings-inline-link">
+                                {owner.email}
+                              </a>
+                            ) : null}
+                          </div>
+                          <Badge tone="info">Admin</Badge>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </div>
               )}
-              <div className="form-actions">
-                <button type="button" className="secondary" onClick={() => setShowInviteModal(false)}>
-                  {lastInviteLink ? "Done" : "Cancel"}
-                </button>
-                {!lastInviteLink && (
-                  <button type="submit" disabled={inviteSubmitting}>
-                    {inviteSubmitting ? "Sending..." : "Send invitation"}
-                  </button>
+            </Card>
+          ) : (
+            <Card>
+              <EmptyState title="No billing details" body="We couldn't load billing data for this team." error />
+            </Card>
+          )
+        ) : null}
+
+        {activeTab === "client-facing" ? (
+          <>
+            <Card>
+              <SectionHeader
+                title="Clients"
+                description="Manage billing clients and their default markup and billing frequency."
+                compact
+                actions={
+                  <Link to="/clients" className="settings-link-button">
+                    <span>Manage clients</span>
+                    <Icon name="chevron-right" size={16} />
+                  </Link>
+                }
+              />
+            </Card>
+
+            {team ? (
+              <Card>
+                <SectionHeader
+                  title="Invoice style"
+                  description="Organization name and invoice branding used on emailed invoices."
+                  compact
+                  actions={
+                    isOrgOwner ? (
+                      <Button type="button" variant="secondary" onClick={() => setShowOrgEditModal(true)}>
+                        <Icon name="edit" size={16} />
+                        <span>Edit</span>
+                      </Button>
+                    ) : undefined
+                  }
+                />
+                <div className="settings-list-stack">
+                  <div className="stats-list">
+                    <div className="stat-item">
+                      <span>Organization name</span>
+                      <strong>{teamData?.organization?.name ?? team.organizationName ?? "—"}</strong>
+                    </div>
+                    <div className="stat-item">
+                      <span>Company / brand name</span>
+                      <strong>{invoiceStyle?.companyName ?? team.name ?? "—"}</strong>
+                    </div>
+                    <div className="stat-item">
+                      <span>Sender email</span>
+                      <strong>{invoiceStyle?.companyEmail ?? "—"}</strong>
+                    </div>
+                    <div className="stat-item">
+                      <span>Footer text</span>
+                      <strong>{invoiceStyle?.footerText ?? "— Stock Stay"}</strong>
+                    </div>
+                  </div>
+                  <div className="settings-summary-badges">
+                    <Badge tone="info">Primary {invoiceStyle?.primaryColor ?? "#2563eb"}</Badge>
+                    <Badge tone="neutral">Accent {invoiceStyle?.accentColor ?? "#1e40af"}</Badge>
+                    {team.invoiceLogoUrl ? <Badge tone="success">Logo configured</Badge> : null}
+                  </div>
+                  {!isOrgOwner ? (
+                    <p className="settings-helper-text">
+                      Contact your organization admin to update invoice branding and organization details.
+                    </p>
+                  ) : null}
+                </div>
+              </Card>
+            ) : null}
+          </>
+        ) : null}
+
+        {activeTab === "support" ? (
+          <Card>
+            <SectionHeader
+              title="Support"
+              description="Have a question or need help? Send us a message and we'll reply at support@stockstay.com."
+              compact
+              actions={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setShowSupportModal(true)}
+                  aria-label="Open contact support form"
+                >
+                  Contact support
+                </Button>
+              }
+            />
+            <div className="settings-support-copy">
+              <p>
+                Use the contact form to reach the Stock Stay team about setup questions, billing help,
+                feature feedback, or account issues.
+              </p>
+            </div>
+          </Card>
+        ) : null}
+      </div>
+
+      <Modal
+        open={showInviteModal}
+        onClose={() => setShowInviteModal(false)}
+        title="Invite team member"
+        maxWidth="520px"
+      >
+        <p className="modal-intro">Set the teammate's role and optional page or property limits.</p>
+        <form onSubmit={handleInviteSubmit} className="stacked-form">
+          <FormField label="Email" required>
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="email"
+                value={inviteEmail}
+                onChange={(e) => setInviteEmail(e.target.value)}
+                placeholder="teammate@example.com"
+                required
+              />
+            )}
+          </FormField>
+          {renderAccessForm(inviteAccess, setInviteAccess)}
+          {inviteError ? <p className="form-banner error">{inviteError}</p> : null}
+          {lastInviteLink ? (
+            <div className="settings-copy-block">
+              <FormField label="Invitation link">
+                {({ id, "aria-describedby": describedBy }) => (
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    readOnly
+                    value={lastInviteLink}
+                  />
                 )}
+              </FormField>
+              <div className="settings-actions">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    void navigator.clipboard.writeText(lastInviteLink);
+                  }}
+                >
+                  Copy
+                </Button>
               </div>
-            </form>
+            </div>
+          ) : null}
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setShowInviteModal(false)}>
+              {lastInviteLink ? "Done" : "Cancel"}
+            </Button>
+            {!lastInviteLink ? (
+              <Button type="submit" disabled={inviteSubmitting}>
+                {inviteSubmitting ? "Sending..." : "Send invitation"}
+              </Button>
+            ) : null}
           </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
-      {showOrgEditModal && (
-        <div className="modal-overlay" onClick={() => setShowOrgEditModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "480px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Edit organization</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => setShowOrgEditModal(false)}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
-              Update organization details and invoice branding used on emailed invoices.
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Organization name</span>
-                <input
-                  type="text"
-                  value={orgNameEdit}
-                  onChange={(e) => setOrgNameEdit(e.target.value)}
-                  placeholder="Organization name"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-              <div style={{ height: "1px", background: "rgba(148, 163, 184, 0.35)", margin: "4px 0" }} />
-              <p style={{ margin: 0, fontSize: "13px", fontWeight: 600, color: "#334155" }}>Invoice branding</p>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Company / brand name</span>
-                <input
-                  type="text"
-                  value={invoiceStyleForm.companyName}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyName: e.target.value }))}
-                  placeholder={team?.name ?? "Stock Stay"}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender address (appears on invoice)</span>
-                <textarea
-                  value={invoiceStyleForm.companyAddress}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyAddress: e.target.value }))}
-                  placeholder="123 Main St&#10;City, Province A1B 2C3"
-                  rows={3}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", resize: "vertical" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender phone</span>
-                <input
-                  type="text"
-                  value={invoiceStyleForm.companyPhone}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyPhone: e.target.value }))}
-                  placeholder="(555) 123-4567"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Sender email</span>
-                <input
-                  type="email"
-                  value={invoiceStyleForm.companyEmail}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, companyEmail: e.target.value }))}
-                  placeholder="billing@yourcompany.com"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Logo URL</span>
-                <input
-                  type="url"
-                  value={invoiceStyleForm.logoUrl}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, logoUrl: e.target.value }))}
-                  placeholder="https://example.com/logo.png"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-              <div style={{ display: "flex", gap: "12px", flexWrap: "wrap" }}>
-                <label style={{ flex: "1 1 120px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Primary color</span>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      type="color"
-                      value={invoiceStyleForm.primaryColor}
-                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, primaryColor: e.target.value }))}
-                      style={{ width: "40px", height: "36px", padding: 0, border: "1px solid rgba(148, 163, 184, 0.7)", borderRadius: "8px", cursor: "pointer" }}
-                    />
-                    <input
-                      type="text"
-                      value={invoiceStyleForm.primaryColor}
-                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, primaryColor: e.target.value }))}
-                      placeholder="#2563eb"
-                      style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontFamily: "monospace", fontSize: "13px" }}
-                    />
-                  </div>
-                </label>
-                <label style={{ flex: "1 1 120px" }}>
-                  <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Accent color</span>
-                  <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
-                    <input
-                      type="color"
-                      value={invoiceStyleForm.accentColor}
-                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, accentColor: e.target.value }))}
-                      style={{ width: "40px", height: "36px", padding: 0, border: "1px solid rgba(148, 163, 184, 0.7)", borderRadius: "8px", cursor: "pointer" }}
-                    />
-                    <input
-                      type="text"
-                      value={invoiceStyleForm.accentColor}
-                      onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, accentColor: e.target.value }))}
-                      placeholder="#1e40af"
-                      style={{ flex: 1, padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", fontFamily: "monospace", fontSize: "13px" }}
-                    />
-                  </div>
-                </label>
-              </div>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Footer text</span>
-                <input
-                  type="text"
-                  value={invoiceStyleForm.footerText}
-                  onChange={(e) => setInvoiceStyleForm((f) => ({ ...f, footerText: e.target.value }))}
-                  placeholder="— Stock Stay"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)" }}
-                />
-              </label>
-            </div>
-            <div className="form-actions" style={{ marginTop: "20px" }}>
-              <button type="button" className="secondary" onClick={() => setShowOrgEditModal(false)}>
-                Cancel
-              </button>
-              <button type="button" className="primary" onClick={handleSaveInvoiceStyle} disabled={invoiceStyleSaving}>
-                {invoiceStyleSaving ? "Saving..." : "Update"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showOrgEditModal}
+        onClose={() => setShowOrgEditModal(false)}
+        title="Edit organization"
+        maxWidth="480px"
+      >
+        <p className="modal-intro">
+          Update organization details and invoice branding used on emailed invoices.
+        </p>
+        <div className="stacked-form">
+          <FormField label="Organization name">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                value={orgNameEdit}
+                onChange={(e) => setOrgNameEdit(e.target.value)}
+                placeholder="Organization name"
+              />
+            )}
+          </FormField>
 
-      {showSupportModal && (
-        <div className="modal-overlay" onClick={() => !supportSending && setShowSupportModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "440px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Contact support</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => !supportSending && setShowSupportModal(false)}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
-              Send us a message and we'll get back to you at support@stockstay.com.
-            </p>
-            {supportResult && (
-              <p
-                style={{
-                  margin: "0 0 16px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  backgroundColor: supportResult.ok ? "#dcfce7" : "#fee2e2",
-                  color: supportResult.ok ? "#166534" : "#b91c1c",
-                }}
-              >
-                {supportResult.message}
-              </p>
-            )}
-            <form onSubmit={handleSupportSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
-                <input
-                  type="text"
-                  value={supportForm.name}
-                  onChange={(e) => setSupportForm((f) => ({ ...f, name: e.target.value }))}
-                  placeholder="Your name"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email *</span>
-                <input
-                  type="email"
-                  required
-                  value={supportForm.email}
-                  onChange={(e) => setSupportForm((f) => ({ ...f, email: e.target.value }))}
-                  placeholder="you@example.com"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
-                />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>What are you looking for? *</span>
-                <textarea
-                  required
-                  value={supportForm.message}
-                  onChange={(e) => setSupportForm((f) => ({ ...f, message: e.target.value }))}
-                  placeholder="Describe your question or issue..."
-                  rows={4}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", resize: "vertical", boxSizing: "border-box" }}
-                />
-              </label>
-              <div className="form-actions" style={{ marginTop: "8px" }}>
-                <button type="button" className="secondary" onClick={() => !supportSending && setShowSupportModal(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary" disabled={supportSending}>
-                  {supportSending ? "Sending…" : "Send"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+          <div className="settings-divider" />
+          <p className="settings-subsection-title">Invoice branding</p>
 
-      {(editingMember || editingInvitation) && (
-        <div className="modal-overlay" onClick={() => { setEditingMember(null); setEditingInvitation(null); }}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "520px", maxHeight: "90vh", overflowY: "auto" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>{editingMember ? "Edit member access" : "Edit invitation access"}</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => { setEditingMember(null); setEditingInvitation(null); }}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            {editingMember && (
-              <p style={{ color: "#64748b", marginBottom: "12px" }}>
-                {editingMember.email ?? editingMember.name ?? "Member"}
-              </p>
+          <FormField label="Company / brand name">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                value={invoiceStyleForm.companyName}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, companyName: e.target.value }))
+                }
+                placeholder={team?.name ?? "Stock Stay"}
+              />
             )}
-            {editingInvitation && (
-              <p style={{ color: "#64748b", marginBottom: "12px" }}>{editingInvitation.email}</p>
+          </FormField>
+          <FormField label="Sender address (appears on invoice)">
+            {({ id, "aria-describedby": describedBy }) => (
+              <textarea
+                id={id}
+                aria-describedby={describedBy}
+                value={invoiceStyleForm.companyAddress}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, companyAddress: e.target.value }))
+                }
+                placeholder={"123 Main St\nCity, Province A1B 2C3"}
+                rows={3}
+              />
             )}
-            {renderAccessForm(editAccess, setEditAccess)}
-            <div className="form-actions">
-              <button type="button" className="secondary" onClick={() => { setEditingMember(null); setEditingInvitation(null); }}>
-                Cancel
-              </button>
-              <button type="button" className="primary" onClick={handleSaveEdit} disabled={editSaving}>
-                {editSaving ? "Saving..." : "Save"}
-              </button>
-            </div>
+          </FormField>
+          <FormField label="Sender phone">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                value={invoiceStyleForm.companyPhone}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, companyPhone: e.target.value }))
+                }
+                placeholder="(555) 123-4567"
+              />
+            )}
+          </FormField>
+          <FormField label="Sender email">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="email"
+                value={invoiceStyleForm.companyEmail}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, companyEmail: e.target.value }))
+                }
+                placeholder="billing@yourcompany.com"
+              />
+            )}
+          </FormField>
+          <FormField label="Logo URL">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="url"
+                value={invoiceStyleForm.logoUrl}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, logoUrl: e.target.value }))
+                }
+                placeholder="https://example.com/logo.png"
+              />
+            )}
+          </FormField>
+          <div className="settings-color-grid">
+            <FormField label="Primary color">
+              {({ id, "aria-describedby": describedBy }) => (
+                <div className="settings-color-field">
+                  <input
+                    id={`${id}-picker`}
+                    type="color"
+                    className="settings-color-picker"
+                    value={invoiceStyleForm.primaryColor}
+                    onChange={(e) =>
+                      setInvoiceStyleForm((form) => ({ ...form, primaryColor: e.target.value }))
+                    }
+                    aria-label="Primary color picker"
+                  />
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={invoiceStyleForm.primaryColor}
+                    onChange={(e) =>
+                      setInvoiceStyleForm((form) => ({ ...form, primaryColor: e.target.value }))
+                    }
+                    placeholder="#2563eb"
+                    className="settings-color-code"
+                  />
+                </div>
+              )}
+            </FormField>
+            <FormField label="Accent color">
+              {({ id, "aria-describedby": describedBy }) => (
+                <div className="settings-color-field">
+                  <input
+                    id={`${id}-picker`}
+                    type="color"
+                    className="settings-color-picker"
+                    value={invoiceStyleForm.accentColor}
+                    onChange={(e) =>
+                      setInvoiceStyleForm((form) => ({ ...form, accentColor: e.target.value }))
+                    }
+                    aria-label="Accent color picker"
+                  />
+                  <input
+                    id={id}
+                    aria-describedby={describedBy}
+                    type="text"
+                    value={invoiceStyleForm.accentColor}
+                    onChange={(e) =>
+                      setInvoiceStyleForm((form) => ({ ...form, accentColor: e.target.value }))
+                    }
+                    placeholder="#1e40af"
+                    className="settings-color-code"
+                  />
+                </div>
+              )}
+            </FormField>
           </div>
+          <FormField label="Footer text">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                value={invoiceStyleForm.footerText}
+                onChange={(e) =>
+                  setInvoiceStyleForm((form) => ({ ...form, footerText: e.target.value }))
+                }
+                placeholder="— Stock Stay"
+              />
+            )}
+          </FormField>
         </div>
-      )}
+        <div className="form-actions settings-modal-actions">
+          <Button type="button" variant="secondary" onClick={() => setShowOrgEditModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={invoiceStyleSaving}
+            onClick={() => {
+              void handleSaveInvoiceStyle();
+            }}
+          >
+            {invoiceStyleSaving ? "Saving..." : "Update"}
+          </Button>
+        </div>
+      </Modal>
+
+      <Modal
+        open={showSupportModal}
+        onClose={closeSupportModal}
+        title="Contact support"
+        maxWidth="440px"
+        busy={supportSending}
+      >
+        <p className="modal-intro">
+          Send us a message and we'll get back to you at support@stockstay.com.
+        </p>
+        {supportResult ? (
+          <p className={`form-banner ${supportResult.ok ? "success" : "error"}`}>
+            {supportResult.message}
+          </p>
+        ) : null}
+        <form onSubmit={handleSupportSubmit} className="stacked-form">
+          <FormField label="Name">
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="text"
+                value={supportForm.name}
+                onChange={(e) => setSupportForm((form) => ({ ...form, name: e.target.value }))}
+                placeholder="Your name"
+              />
+            )}
+          </FormField>
+          <FormField label="Email" required>
+            {({ id, "aria-describedby": describedBy }) => (
+              <input
+                id={id}
+                aria-describedby={describedBy}
+                type="email"
+                required
+                value={supportForm.email}
+                onChange={(e) => setSupportForm((form) => ({ ...form, email: e.target.value }))}
+                placeholder="you@example.com"
+              />
+            )}
+          </FormField>
+          <FormField label="What are you looking for?" required>
+            {({ id, "aria-describedby": describedBy }) => (
+              <textarea
+                id={id}
+                aria-describedby={describedBy}
+                required
+                value={supportForm.message}
+                onChange={(e) => setSupportForm((form) => ({ ...form, message: e.target.value }))}
+                placeholder="Describe your question or issue..."
+                rows={4}
+              />
+            )}
+          </FormField>
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={closeSupportModal}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={supportSending}>
+              {supportSending ? "Sending..." : "Send"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(editingMember || editingInvitation)}
+        onClose={closeEditAccessModal}
+        title={editingMember ? "Edit member access" : "Edit invitation access"}
+        maxWidth="520px"
+      >
+        {editingMember ? (
+          <p className="modal-intro">{editingMember.email ?? editingMember.name ?? "Member"}</p>
+        ) : null}
+        {editingInvitation ? <p className="modal-intro">{editingInvitation.email}</p> : null}
+        <div className="stacked-form">
+          {renderAccessForm(editAccess, setEditAccess)}
+        </div>
+        <div className="form-actions settings-modal-actions">
+          <Button type="button" variant="secondary" onClick={closeEditAccessModal}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            disabled={editSaving}
+            onClick={() => {
+              void handleSaveEdit();
+            }}
+          >
+            {editSaving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </Modal>
     </div>
   );
 };
