@@ -447,6 +447,89 @@ function decimalToStringThreshold(value) {
   return decimalToString(value);
 }
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function thresholdMapKey(stockLocationId, supplyItemId) {
+  return `${stockLocationId}::${supplyItemId}`;
+}
+
+function parseReportDateInput(value, fieldName) {
+  const raw = typeof value === "string" ? value.trim() : "";
+  if (!raw) return null;
+  const parsed = DATE_ONLY_RE.test(raw) ? new Date(`${raw}T00:00:00.000Z`) : new Date(raw);
+  if (Number.isNaN(parsed.getTime())) {
+    throw new LedgerValidationError(`${fieldName} must be a valid date`);
+  }
+  return { parsed, isDateOnly: DATE_ONLY_RE.test(raw) };
+}
+
+function buildBusinessDateRange(fromDate, toDate) {
+  const from = parseReportDateInput(fromDate, "fromDate");
+  const to = parseReportDateInput(toDate, "toDate");
+
+  if (from && to && from.parsed.getTime() > to.parsed.getTime()) {
+    throw new LedgerValidationError("fromDate must be on or before toDate");
+  }
+
+  return {
+    from: from?.parsed ?? null,
+    to: to?.parsed ?? null,
+    toExclusive:
+      to && to.isDateOnly ? new Date(to.parsed.getTime() + 24 * 60 * 60 * 1000) : null,
+  };
+}
+
+function buildRangeFilter(range) {
+  const filter = {};
+  if (range.from) filter.gte = range.from;
+  if (range.toExclusive) {
+    filter.lt = range.toExclusive;
+  } else if (range.to) {
+    filter.lte = range.to;
+  }
+  return Object.keys(filter).length > 0 ? filter : null;
+}
+
+async function getOnHandBaseByLocationSupplyItem(teamId, stockLocationIds) {
+  const rows = await prisma.stockOnHand.findMany({
+    where: {
+      stockLocationId: stockLocationIds?.length ? { in: stockLocationIds } : undefined,
+      sku: { teamId, archivedAt: null },
+    },
+    select: {
+      stockLocationId: true,
+      quantity: true,
+      sku: { select: { supplyItemId: true, packSize: true } },
+    },
+  });
+
+  const totals = new Map();
+  for (const row of rows) {
+    const key = thresholdMapKey(row.stockLocationId, row.sku.supplyItemId);
+    const current = totals.get(key) || new Decimal(0);
+    totals.set(key, current.add(toDecimal(row.quantity).mul(toDecimal(row.sku.packSize))));
+  }
+  return totals;
+}
+
+function mapThresholdRow(row, onHandBase) {
+  const reorderPoint = toDecimal(row.reorderPoint);
+  return {
+    ...row,
+    reorderPoint: decimalToStringThreshold(row.reorderPoint),
+    reorderQuantity: decimalToStringThreshold(row.reorderQuantity),
+    onHandBase: decimalToStringThreshold(onHandBase),
+    isLow: reorderPoint.gt(0) && onHandBase.lte(reorderPoint),
+    supplyItem: row.supplyItem
+      ? {
+          ...row.supplyItem,
+          defaultReorderPoint: decimalToStringThreshold(row.supplyItem.defaultReorderPoint),
+          defaultReorderQuantity: decimalToStringThreshold(row.supplyItem.defaultReorderQuantity),
+        }
+      : undefined,
+  };
+}
+
 /**
  * On-hand base units for a supply item at a location (sum of packs × packSize).
  */
@@ -487,28 +570,50 @@ export const locationSupplyThresholdOps = {
       },
       orderBy: { updatedAt: "desc" },
     });
-    const mapped = [];
-    for (const r of rows) {
-      const onHandBase = await sumOnHandBaseAtLocation(stockLocationId, r.supplyItemId);
-      const reorderPoint = toDecimal(r.reorderPoint);
-      mapped.push({
-        ...r,
-        reorderPoint: decimalToStringThreshold(r.reorderPoint),
-        reorderQuantity: decimalToStringThreshold(r.reorderQuantity),
-        onHandBase: decimalToStringThreshold(onHandBase),
-        isLow: reorderPoint.gt(0) && onHandBase.lte(reorderPoint),
-        supplyItem: r.supplyItem
-          ? {
-              ...r.supplyItem,
-              defaultReorderPoint: decimalToStringThreshold(r.supplyItem.defaultReorderPoint),
-              defaultReorderQuantity: decimalToStringThreshold(
-                r.supplyItem.defaultReorderQuantity
-              ),
-            }
-          : undefined,
-      });
-    }
-    return mapped;
+    const onHandByKey = await getOnHandBaseByLocationSupplyItem(teamId, [stockLocationId]);
+    return rows.map((row) =>
+      mapThresholdRow(
+        row,
+        quantizeQty(onHandByKey.get(thresholdMapKey(stockLocationId, row.supplyItemId)) || 0)
+      )
+    );
+  },
+
+  async listByTeam(teamId) {
+    const rows = await prisma.locationSupplyThreshold.findMany({
+      where: {
+        stockLocation: { teamId, archivedAt: null },
+        supplyItem: { teamId, archivedAt: null },
+      },
+      include: {
+        stockLocation: { select: { id: true, name: true } },
+        supplyItem: {
+          select: {
+            id: true,
+            name: true,
+            category: true,
+            baseUnitId: true,
+            defaultReorderPoint: true,
+            defaultReorderQuantity: true,
+          },
+        },
+      },
+      orderBy: [{ stockLocationId: "asc" }, { updatedAt: "desc" }],
+    });
+
+    const onHandByKey = await getOnHandBaseByLocationSupplyItem(
+      teamId,
+      [...new Set(rows.map((row) => row.stockLocationId))]
+    );
+
+    return rows.map((row) =>
+      mapThresholdRow(
+        row,
+        quantizeQty(
+          onHandByKey.get(thresholdMapKey(row.stockLocationId, row.supplyItemId)) || 0
+        )
+      )
+    );
   },
 
   async upsert(teamId, stockLocationId, supplyItemId, { reorderPoint, reorderQuantity }) {
@@ -743,16 +848,14 @@ export const propertySupplyItemOps = {
 
 export const stockTransactionOps = {
   async findAllByTeam(teamId, opts = {}) {
-    const where = { teamId };
-    if (opts.entityType) where.entityType = opts.entityType;
-    if (opts.entityId) where.entityId = opts.entityId;
-    if (opts.postingId) where.postingId = opts.postingId;
-    if (opts.transactionType) where.transactionType = opts.transactionType;
-    if (opts.fromDate || opts.toDate) {
-      where.createdAt = {};
-      if (opts.fromDate) where.createdAt.gte = new Date(opts.fromDate);
-      if (opts.toDate) where.createdAt.lte = new Date(opts.toDate);
-    }
+    let entityType = opts.entityType;
+    let resolvedEntityIds =
+      opts.entityId !== undefined
+        ? Array.isArray(opts.entityId)
+          ? opts.entityId
+          : [opts.entityId]
+        : null;
+
     if (opts.skuId) {
       const sohWhere = { skuId: opts.skuId };
       if (opts.stockLocationId) sohWhere.stockLocationId = opts.stockLocationId;
@@ -761,14 +864,56 @@ export const stockTransactionOps = {
         select: { id: true },
       });
       if (hands.length === 0) return [];
-      where.entityType = "stock_on_hand";
-      where.entityId = hands.length === 1 ? hands[0].id : { in: hands.map((h) => h.id) };
+      entityType = "stock_on_hand";
+      resolvedEntityIds = hands.map((h) => h.id);
     }
-    const rows = await prisma.stockTransaction.findMany({
-      where,
-      orderBy: { createdAt: "desc" },
-      take: Math.min(opts.limit || 200, 1000),
-    });
+
+    const limit = Math.min(opts.limit || 200, 1000);
+    const dateRange =
+      opts.fromDate || opts.toDate ? buildBusinessDateRange(opts.fromDate, opts.toDate) : null;
+    const dateUpperExclusive = dateRange
+      ? dateRange.toExclusive ??
+        (dateRange.to ? new Date(dateRange.to.getTime() + 1) : null)
+      : null;
+
+    // The business date used for ordering/limiting is COALESCE(effectiveAt, createdAt),
+    // which Prisma's query builder cannot express directly. Select ordered IDs with raw
+    // SQL first (matching the same filters the old Prisma `where` applied), then fetch and
+    // format full rows via Prisma. This avoids truncating by createdAt before applying the
+    // real business-date order, which could otherwise drop/keep the wrong rows once the
+    // limit is hit.
+    const conditions = [Prisma.sql`"teamId" = ${teamId}`];
+    if (entityType) conditions.push(Prisma.sql`"entityType" = ${entityType}`);
+    if (resolvedEntityIds) {
+      if (resolvedEntityIds.length === 0) return [];
+      conditions.push(Prisma.sql`"entityId" IN (${Prisma.join(resolvedEntityIds)})`);
+    }
+    if (opts.postingId) conditions.push(Prisma.sql`"postingId" = ${opts.postingId}`);
+    if (opts.transactionType)
+      conditions.push(Prisma.sql`"transactionType" = ${opts.transactionType}`);
+    if (dateRange?.from)
+      conditions.push(Prisma.sql`COALESCE("effectiveAt", "createdAt") >= ${dateRange.from}`);
+    if (dateUpperExclusive)
+      conditions.push(Prisma.sql`COALESCE("effectiveAt", "createdAt") < ${dateUpperExclusive}`);
+
+    const whereSql = Prisma.join(conditions, " AND ");
+    const idRows = await prisma.$queryRaw`
+      SELECT "id"
+      FROM "StockTransaction"
+      WHERE ${whereSql}
+      ORDER BY COALESCE("effectiveAt", "createdAt") DESC, "createdAt" DESC
+      LIMIT ${limit}
+    `;
+    const ids = idRows.map((r) => r.id);
+    if (ids.length === 0) return [];
+    const rowsById = new Map(
+      (
+        await prisma.stockTransaction.findMany({
+          where: { id: { in: ids } },
+        })
+      ).map((r) => [r.id, r])
+    );
+    const rows = ids.map((id) => rowsById.get(id)).filter(Boolean);
     const userIds = [
       ...new Set(rows.map((r) => r.createdByUserId).filter((id) => typeof id === "string" && id)),
     ];

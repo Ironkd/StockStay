@@ -1,10 +1,11 @@
-import React, { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import React, { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { locationSupplyThresholdsApi, skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
 import { useProperties } from "../hooks/useProperties";
-import type { LocationLowStockRow, Sku, UnbilledLine } from "../types";
+import { useAuth } from "../contexts/useAuth";
+import type { Invoice, LocationLowStockRow, Sku, UnbilledLine } from "../types";
 import { SectionHeader } from "../components/ui/SectionHeader";
 
 const LowStockCategoryChart = lazy(() =>
@@ -13,41 +14,124 @@ const LowStockCategoryChart = lazy(() =>
   }))
 );
 
+const MAX_OVERDUE_INVOICES = 10;
+
+type OverdueInvoiceSummary = Invoice & {
+  daysOverdue: number;
+  dueDateLabel: string;
+  dueDateMs: number;
+};
+
+const parseDateAtLocalMidnight = (value: string): Date | null => {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  parsed.setHours(0, 0, 0, 0);
+  return parsed;
+};
+
 export const HomePage: React.FC = () => {
-  const { invoices } = useInvoices();
-  const { properties, isLoaded: propertiesLoaded } = useProperties();
+  const { user } = useAuth();
+  const {
+    invoices,
+    loading: invoicesLoading,
+    error: invoicesError,
+    refresh: refreshInvoices,
+  } = useInvoices();
+  const {
+    properties,
+    isLoaded: propertiesLoaded,
+    error: propertiesError,
+    refresh: refreshProperties,
+  } = useProperties();
   const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const [skus, setSkus] = useState<Sku[]>([]);
   const [statsLoaded, setStatsLoaded] = useState(false);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const isMountedRef = useRef(true);
+  const dashboardRequestIdRef = useRef(0);
+
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    dashboardRequestIdRef.current += 1;
+  }, []);
+
+  const loadDashboardStats = useCallback(async () => {
+    const requestId = ++dashboardRequestIdRef.current;
+    setStatsLoaded(false);
+    setStatsError(null);
+    try {
+      const [lows, unbilled, allSkus] = await Promise.all([
+        locationSupplyThresholdsApi.listLowStock(),
+        replenishmentApi.listUnbilled(),
+        skusApi.getAll(),
+      ]);
+      if (!isMountedRef.current || requestId !== dashboardRequestIdRef.current) {
+        return;
+      }
+      setLowStock(lows);
+      setUnbilledLines(unbilled);
+      setSkus(allSkus);
+      setStatsLoaded(true);
+    } catch (err) {
+      if (!isMountedRef.current || requestId !== dashboardRequestIdRef.current) {
+        return;
+      }
+      setStatsError(
+        err instanceof Error ? err.message : "Couldn't load dashboard data."
+      );
+    }
+  }, []);
 
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([
-      locationSupplyThresholdsApi.listLowStock(),
-      replenishmentApi.listUnbilled(),
-      skusApi.getAll(),
-    ])
-      .then(([lows, unbilled, allSkus]) => {
-        if (cancelled) return;
-        setLowStock(lows);
-        setUnbilledLines(unbilled);
-        setSkus(allSkus);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setLowStock([]);
-        setUnbilledLines([]);
-        setSkus([]);
-      })
-      .finally(() => {
-        if (!cancelled) setStatsLoaded(true);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    void loadDashboardStats();
+  }, [loadDashboardStats]);
+
+  const visibleProperties = useMemo(() => {
+    if (!user) return properties;
+    if (user.teamRole === "owner") return properties;
+    if (!user.allowedPropertyIds || user.allowedPropertyIds.length === 0) {
+      return properties;
+    }
+    return properties.filter((property) => user.allowedPropertyIds!.includes(property.id));
+  }, [properties, user]);
+
+  const hasPropertyRestrictions =
+    Boolean(user) &&
+    user?.teamRole !== "owner" &&
+    Boolean(user?.allowedPropertyIds && user.allowedPropertyIds.length > 0);
+
+  const allowedPropertyIds = useMemo(
+    () => new Set(visibleProperties.map((property) => property.id)),
+    [visibleProperties]
+  );
+
+  const visibleUnbilledLines = useMemo(() => {
+    if (!hasPropertyRestrictions) return unbilledLines;
+    return unbilledLines.filter((line) => {
+      const propertyId = line.property?.id;
+      return propertyId ? allowedPropertyIds.has(propertyId) : true;
+    });
+  }, [allowedPropertyIds, hasPropertyRestrictions, unbilledLines]);
+
+  const visibleInvoices = useMemo(() => {
+    if (!hasPropertyRestrictions) return invoices;
+    return invoices.filter((invoice) => {
+      const invoicePropertyIds = [
+        ...(invoice.lines?.map((line) => line.propertyId).filter((propertyId): propertyId is string => Boolean(propertyId)) ?? []),
+        ...(invoice.items?.map((item) => item.propertyId).filter((propertyId): propertyId is string => Boolean(propertyId)) ?? []),
+      ];
+      if (invoicePropertyIds.length === 0) {
+        return true;
+      }
+      return invoicePropertyIds.some((propertyId) =>
+        allowedPropertyIds.has(propertyId)
+      );
+    });
+  }, [allowedPropertyIds, hasPropertyRestrictions, invoices]);
 
   const stats = useMemo(() => {
     const categoryData = lowStock.reduce((acc, row) => {
@@ -71,44 +155,53 @@ export const HomePage: React.FC = () => {
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const overdueInvoices = invoices
-      .filter((invoice) => {
-        const dueDate = new Date(invoice.dueDate);
-        dueDate.setHours(0, 0, 0, 0);
-        return dueDate < today && invoice.status !== "paid";
-      })
-      .map((invoice) => {
-        const dueDate = new Date(invoice.dueDate);
-        dueDate.setHours(0, 0, 0, 0);
-        const daysOverdue = Math.floor(
-          (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24)
-        );
-        return { ...invoice, daysOverdue };
-      })
-      .sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-      .slice(0, 10);
+    let invalidOverdueDateCount = 0;
+    const allOverdueInvoices: OverdueInvoiceSummary[] = [];
 
-    const overdueTotal = overdueInvoices.reduce((sum, inv) => sum + inv.total, 0);
+    for (const invoice of visibleInvoices) {
+      if (invoice.status === "paid") continue;
+      const dueDate = parseDateAtLocalMidnight(invoice.dueDate);
+      if (!dueDate) {
+        invalidOverdueDateCount += 1;
+        continue;
+      }
+      if (dueDate >= today) continue;
+      const daysOverdue = Math.floor(
+        (today.getTime() - dueDate.getTime()) / (1000 * 60 * 60 * 24)
+      );
+      allOverdueInvoices.push({
+        ...invoice,
+        daysOverdue,
+        dueDateLabel: dueDate.toLocaleDateString(),
+        dueDateMs: dueDate.getTime(),
+      });
+    }
+
+    allOverdueInvoices.sort((a, b) => a.dueDateMs - b.dueDateMs);
+
+    const overdueTotal = allOverdueInvoices.reduce((sum, inv) => sum + inv.total, 0);
 
     return {
       lowStockCount: lowStock.length,
-      unbilledCount: unbilledLines.length,
+      unbilledCount: visibleUnbilledLines.length,
       hasStockOnHand,
-      propertyCount: properties.length,
+      propertyCount: visibleProperties.length,
       categoryChart,
-      overdueInvoices,
+      overdueInvoices: allOverdueInvoices.slice(0, MAX_OVERDUE_INVOICES),
       overdueTotal,
-      overdueCount: overdueInvoices.length,
+      overdueCount: allOverdueInvoices.length,
+      invalidOverdueDateCount,
     };
-  }, [lowStock, unbilledLines, skus, invoices, properties]);
+  }, [lowStock, visibleUnbilledLines, skus, visibleInvoices, visibleProperties]);
 
   const showOnboarding =
     statsLoaded &&
     propertiesLoaded &&
+    !propertiesError &&
     !stats.hasStockOnHand &&
     stats.propertyCount === 0;
 
-  if (!statsLoaded || !propertiesLoaded) {
+  if ((!statsLoaded && !statsError) || !propertiesLoaded || invoicesLoading) {
     return (
       <div className="home-page">
         <SectionHeader title="Dashboard" description="A quick view of stock, billing, and workspace activity." />
@@ -145,6 +238,16 @@ export const HomePage: React.FC = () => {
         }
       />
 
+      {propertiesError && (
+        <div className="empty-state" role="alert">
+          <p>Couldn&apos;t load properties.</p>
+          <p>{propertiesError}</p>
+          <button type="button" className="nav-button secondary" onClick={() => void refreshProperties()}>
+            Retry properties
+          </button>
+        </div>
+      )}
+
       {showOnboarding && (
         <section className="onboarding-checklist" aria-label="Getting started">
           <h3>Get started</h3>
@@ -166,55 +269,88 @@ export const HomePage: React.FC = () => {
         </section>
       )}
 
-      <div className="stats-grid">
-        <div
-          className="stat-card warning clickable-stat-card"
-          onClick={() => navigate("/stock")}
-          style={{ cursor: "pointer" }}
-        >
-          <div className="stat-icon">⚠️</div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.lowStockCount}</div>
-            <div className="stat-label">Location items low on stock</div>
-          </div>
+      {statsError ? (
+        <div className="empty-state" role="alert">
+          <p>Couldn&apos;t load dashboard data.</p>
+          <p>{statsError}</p>
+          <button type="button" className="nav-button secondary" onClick={() => void loadDashboardStats()}>
+            Retry dashboard data
+          </button>
         </div>
-        <div
-          className="stat-card clickable-stat-card"
-          onClick={() => navigate("/billing")}
-          style={{ cursor: "pointer" }}
-        >
-          <div className="stat-icon">🧾</div>
-          <div className="stat-content">
-            <div className="stat-value">{stats.unbilledCount}</div>
-            <div className="stat-label">Unbilled Lines</div>
-          </div>
-        </div>
-        {!stats.hasStockOnHand && (
-          <div
-            className="stat-card danger clickable-stat-card"
+      ) : (
+        <div className="stats-grid">
+          <button
+            type="button"
+            className="stat-card warning clickable-stat-card"
             onClick={() => navigate("/stock")}
-            style={{ cursor: "pointer" }}
+            aria-label={`View ${stats.lowStockCount} low stock location items`}
+            style={{ cursor: "pointer", width: "100%", textAlign: "left", outlineOffset: 2 }}
           >
-            <div className="stat-icon">📦</div>
+            <div className="stat-icon">⚠️</div>
             <div className="stat-content">
-              <div className="stat-value">0</div>
-              <div className="stat-label">No Packs On Hand — Receive Stock</div>
+              <div className="stat-value">{stats.lowStockCount}</div>
+              <div className="stat-label">Location items low on stock</div>
             </div>
-          </div>
-        )}
-      </div>
+          </button>
+          <button
+            type="button"
+            className="stat-card clickable-stat-card"
+            onClick={() => navigate("/billing")}
+            aria-label={`View ${stats.unbilledCount} unbilled lines`}
+            style={{ cursor: "pointer", width: "100%", textAlign: "left", outlineOffset: 2 }}
+          >
+            <div className="stat-icon">🧾</div>
+            <div className="stat-content">
+              <div className="stat-value">{stats.unbilledCount}</div>
+              <div className="stat-label">Unbilled Lines</div>
+            </div>
+          </button>
+          {!stats.hasStockOnHand && (
+            <button
+              type="button"
+              className="stat-card danger clickable-stat-card"
+              onClick={() => navigate("/stock")}
+              aria-label="Receive stock because there are no packs on hand"
+              style={{ cursor: "pointer", width: "100%", textAlign: "left", outlineOffset: 2 }}
+            >
+              <div className="stat-icon">📦</div>
+              <div className="stat-content">
+                <div className="stat-value">0</div>
+                <div className="stat-label">No Packs On Hand — Receive Stock</div>
+              </div>
+            </button>
+          )}
+        </div>
+      )}
 
       <div className="charts-row">
         <div className="chart-panel">
           <h3>Low stock by category</h3>
-          <Suspense fallback={<div className="empty-state">Loading chart…</div>}>
-            <LowStockCategoryChart data={stats.categoryChart} />
-          </Suspense>
+          {statsError ? (
+            <div className="empty-state" role="alert">
+              <p>Couldn&apos;t load low stock data.</p>
+              <button type="button" className="nav-button secondary" onClick={() => void loadDashboardStats()}>
+                Retry dashboard data
+              </button>
+            </div>
+          ) : (
+            <Suspense fallback={<div className="empty-state">Loading chart…</div>}>
+              <LowStockCategoryChart data={stats.categoryChart} />
+            </Suspense>
+          )}
         </div>
 
         <div className="chart-panel">
           <h3>Overdue Invoices</h3>
-          {stats.overdueInvoices.length > 0 ? (
+          {invoicesError ? (
+            <div className="empty-state" role="alert">
+              <p>Couldn&apos;t load overdue invoices.</p>
+              <p>{invoicesError}</p>
+              <button type="button" className="nav-button secondary" onClick={() => void refreshInvoices()}>
+                Retry invoices
+              </button>
+            </div>
+          ) : stats.overdueInvoices.length > 0 ? (
             <div className="overdue-invoices-section">
               <div className="overdue-summary">
                 <div className="overdue-stat">
@@ -243,7 +379,7 @@ export const HomePage: React.FC = () => {
                         <td>#{invoice.invoiceNumber}</td>
                         <td>{invoice.clientName}</td>
                         <td>
-                          {new Date(invoice.dueDate).toLocaleDateString()}
+                          {invoice.dueDateLabel}
                           <span className="days-overdue"> ({invoice.daysOverdue} days)</span>
                         </td>
                         <td className="amount-cell">${invoice.total.toFixed(2)}</td>
@@ -257,9 +393,26 @@ export const HomePage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
+              {stats.invalidOverdueDateCount > 0 && (
+                <p className="empty-state">
+                  {stats.invalidOverdueDateCount} invoice
+                  {stats.invalidOverdueDateCount === 1 ? "" : "s"} with invalid due date
+                  {stats.invalidOverdueDateCount === 1 ? " was" : " were"} skipped.
+                </p>
+              )}
             </div>
           ) : (
-            <div className="empty-state">No overdue invoices</div>
+            <div className="empty-state">
+              No overdue invoices
+              {stats.invalidOverdueDateCount > 0 && (
+                <>
+                  {" "}
+                  {stats.invalidOverdueDateCount} invoice
+                  {stats.invalidOverdueDateCount === 1 ? "" : "s"} with invalid due date
+                  {stats.invalidOverdueDateCount === 1 ? " was" : " were"} skipped.
+                </>
+              )}
+            </div>
           )}
         </div>
       </div>

@@ -659,6 +659,22 @@ app.get("/api/location-low-stock", authenticateToken, requireCatalogueRead, asyn
   }
 });
 
+app.get(
+  "/api/stock-location-supply-thresholds",
+  authenticateToken,
+  requireCatalogueRead,
+  async (req, res) => {
+    try {
+      const rows = await locationSupplyThresholdOps.listByTeam(req.currentUser.teamId);
+      res.json(rows);
+    } catch (error) {
+      if (mapStockDomainError(res, error)) return;
+      console.error("Error fetching team supply thresholds:", error);
+      res.status(500).json({ message: "Error fetching team supply thresholds" });
+    }
+  }
+);
+
 app.get("/api/stock-transactions", authenticateToken, requireCatalogueRead, async (req, res) => {
   try {
     const rows = await stockTransactionOps.findAllByTeam(req.currentUser.teamId, {
@@ -676,6 +692,7 @@ app.get("/api/stock-transactions", authenticateToken, requireCatalogueRead, asyn
     });
     res.json(rows);
   } catch (error) {
+    if (mapStockDomainError(res, error)) return;
     console.error("Error fetching stock transactions:", error);
     res.status(500).json({ message: "Error fetching stock transactions" });
   }

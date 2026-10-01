@@ -4,6 +4,7 @@ import {
   listClosedPeriods,
   invoiceLinesToCsvRows,
   buildInvoicesCsv,
+  createInvoiceWithRetry,
 } from "../../clientBilling.js";
 
 describe("clientBilling period math (E6-1 / E6-3)", () => {
@@ -93,5 +94,39 @@ describe("clientBilling CSV helpers (E6-6)", () => {
       },
     ]);
     expect(csv).toContain("invoiceNumber");
+  });
+});
+
+describe("clientBilling invoice numbering", () => {
+  it("retries invoice creation after a unique invoice-number conflict", async () => {
+    const attemptedNumbers = [];
+    const teamId = "team-1";
+    const year = new Date().getFullYear();
+    const tx = {
+      invoice: {
+        count: async () => 2,
+      },
+    };
+
+    const created = await createInvoiceWithRetry(
+      teamId,
+      async (invoiceNumber) => {
+        attemptedNumbers.push(invoiceNumber);
+        if (attemptedNumbers.length === 1) {
+          const error = new Error("duplicate invoice number");
+          error.code = "P2002";
+          error.meta = { target: ["teamId", "invoiceNumber"] };
+          throw error;
+        }
+        return { id: "inv-1", invoiceNumber };
+      },
+      { tx }
+    );
+
+    expect(attemptedNumbers).toEqual([
+      `INV-${year}-0003`,
+      `INV-${year}-0004`,
+    ]);
+    expect(created.invoiceNumber).toBe(`INV-${year}-0004`);
   });
 });

@@ -1,6 +1,42 @@
 import { apiRequest, API_BASE_URL } from "../config/api";
 import { Invoice } from "../types";
 
+export type InvoiceListParams = {
+  activePage?: number;
+  sentPage?: number;
+  pageSize?: number;
+  month?: number;
+  year?: number;
+};
+
+export type PaginatedInvoiceSlice = {
+  invoices: Invoice[];
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+};
+
+export type InvoiceListSummary = {
+  draftTotal: number;
+  draftCount: number;
+  outstandingTotal: number;
+  outstandingCount: number;
+  overdueTotal: number;
+  overdueCount: number;
+  issuedMonthTotal: number;
+  issuedMonthCount: number;
+  issuedYearTotal: number;
+  issuedYearCount: number;
+};
+
+export type PaginatedInvoiceListResponse = {
+  active: PaginatedInvoiceSlice;
+  sent: PaginatedInvoiceSlice;
+  soldByMonth: Invoice[];
+  summary: InvoiceListSummary;
+};
+
 function authHeaders(): HeadersInit {
   const token = sessionStorage.getItem("auth_token");
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -27,6 +63,19 @@ export const invoicesApi = {
     return apiRequest<Invoice[]>("/invoices");
   },
 
+  getPaginatedList: async (
+    params: InvoiceListParams = {}
+  ): Promise<PaginatedInvoiceListResponse> => {
+    const searchParams = new URLSearchParams();
+    searchParams.set("paginated", "true");
+    searchParams.set("activePage", String(params.activePage ?? 1));
+    searchParams.set("sentPage", String(params.sentPage ?? 1));
+    searchParams.set("pageSize", String(params.pageSize ?? 20));
+    if (params.month != null) searchParams.set("month", String(params.month));
+    if (params.year != null) searchParams.set("year", String(params.year));
+    return apiRequest<PaginatedInvoiceListResponse>(`/invoices?${searchParams.toString()}`);
+  },
+
   getById: async (id: string): Promise<Invoice> => {
     return apiRequest<Invoice>(`/invoices/${id}`);
   },
@@ -48,8 +97,8 @@ export const invoicesApi = {
     });
   },
 
-  delete: async (id: string): Promise<void> => {
-    return apiRequest<void>(`/invoices/${id}`, {
+  delete: async (id: string): Promise<{ message?: string; invoice?: Invoice }> => {
+    return apiRequest<{ message?: string; invoice?: Invoice }>(`/invoices/${id}`, {
       method: "DELETE",
     });
   },

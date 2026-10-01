@@ -1,6 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { apiRequest } from "../config/api";
 import {
-  locationSupplyThresholdsApi,
   skusApi,
   stockTransactionsApi,
 } from "../services/catalogueApi";
@@ -37,6 +37,14 @@ const transactionTypeLabel: Record<string, string> = {
   replenishment_in: "Replenishment in",
   invoice: "Invoice",
 };
+
+const REPORT_TRANSACTION_LIMIT = 1000;
+
+const getTransactionBusinessDate = (transaction: StockTransaction) =>
+  transaction.effectiveAt || transaction.createdAt;
+
+const listAllLocationSupplyThresholds = async (): Promise<LocationSupplyThreshold[]> =>
+  apiRequest<LocationSupplyThreshold[]>("/stock-location-supply-thresholds");
 
 function escapeCsvCell(value: string | number): string {
   const s = String(value ?? "");
@@ -82,6 +90,8 @@ export const ReportsPage: React.FC = () => {
   const [transactions, setTransactions] = useState<StockTransaction[]>([]);
   const [loadingStocks, setLoadingStocks] = useState(true);
   const [loadingTransactions, setLoadingTransactions] = useState(true);
+  const [stockError, setStockError] = useState<string | null>(null);
+  const [transactionsError, setTransactionsError] = useState<string | null>(null);
 
   const [locationFilter, setLocationFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -90,45 +100,103 @@ export const ReportsPage: React.FC = () => {
   const [transactionTypeFilter, setTransactionTypeFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
+  const isMountedRef = useRef(true);
+  const stockRequestIdRef = useRef(0);
+  const transactionRequestIdRef = useRef(0);
 
-  useEffect(() => {
-    Promise.all([stockLocationsApi.getAll(), skusApi.getAll()])
-      .then(async ([locs, allSkus]) => {
+  useEffect(() => () => {
+    isMountedRef.current = false;
+    stockRequestIdRef.current += 1;
+    transactionRequestIdRef.current += 1;
+  }, []);
+
+  const loadStocks = useCallback(() => {
+    const requestId = ++stockRequestIdRef.current;
+    setLoadingStocks(true);
+    setStockError(null);
+
+    Promise.all([stockLocationsApi.getAll(), skusApi.getAll(), listAllLocationSupplyThresholds()])
+      .then(([locs, allSkus, thresholds]) => {
+        if (!isMountedRef.current || requestId !== stockRequestIdRef.current) {
+          return;
+        }
         setLocations(locs);
         setSkus(allSkus);
-        const entries = await Promise.all(
-          locs.map(async (loc) => {
-            try {
-              const rows = await locationSupplyThresholdsApi.listByLocation(loc.id);
-              return [loc.id, rows] as const;
-            } catch {
-              return [loc.id, [] as LocationSupplyThreshold[]] as const;
-            }
-          })
-        );
-        setThresholdsByLocation(new Map(entries));
+        const entries = new Map<string, LocationSupplyThreshold[]>();
+        for (const loc of locs) {
+          entries.set(loc.id, []);
+        }
+        for (const row of thresholds) {
+          const current = entries.get(row.stockLocationId) || [];
+          current.push(row);
+          entries.set(row.stockLocationId, current);
+        }
+        for (const [locationId, rows] of entries) {
+          rows.sort((a, b) => {
+            const aName = a.supplyItem?.name || "";
+            const bName = b.supplyItem?.name || "";
+            return aName.localeCompare(bName, undefined, { sensitivity: "base" });
+          });
+          entries.set(locationId, rows);
+        }
+        setThresholdsByLocation(entries);
       })
       .catch(() => {
+        if (!isMountedRef.current || requestId !== stockRequestIdRef.current) {
+          return;
+        }
         setLocations([]);
         setSkus([]);
         setThresholdsByLocation(new Map());
+        setStockError("Failed to load location stock.");
       })
-      .finally(() => setLoadingStocks(false));
+      .finally(() => {
+        if (!isMountedRef.current || requestId !== stockRequestIdRef.current) {
+          return;
+        }
+        setLoadingStocks(false);
+      });
   }, []);
 
   useEffect(() => {
+    loadStocks();
+  }, [loadStocks]);
+
+  const loadTransactions = useCallback(() => {
+    const requestId = ++transactionRequestIdRef.current;
     setLoadingTransactions(true);
+    setTransactionsError(null);
     stockTransactionsApi
       .getAll({
         transactionType: transactionTypeFilter || undefined,
         fromDate: fromDate || undefined,
         toDate: toDate || undefined,
-        limit: 500,
+        limit: REPORT_TRANSACTION_LIMIT,
       })
-      .then(setTransactions)
-      .catch(() => setTransactions([]))
-      .finally(() => setLoadingTransactions(false));
+      .then((rows) => {
+        if (!isMountedRef.current || requestId !== transactionRequestIdRef.current) {
+          return;
+        }
+        setTransactions(rows);
+      })
+      .catch(() => {
+        if (!isMountedRef.current || requestId !== transactionRequestIdRef.current) {
+          return;
+        }
+        setTransactions([]);
+        setTransactionsError("Failed to load transactions.");
+      })
+      .finally(() => {
+        if (!isMountedRef.current || requestId !== transactionRequestIdRef.current) {
+          return;
+        }
+        setLoadingTransactions(false);
+      });
   }, [transactionTypeFilter, fromDate, toDate]);
+
+  useEffect(() => {
+    loadTransactions();
+  }, [loadTransactions]);
 
   const skuByStockOnHandId = useMemo(() => {
     const map = new Map<string, { sku: Sku; locationName: string }>();
@@ -343,6 +411,13 @@ export const ReportsPage: React.FC = () => {
         </div>
         {loadingStocks ? (
           <div className="empty-state">Loading location stock…</div>
+        ) : stockError ? (
+          <div className="empty-state report-empty">
+            <p>{stockError}</p>
+            <button type="button" className="secondary" onClick={loadStocks}>
+              Retry
+            </button>
+          </div>
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">
@@ -383,7 +458,7 @@ export const ReportsPage: React.FC = () => {
             </table>
           </div>
         )}
-        {!loadingStocks && locationOnHandRows.length === 0 && (
+        {!loadingStocks && !stockError && locationOnHandRows.length === 0 && (
           <div className="empty-state report-empty">No location stock matches the filters.</div>
         )}
       </section>
@@ -399,7 +474,7 @@ export const ReportsPage: React.FC = () => {
                 const rows = [
                   ["Date", "Type", "Entity", "Item", "Qty delta", "Reference"],
                   ...transactions.map((t) => [
-                    formatDate(t.createdAt),
+                    formatDate(getTransactionBusinessDate(t)),
                     transactionTypeLabel[t.transactionType] ?? t.transactionType,
                     t.entityType,
                     describeEntity(t),
@@ -459,6 +534,13 @@ export const ReportsPage: React.FC = () => {
         </div>
         {loadingTransactions ? (
           <div className="empty-state">Loading transactions…</div>
+        ) : transactionsError ? (
+          <div className="empty-state report-empty">
+            <p>{transactionsError}</p>
+            <button type="button" className="secondary" onClick={loadTransactions}>
+              Retry
+            </button>
+          </div>
         ) : transactions.length === 0 ? (
           <div className="empty-state report-empty">
             No transactions found. Receive stock, replenish properties, or adjust quantities to
@@ -479,7 +561,7 @@ export const ReportsPage: React.FC = () => {
               <tbody>
                 {transactions.map((t) => (
                   <tr key={t.id}>
-                    <td>{formatDate(t.createdAt)}</td>
+                    <td>{formatDate(getTransactionBusinessDate(t))}</td>
                     <td>{transactionTypeLabel[t.transactionType] ?? t.transactionType}</td>
                     <td>{describeEntity(t)}</td>
                     <td>

@@ -173,10 +173,66 @@ const invoiceInclude = {
   },
 };
 
-async function nextInvoiceNumber(teamId, tx = prisma) {
+function isInvoiceNumberConflict(error) {
+  return (
+    error?.code === "P2002" &&
+    Array.isArray(error?.meta?.target) &&
+    error.meta.target.includes("teamId") &&
+    error.meta.target.includes("invoiceNumber")
+  );
+}
+
+function invoiceSequenceFromNumber(invoiceNumber) {
+  const match = String(invoiceNumber || "").match(/(\d+)$/);
+  return match ? Number(match[1]) : 1;
+}
+
+async function nextInvoiceNumber(teamId, tx = prisma, { minSequence = 1 } = {}) {
   const count = await tx.invoice.count({ where: { teamId } });
+  const sequence = Math.max(count + 1, minSequence);
   const year = new Date().getFullYear();
-  return `INV-${year}-${String(count + 1).padStart(4, "0")}`;
+  return `INV-${year}-${String(sequence).padStart(4, "0")}`;
+}
+
+async function withRetrySavepoint(tx, attempt, work) {
+  if (typeof tx?.$executeRawUnsafe !== "function") {
+    return work();
+  }
+
+  const savepoint = `invoice_number_retry_${attempt}`;
+  await tx.$executeRawUnsafe(`SAVEPOINT ${savepoint}`);
+  try {
+    const result = await work();
+    await tx.$executeRawUnsafe(`RELEASE SAVEPOINT ${savepoint}`);
+    return result;
+  } catch (error) {
+    try {
+      await tx.$executeRawUnsafe(`ROLLBACK TO SAVEPOINT ${savepoint}`);
+    } catch {}
+    throw error;
+  }
+}
+
+export async function createInvoiceWithRetry(teamId, createInvoice, { tx = prisma, maxAttempts = 5 } = {}) {
+  let minSequence = 1;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    const invoiceNumber = await nextInvoiceNumber(teamId, tx, { minSequence });
+    try {
+      return await withRetrySavepoint(tx, attempt, () => createInvoice(invoiceNumber));
+    } catch (error) {
+      if (!isInvoiceNumberConflict(error)) {
+        throw error;
+      }
+      lastError = error;
+      minSequence = invoiceSequenceFromNumber(invoiceNumber) + 1;
+    }
+  }
+
+  throw new ClientBillingError("Unable to allocate a unique invoice number.", "CONFLICT", {
+    cause: lastError?.message || null,
+  });
 }
 
 /**
@@ -279,92 +335,95 @@ export async function generateDraftInvoicesForTeam(teamId, { clientId = null, as
 
       const invoice = await prisma.$transaction(async (tx) => {
         // Re-check inside tx
-        const exists = await tx.invoice.findFirst({
-          where: {
-            teamId,
-            clientId: client.id,
-            billingPeriodStart: period.start,
-            billingPeriodEnd: period.end,
-          },
-        });
-        if (exists) return null;
+            const exists = await tx.invoice.findFirst({
+              where: {
+                teamId,
+                clientId: client.id,
+                billingPeriodStart: period.start,
+                billingPeriodEnd: period.end,
+              },
+            });
+            if (exists) return null;
 
-        let subtotal = new Decimal(0);
-        const lineData = [];
-        let sortOrder = 0;
-        for (const rl of unbilled) {
-          const amount = new Decimal(rl.billBackAmount);
-          subtotal = subtotal.add(amount);
-          const qty = new Decimal(rl.baseQtyDeployed).abs();
-          const unitPrice =
-            qty.gt(0) ? amount.div(qty).toDecimalPlaces(6, Decimal.ROUND_HALF_UP) : new Decimal(0);
-          lineData.push({
-            propertyId: rl.replenishment.propertyId,
-            replenishmentLineId: rl.id,
-            description: buildLineDescription(rl),
-            quantity: qty,
-            unitPrice,
-            amount,
-            sortOrder: sortOrder++,
+            let subtotal = new Decimal(0);
+            const lineData = [];
+            let sortOrder = 0;
+            for (const rl of unbilled) {
+              const amount = new Decimal(rl.billBackAmount);
+              subtotal = subtotal.add(amount);
+              const qty = new Decimal(rl.baseQtyDeployed).abs();
+              const unitPrice =
+                qty.gt(0) ? amount.div(qty).toDecimalPlaces(6, Decimal.ROUND_HALF_UP) : new Decimal(0);
+              lineData.push({
+                propertyId: rl.replenishment.propertyId,
+                replenishmentLineId: rl.id,
+                description: buildLineDescription(rl),
+                quantity: qty,
+                unitPrice,
+                amount,
+                sortOrder: sortOrder++,
+              });
+            }
+
+            const taxRate = new Decimal(0);
+            const taxAmount = subtotal
+              .mul(taxRate)
+              .div(100)
+              .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+            const total = subtotal.add(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
+
+            const issueDate = DateTime.fromJSDate(period.end, { zone: "utc" })
+              .setZone(zone)
+              .toISODate();
+            const dueDate = DateTime.fromJSDate(period.end, { zone: "utc" })
+              .setZone(zone)
+              .plus({ days: 14 })
+              .toISODate();
+
+            const inv = await createInvoiceWithRetry(
+              teamId,
+              (invoiceNumber) =>
+                tx.invoice.create({
+                  data: {
+                    teamId,
+                    invoiceNumber,
+                    clientId: client.id,
+                    clientName: client.name,
+                    date: issueDate,
+                    dueDate,
+                    items: "[]",
+                    billingPeriodStart: period.start,
+                    billingPeriodEnd: period.end,
+                    taxRate,
+                    subtotal: subtotal.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
+                    tax: taxAmount.toFixed(2),
+                    total: total.toFixed(2),
+                    status: "draft",
+                    notes: "",
+                    lines: {
+                      create: lineData.map((l) => ({
+                        propertyId: l.propertyId,
+                        replenishmentLineId: l.replenishmentLineId,
+                        description: l.description,
+                        quantity: l.quantity,
+                        unitPrice: l.unitPrice,
+                        amount: l.amount,
+                        sortOrder: l.sortOrder,
+                      })),
+                    },
+                  },
+                  include: invoiceInclude,
+                }),
+              { tx }
+            );
+
+            await tx.replenishmentLine.updateMany({
+              where: { id: { in: unbilled.map((l) => l.id) } },
+              data: { invoiced: true },
+            });
+
+            return inv;
           });
-        }
-
-        const taxRate = new Decimal(0);
-        const taxAmount = subtotal
-          .mul(taxRate)
-          .div(100)
-          .toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-        const total = subtotal.add(taxAmount).toDecimalPlaces(2, Decimal.ROUND_HALF_UP);
-
-        const issueDate = DateTime.fromJSDate(period.end, { zone: "utc" })
-          .setZone(zone)
-          .toISODate();
-        const dueDate = DateTime.fromJSDate(period.end, { zone: "utc" })
-          .setZone(zone)
-          .plus({ days: 14 })
-          .toISODate();
-
-        const invoiceNumber = await nextInvoiceNumber(teamId, tx);
-
-        const inv = await tx.invoice.create({
-          data: {
-            teamId,
-            invoiceNumber,
-            clientId: client.id,
-            clientName: client.name,
-            date: issueDate,
-            dueDate,
-            items: "[]",
-            billingPeriodStart: period.start,
-            billingPeriodEnd: period.end,
-            taxRate,
-            subtotal: subtotal.toDecimalPlaces(2, Decimal.ROUND_HALF_UP).toFixed(2),
-            tax: taxAmount.toFixed(2),
-            total: total.toFixed(2),
-            status: "draft",
-            notes: "",
-            lines: {
-              create: lineData.map((l) => ({
-                propertyId: l.propertyId,
-                replenishmentLineId: l.replenishmentLineId,
-                description: l.description,
-                quantity: l.quantity,
-                unitPrice: l.unitPrice,
-                amount: l.amount,
-                sortOrder: l.sortOrder,
-              })),
-            },
-          },
-          include: invoiceInclude,
-        });
-
-        await tx.replenishmentLine.updateMany({
-          where: { id: { in: unbilled.map((l) => l.id) } },
-          data: { invoiced: true },
-        });
-
-        return inv;
-      });
 
       if (invoice) {
         created.push(mapInvoice(invoice));
@@ -457,11 +516,22 @@ export async function updateDraftInvoice(teamId, id, { taxRate, notes, status, d
     data.total = total.toFixed(2);
   }
 
-  const updated = await prisma.invoice.update({
-    where: { id },
-    data,
-    include: invoiceInclude,
+  const updated = await prisma.$transaction(async (tx) => {
+    const result = await tx.invoice.updateMany({
+      where: { id, teamId },
+      data,
+    });
+    if (result.count === 0) {
+      return null;
+    }
+    return tx.invoice.findFirst({
+      where: { id, teamId },
+      include: invoiceInclude,
+    });
   });
+  if (!updated) {
+    throw new ClientBillingError("Invoice not found", "NOT_FOUND");
+  }
   return mapInvoice(updated);
 }
 

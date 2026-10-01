@@ -649,9 +649,12 @@ export const invoiceOps = {
     return invoices.map(mapInvoiceRow);
   },
 
-  async findById(id) {
-    const invoice = await prisma.invoice.findUnique({
-      where: { id },
+  async findById(id, teamId) {
+    if (teamId == null || teamId === "") {
+      return null;
+    }
+    const invoice = await prisma.invoice.findFirst({
+      where: { id, teamId },
       include: invoiceLineInclude,
     });
     return mapInvoiceRow(invoice);
@@ -672,18 +675,40 @@ export const invoiceOps = {
     return mapInvoiceRow(invoice);
   },
 
-  async update(id, data) {
+  async update(id, teamId, data) {
+    if (teamId == null || teamId === "") {
+      return null;
+    }
     const payload = pickInvoiceFields(data, { includeTeamId: false });
-    const invoice = await prisma.invoice.update({
-      where: { id },
-      data: payload,
-      include: invoiceLineInclude,
+    const invoice = await prisma.$transaction(async (tx) => {
+      const result = await tx.invoice.updateMany({
+        where: { id, teamId },
+        data: payload,
+      });
+      if (result.count === 0) {
+        return null;
+      }
+      return tx.invoice.findFirst({
+        where: { id, teamId },
+        include: invoiceLineInclude,
+      });
     });
     return mapInvoiceRow(invoice);
   },
 
-  async delete(id) {
-    return await prisma.invoice.delete({ where: { id } });
+  async delete(id, teamId) {
+    if (teamId == null || teamId === "") {
+      return null;
+    }
+    const deleted = await prisma.$transaction(async (tx) => {
+      const invoice = await tx.invoice.findFirst({ where: { id, teamId } });
+      if (!invoice) {
+        return null;
+      }
+      const result = await tx.invoice.deleteMany({ where: { id, teamId } });
+      return result.count === 0 ? null : invoice;
+    });
+    return deleted;
   },
 };
 
