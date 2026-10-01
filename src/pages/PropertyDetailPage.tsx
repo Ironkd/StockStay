@@ -16,12 +16,21 @@ import { ReturnStockModal } from "../components/ReturnStockModal";
 import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
-import { Icon } from "../components/ui/Icon";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { supplyItemsApi } from "../services/catalogueApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { useAuth } from "../contexts/useAuth";
-import { SectionHeader } from "../components/ui/SectionHeader";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Icon,
+  Modal,
+  SectionHeader,
+} from "../components/ui";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -60,6 +69,7 @@ export const PropertyDetailPage: React.FC = () => {
   const [parEditId, setParEditId] = useState("");
   const [parEditValue, setParEditValue] = useState("");
   const [itemActionBusyId, setItemActionBusyId] = useState("");
+  const [removeTarget, setRemoveTarget] = useState<PropertySupplyItem | null>(null);
 
   const property = getPropertyById(id);
 
@@ -140,6 +150,16 @@ export const PropertyDetailPage: React.FC = () => {
   const linkedLocations = useMemo(
     () => stockLocations.filter((loc) => (loc.properties || []).some((p) => p.propertyId === id)),
     [stockLocations, id]
+  );
+
+  const availableLocationsToLink = useMemo(
+    () => stockLocations.filter((loc) => !linkedLocations.some((linked) => linked.id === loc.id)),
+    [linkedLocations, stockLocations]
+  );
+
+  const propertyClient = useMemo(
+    () => clients.find((client) => client.id === property?.clientId) ?? null,
+    [clients, property?.clientId]
   );
 
   const unbilledTotals = useMemo(() => {
@@ -225,14 +245,12 @@ export const PropertyDetailPage: React.FC = () => {
     }
   };
 
-  const handleRemoveStockedItem = async (row: PropertySupplyItem) => {
-    if (!id) return;
-    if (!window.confirm(`Remove ${row.supplyItem?.name || "this item"} from this property's stocked items?`)) {
-      return;
-    }
-    setItemActionBusyId(row.id);
+  const handleConfirmRemoveStockedItem = async () => {
+    if (!id || !removeTarget) return;
+    setItemActionBusyId(removeTarget.id);
     try {
-      await propertySupplyItemsApi.remove(id, row.supplyItemId);
+      await propertySupplyItemsApi.remove(id, removeTarget.supplyItemId);
+      setRemoveTarget(null);
       await refreshAll();
     } finally {
       setItemActionBusyId("");
@@ -250,21 +268,39 @@ export const PropertyDetailPage: React.FC = () => {
   if (!property || !canAccessProperty) {
     return (
       <div className="inventory-page">
-        <div className="empty-state">
-          <h3>Property not found</h3>
-          <p>
-            <Link to="/properties">Back to properties</Link>
-          </p>
-        </div>
+        <EmptyState
+          title="Property not found"
+          body={<Link to="/properties">Back to properties</Link>}
+        />
       </div>
     );
   }
 
   return (
     <div className="inventory-page">
-      <div style={{ marginBottom: "8px" }}>
-        <Link to="/properties" style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none" }}>
-          ← All properties
+      <ConfirmDialog
+        open={Boolean(removeTarget)}
+        title="Remove stocked item"
+        message={
+          removeTarget
+            ? `Remove ${removeTarget.supplyItem?.name || "this item"} from this property's stocked items?`
+            : ""
+        }
+        confirmLabel="Remove"
+        danger
+        busy={Boolean(removeTarget && itemActionBusyId === removeTarget.id)}
+        onConfirm={() => {
+          void handleConfirmRemoveStockedItem();
+        }}
+        onCancel={() => {
+          if (!itemActionBusyId) setRemoveTarget(null);
+        }}
+      />
+
+      <div className="property-page-back-link-row">
+        <Link to="/properties" className="property-page-back-link">
+          <Icon name="back" size={16} />
+          All properties
         </Link>
       </div>
 
@@ -274,65 +310,61 @@ export const PropertyDetailPage: React.FC = () => {
           <>
             {property.location || "—"}
             <br />
-            Client:{" "}
-            {clients.find((c) => c.id === property.clientId)?.name || (
-              <span style={{ color: "#b45309" }}>None assigned</span>
-            )}
+            Client: {propertyClient?.name || <Badge tone="warning">No billing client</Badge>}
             {property.markupPercentage != null && property.markupPercentage !== "" && (
-              <span style={{ color: "#64748b" }}> · Markup override {String(property.markupPercentage)}%</span>
+              <span className="property-meta-muted"> · Markup override {String(property.markupPercentage)}%</span>
             )}
           </>
         }
         actions={
           canWrite ? (
             <>
-            <button type="button" className="secondary" onClick={() => setShowEditModal(true)}>
-              Edit property
-            </button>
-            <button
-              type="button"
-              className="secondary"
-              onClick={() => {
-                setLinkLocationId("");
-                setLinkError("");
-                setShowLinkModal(true);
-              }}
-            >
-              Link location
-            </button>
+              <Button variant="secondary" onClick={() => setShowEditModal(true)}>
+                <Icon name="edit" size={16} />
+                Edit property
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => {
+                  setLinkLocationId("");
+                  setLinkError("");
+                  setShowLinkModal(true);
+                }}
+              >
+                <Icon name="add" size={16} />
+                Link location
+              </Button>
             </>
           ) : null
         }
       />
 
       {!property.clientId && (
-        <div style={{ padding: "10px 14px", borderRadius: "10px", background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e", fontSize: "13px", marginBottom: "16px" }}>
-          This property has no billing client. Assign one via Edit property before replenishing — bill-back can&apos;t be
-          queued without a client.
+        <div className="property-warning-banner">
+          This property has no billing client. Assign one via Edit property before replenishing — bill-back can&apos;t be queued without a client.
         </div>
       )}
 
       <div className="stock-toolbar property-secondary-actions">
         {canWrite && (
           <>
-            <button type="button" className="add-property-button" onClick={() => setShowReturnModal(true)}>
+            <Button variant="secondary" onClick={() => setShowReturnModal(true)}>
               Return
-            </button>
-            <button type="button" className="add-property-button" onClick={() => setShowTransferModal(true)}>
+            </Button>
+            <Button variant="secondary" onClick={() => setShowTransferModal(true)}>
               Transfer
-            </button>
+            </Button>
           </>
         )}
-        <button
-          type="button"
-          className="secondary"
+        <Button
+          variant="ghost"
           onClick={() => navigate(`/billing?propertyId=${property.id}`)}
         >
           View on Billing
-        </button>
+        </Button>
       </div>
 
-      <section className="panel property-allocation-panel">
+      <Card className="property-allocation-panel">
         <SectionHeader
           title="Stocked items"
           description="The supply items this property is stocked with. Allocate stock without re-selecting the property, and see what's gone out since the last invoice."
@@ -341,45 +373,49 @@ export const PropertyDetailPage: React.FC = () => {
 
         {canWrite && (
           <form className="property-add-item-form" onSubmit={handleAddStockedItem}>
-            <label>
-              <span>Add a stocked item</span>
-              <select
-                value={addItemSupplyItemId}
-                onChange={(e) => setAddItemSupplyItemId(e.target.value)}
-              >
-                <option value="">
-                  {availableItemsToAdd.length === 0 ? "All supply items already added" : "Select supply item…"}
-                </option>
-                {availableItemsToAdd.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name}
+            <FormField label="Add a stocked item" className="property-add-item-field">
+              {(inputProps) => (
+                <select
+                  {...inputProps}
+                  value={addItemSupplyItemId}
+                  onChange={(e) => setAddItemSupplyItemId(e.target.value)}
+                >
+                  <option value="">
+                    {availableItemsToAdd.length === 0 ? "All supply items already added" : "Select supply item…"}
                   </option>
-                ))}
-              </select>
-            </label>
-            <label>
-              <span>Par quantity</span>
-              <input
-                type="number"
-                min="0"
-                step="any"
-                placeholder="Optional"
-                value={addItemParQty}
-                onChange={(e) => setAddItemParQty(e.target.value)}
-              />
-            </label>
-            <button type="submit" className="secondary" disabled={addItemBusy || !addItemSupplyItemId}>
+                  {availableItemsToAdd.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+            <FormField label="Par quantity" className="property-add-item-field" hint="Optional">
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="Optional"
+                  value={addItemParQty}
+                  onChange={(e) => setAddItemParQty(e.target.value)}
+                />
+              )}
+            </FormField>
+            <Button type="submit" variant="secondary" size="sm" disabled={addItemBusy || !addItemSupplyItemId}>
               {addItemBusy ? "Adding…" : "Add item"}
-            </button>
+            </Button>
           </form>
         )}
-        {addItemError && <p style={{ color: "#b91c1c", fontSize: "13px" }}>{addItemError}</p>}
+        {addItemError && <p className="property-form-error">{addItemError}</p>}
 
         {sortedStockedItems.length === 0 ? (
-          <div className="empty-state">
-            <h3>No stocked items yet</h3>
-            <p>Add the supply items this property receives, so everyone can see what it&apos;s stocked with at a glance.</p>
-          </div>
+          <EmptyState
+            title="No stocked items yet"
+            body="Add the supply items this property receives, so everyone can see what it's stocked with at a glance."
+          />
         ) : (
           <div className="property-supply-grid">
             {sortedStockedItems.map((item) => {
@@ -390,16 +426,18 @@ export const PropertyDetailPage: React.FC = () => {
                 <article key={item.id} className="property-supply-card">
                   <div className="property-supply-card-header">
                     <strong>{item.supplyItem?.name || "Supply item"}</strong>
-                    {canWrite && (
-                      <button
+                    {canWrite ? (
+                      <Button
                         type="button"
+                        variant="ghost"
+                        size="sm"
                         className="property-supply-card-remove"
-                        onClick={() => handleRemoveStockedItem(item)}
+                        onClick={() => setRemoveTarget(item)}
                         disabled={isBusy}
                       >
                         Remove
-                      </button>
-                    )}
+                      </Button>
+                    ) : null}
                   </div>
                   <p>
                     {allocated > 0.000001
@@ -419,12 +457,12 @@ export const PropertyDetailPage: React.FC = () => {
                           onChange={(e) => setParEditValue(e.target.value)}
                           autoFocus
                         />
-                        <button type="button" className="secondary" onClick={() => handleSaveParEdit(item)} disabled={isBusy}>
+                        <Button type="button" variant="secondary" size="sm" onClick={() => handleSaveParEdit(item)} disabled={isBusy}>
                           Save
-                        </button>
-                        <button type="button" className="icon-button" onClick={() => setParEditId("")} aria-label="Cancel">
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setParEditId("")} aria-label="Cancel">
                           <Icon name="close" size={16} />
-                        </button>
+                        </Button>
                       </div>
                     ) : (
                       <button
@@ -438,40 +476,46 @@ export const PropertyDetailPage: React.FC = () => {
                     )}
                   </div>
                   {canWrite ? (
-                    <button
+                    <Button
                       type="button"
-                      className="secondary"
+                      variant="secondary"
+                      size="sm"
                       onClick={() => {
                         setReplenishSupplyItemId(item.supplyItemId);
                         setShowReplenishModal(true);
                       }}
                     >
                       {allocated > 0.000001 ? "Allocate more" : "Allocate stock"}
-                    </button>
+                    </Button>
                   ) : null}
                 </article>
               );
             })}
           </div>
         )}
-      </section>
+      </Card>
 
-      <section className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-          <h3 style={{ margin: 0 }}>Unbilled lines ({propertyUnbilled.length})</h3>
-          <Link to={`/billing?propertyId=${property.id}`} style={{ fontSize: "13px" }}>
-            View on Billing →
-          </Link>
-        </div>
+      <Card>
+        <SectionHeader
+          title={`Unbilled lines (${propertyUnbilled.length})`}
+          compact
+          actions={
+            <Link to={`/billing?propertyId=${property.id}`} className="property-inline-link">
+              View on Billing
+            </Link>
+          }
+        />
         {propertyUnbilled.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "14px" }}>No unbilled charges or credits for this property.</p>
+          <EmptyState
+            title="No unbilled lines"
+            body="No unbilled charges or credits for this property."
+          />
         ) : (
           <>
-            <p style={{ fontSize: "14px" }}>
-              Charges ${unbilledTotals.charges.toFixed(2)} · Credits ${unbilledTotals.credits.toFixed(2)} · Net $
-              {unbilledTotals.net.toFixed(2)}
+            <p className="property-unbilled-summary">
+              Charges ${unbilledTotals.charges.toFixed(2)} · Credits ${unbilledTotals.credits.toFixed(2)} · Net ${unbilledTotals.net.toFixed(2)}
             </p>
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-wrapper">
               <table className="inventory-table">
                 <thead>
                   <tr>
@@ -488,7 +532,7 @@ export const PropertyDetailPage: React.FC = () => {
                       <td>{line.isCredit ? "Credit" : "Charge"}</td>
                       <td>{line.supplyItem?.name || line.sku?.name || "—"}</td>
                       <td>{Number(line.baseQtyDeployed).toFixed(2)}</td>
-                      <td style={{ color: line.isCredit ? "#b91c1c" : undefined }}>
+                      <td className={line.isCredit ? "property-unbilled-amount property-unbilled-amount-credit" : "property-unbilled-amount"}>
                         ${Number(line.billBackAmount).toFixed(2)}
                       </td>
                       <td>{new Date(line.createdAt).toLocaleDateString()}</td>
@@ -499,86 +543,87 @@ export const PropertyDetailPage: React.FC = () => {
             </div>
           </>
         )}
-      </section>
+      </Card>
 
-      <section className="panel">
-        <h3 style={{ marginTop: 0 }}>Recent moves</h3>
+      <Card>
+        <SectionHeader title="Recent moves" compact />
         {propertyMoves.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "14px" }}>No replenishments, returns, or transfers yet.</p>
+          <EmptyState
+            title="No recent moves"
+            body="No replenishments, returns, or transfers yet."
+          />
         ) : (
-          <ul style={{ margin: 0, paddingLeft: "18px", fontSize: "14px" }}>
+          <ul className="property-moves-list">
             {propertyMoves.map((r) => {
               const isTransfer = !!r.transferGroupId;
               const label = isTransfer ? (r.direction === "return" ? "transfer out" : "transfer in") : r.direction;
               return (
                 <li key={r.id}>
                   <strong>{label}</strong>
-                  {isTransfer ? " · pass-through" : ""} · {r.stockLocation?.name || "Location"} ·{" "}
-                  {(r.lines || []).length} line(s) · {new Date(r.createdAt).toLocaleString()}
+                  {isTransfer ? " · pass-through" : ""} · {r.stockLocation?.name || "Location"} · {(r.lines || []).length} line(s) · {new Date(r.createdAt).toLocaleString()}
                 </li>
               );
             })}
           </ul>
         )}
-      </section>
+      </Card>
 
-      {showEditModal && (
-        <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Edit property</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => setShowEditModal(false)}
-                aria-label="Close"
+      <Modal
+        open={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        title="Edit property"
+        maxWidth="720px"
+      >
+        <PropertyForm
+          key={property.id}
+          initialValues={property}
+          clients={clients}
+          stockLocations={stockLocations}
+          onSubmit={handlePropertySubmit}
+          onCancel={() => setShowEditModal(false)}
+        />
+      </Modal>
+
+      <Modal
+        open={showLinkModal}
+        onClose={() => {
+          if (!linkBusy) setShowLinkModal(false);
+        }}
+        title="Link stock location"
+        maxWidth="420px"
+        busy={linkBusy}
+      >
+        <form className="stacked-form" onSubmit={handleLinkLocation}>
+          <p className="modal-intro">
+            Link an existing stock location so this property can replenish from it.
+          </p>
+          <FormField label="Stock location" required error={linkError || undefined}>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={linkLocationId}
+                onChange={(e) => setLinkLocationId(e.target.value)}
+                required
               >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <PropertyForm
-              key={property.id}
-              initialValues={property}
-              clients={clients}
-              stockLocations={stockLocations}
-              onSubmit={handlePropertySubmit}
-              onCancel={() => setShowEditModal(false)}
-            />
+                <option value="">Select…</option>
+                {availableLocationsToLink.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setShowLinkModal(false)} disabled={linkBusy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={linkBusy}>
+              {linkBusy ? "Linking…" : "Link"}
+            </Button>
           </div>
-        </div>
-      )}
-
-      {showLinkModal && (
-        <div className="modal-overlay" onClick={() => !linkBusy && setShowLinkModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
-            <h3 style={{ marginTop: 0 }}>Link stock location</h3>
-            <form className="inventory-form" onSubmit={handleLinkLocation}>
-              <label>
-                <span>Stock location *</span>
-                <select value={linkLocationId} onChange={(e) => setLinkLocationId(e.target.value)} required>
-                  <option value="">Select…</option>
-                  {stockLocations
-                    .filter((loc) => !linkedLocations.some((l) => l.id === loc.id))
-                    .map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.name}
-                      </option>
-                    ))}
-                </select>
-              </label>
-              {linkError && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{linkError}</p>}
-              <div className="form-actions">
-                <button type="button" className="secondary" onClick={() => setShowLinkModal(false)} disabled={linkBusy}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={linkBusy}>
-                  {linkBusy ? "Linking…" : "Link"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+        </form>
+      </Modal>
 
       {showReplenishModal && (
         <ReplenishModal

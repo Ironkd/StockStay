@@ -5,14 +5,21 @@ import { useProperties } from "../hooks/useProperties";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { PropertyForm } from "../components/PropertyForm";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
 import { supplyItemsApi } from "../services/catalogueApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
-import { SectionHeader } from "../components/ui/SectionHeader";
-import { Icon } from "../components/ui/Icon";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  Icon,
+  Modal,
+  SectionHeader,
+} from "../components/ui";
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -172,98 +179,73 @@ export const PropertiesPage: React.FC = () => {
           if (!deleteBusy) setDeleteTarget(null);
         }}
       />
+
       <SectionHeader
         title="Properties"
         description="Deploy stock to properties and bill clients back for what they use."
         actions={
           canWrite ? (
-            <button type="button" className="add-property-button" onClick={handleAddProperty}>
-              + Add property
-            </button>
+            <Button onClick={handleAddProperty}>
+              <Icon name="add" size={16} />
+              Add property
+            </Button>
           ) : null
         }
       />
 
-      {showUpgradeModal && (
-        <div className="modal-overlay" onClick={() => setShowUpgradeModal(false)}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-              <h3>Property limit reached</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => setShowUpgradeModal(false)}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <p style={{ marginBottom: "20px" }}>
-              You can&apos;t add more properties on your current plan (limit: {maxProperties}). Click below to upgrade your plan and get more properties.
-            </p>
-            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-              <button type="button" className="secondary" onClick={() => setShowUpgradeModal(false)}>
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="primary"
-                onClick={() => {
-                  setShowUpgradeModal(false);
-                  navigate("/settings");
-                }}
-              >
-                Upgrade your plan
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={showUpgradeModal}
+        onClose={() => setShowUpgradeModal(false)}
+        title="Property limit reached"
+        maxWidth="480px"
+      >
+        <p className="modal-intro">
+          You can&apos;t add more properties on your current plan (limit: {maxProperties}). Upgrade your plan to unlock more properties.
+        </p>
+        <div className="form-actions">
+          <Button variant="secondary" onClick={() => setShowUpgradeModal(false)}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => {
+              setShowUpgradeModal(false);
+              navigate("/settings");
+            }}
+          >
+            Upgrade your plan
+          </Button>
         </div>
-      )}
+      </Modal>
 
-      {showPropertyModal && (
-        <div className="modal-overlay" onClick={handleCancelPropertyEdit}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>{editingProperty ? "Edit Property" : "Add property"}</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={handleCancelPropertyEdit}
-                aria-label="Close"
-              >
-                <Icon name="close" size={16} />
-              </button>
-            </div>
-            <PropertyForm
-              key={editingProperty ? editingProperty.id : "new"}
-              initialValues={editingProperty ?? undefined}
-              clients={clients}
-              stockLocations={stockLocations}
-              supplyItems={supplyItems}
-              supplyItemsLoading={supplyItemsLoading}
-              supplyItemsLoadError={supplyItemsLoadError}
-              onSubmit={handlePropertySubmit}
-              onCancel={handleCancelPropertyEdit}
-            />
-          </div>
-        </div>
-      )}
+      <Modal
+        open={showPropertyModal}
+        onClose={handleCancelPropertyEdit}
+        title={editingProperty ? "Edit property" : "Add property"}
+        maxWidth="720px"
+      >
+        <PropertyForm
+          key={editingProperty ? editingProperty.id : "new"}
+          initialValues={editingProperty ?? undefined}
+          clients={clients}
+          stockLocations={stockLocations}
+          supplyItems={supplyItems}
+          supplyItemsLoading={supplyItemsLoading}
+          supplyItemsLoadError={supplyItemsLoadError}
+          onSubmit={handlePropertySubmit}
+          onCancel={handleCancelPropertyEdit}
+        />
+      </Modal>
 
-      <section className="panel">
+      <Card>
         {visibleProperties.length === 0 ? (
-          <div className="empty-state">
-            <h3>No properties yet</h3>
-            <p>Add your first property to start replenishing and billing clients back.</p>
-            <div style={{ marginTop: "12px" }}>
-              {canWrite && (
-                <button type="button" className="add-property-button" onClick={handleAddProperty}>
-                  + Add property
-                </button>
-              )}
-            </div>
-          </div>
+          <EmptyState
+            title="No properties yet"
+            body="Add your first property to start replenishing and billing clients back."
+            primaryLabel={canWrite ? "Add property" : undefined}
+            onPrimary={canWrite ? handleAddProperty : undefined}
+          />
         ) : (
-          <div style={{ overflowX: "auto" }}>
+          <div className="table-wrapper">
             <table className="inventory-table">
               <thead>
                 <tr>
@@ -271,45 +253,47 @@ export const PropertiesPage: React.FC = () => {
                   <th>Location</th>
                   <th>Client</th>
                   <th>Linked stock locations</th>
-                  <th></th>
+                  <th aria-label="Actions" />
                 </tr>
               </thead>
               <tbody>
                 {visibleProperties.map((property) => (
                   <tr
                     key={property.id}
+                    className="property-table-row"
                     onClick={() => navigate(`/properties/${property.id}`)}
-                    style={{ cursor: "pointer" }}
                   >
                     <td>{property.name}</td>
                     <td>{property.location || "—"}</td>
                     <td>
                       {clientName(property.clientId) || (
-                        <span style={{ color: "#b45309" }}>No billing client</span>
+                        <Badge tone="warning">No billing client</Badge>
                       )}
                     </td>
                     <td>{locationCountByProperty.get(property.id) || 0}</td>
                     <td>
-                      {canWrite && (
-                        <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                          <button
-                            type="button"
-                            className="icon-button"
+                      {canWrite ? (
+                        <div className="property-table-actions">
+                          <Button
+                            variant="ghost"
+                            size="sm"
                             title="Edit"
                             onClick={(e) => handleEditProperty(property, e)}
                           >
                             <Icon name="edit" size={16} />
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button"
+                            Edit
+                          </Button>
+                          <Button
+                            variant="danger"
+                            size="sm"
                             title="Delete"
                             onClick={(e) => handleDeleteProperty(property, e)}
                           >
                             <Icon name="delete" size={16} />
-                          </button>
+                            Delete
+                          </Button>
                         </div>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 ))}
@@ -317,7 +301,7 @@ export const PropertiesPage: React.FC = () => {
             </table>
           </div>
         )}
-      </section>
+      </Card>
     </div>
   );
 };

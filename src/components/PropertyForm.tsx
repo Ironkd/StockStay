@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from "react";
+import React from "react";
 import { Client, Property, PropertyFormValues, StockLocation, SupplyItem } from "../types";
+import { Button, FormField, Icon } from "./ui";
 
 type Props = {
   initialValues?: Property;
@@ -34,7 +35,7 @@ export const PropertyForm: React.FC<Props> = ({
   onSubmit,
   onCancel,
 }) => {
-  const [values, setValues] = useState<PropertyFormValues>(() =>
+  const [values, setValues] = React.useState<PropertyFormValues>(() =>
     initialValues
       ? {
           name: initialValues.name,
@@ -57,20 +58,21 @@ export const PropertyForm: React.FC<Props> = ({
                 : [],
         }
   );
-  const [creatingClient, setCreatingClient] = useState(false);
-  const [newClientName, setNewClientName] = useState("");
-  const [newClientEmail, setNewClientEmail] = useState("");
-  const [newClientMarkup, setNewClientMarkup] = useState("0");
-  const [busy, setBusy] = useState(false);
-  const [stockedItemsOpen, setStockedItemsOpen] = useState(false);
-  const [stockedSupplyItems, setStockedSupplyItems] = useState<
+  const [creatingClient, setCreatingClient] = React.useState(false);
+  const [newClientName, setNewClientName] = React.useState("");
+  const [newClientEmail, setNewClientEmail] = React.useState("");
+  const [newClientMarkup, setNewClientMarkup] = React.useState("0");
+  const [busy, setBusy] = React.useState(false);
+  const [stockedItemsOpen, setStockedItemsOpen] = React.useState(false);
+  const [stockedSupplyItems, setStockedSupplyItems] = React.useState<
     Array<{ supplyItemId: string; parQuantity: string }>
   >([]);
+
   const activeSupplyItems = supplyItems
     .filter((item) => !item.archivedAt)
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
 
-  useEffect(() => {
+  React.useEffect(() => {
     if (initialValues) return;
     if (values.stockLocationIds?.length) return;
     if (defaultStockLocationIds?.length) {
@@ -131,8 +133,7 @@ export const PropertyForm: React.FC<Props> = ({
       return;
     }
     const markupRaw = values.markupPercentage;
-    const markup =
-      markupRaw === "" || markupRaw == null ? null : Number(markupRaw);
+    const markup = markupRaw === "" || markupRaw == null ? null : Number(markupRaw);
     if (markup != null && !Number.isFinite(markup)) {
       alert("Markup must be a number.");
       return;
@@ -189,117 +190,121 @@ export const PropertyForm: React.FC<Props> = ({
   return (
     <form className="inventory-form" onSubmit={handleSubmit}>
       <div className="form-grid">
-        <label>
-          <span>Property Name *</span>
-          <input
-            name="name"
-            value={values.name}
-            onChange={handleChange}
-            placeholder="e.g. Main Property"
-            required
-          />
-        </label>
+        <FormField label="Property name" required>
+          {(inputProps) => (
+            <input
+              {...inputProps}
+              name="name"
+              value={values.name}
+              onChange={handleChange}
+              placeholder="e.g. Main Property"
+              required
+            />
+          )}
+        </FormField>
 
-        <label>
-          <span>Location *</span>
-          <input
-            name="location"
-            value={values.location}
-            onChange={handleChange}
-            placeholder="e.g. 123 Main St, City, State"
-            required
-          />
-        </label>
+        <FormField label="Location" required>
+          {(inputProps) => (
+            <input
+              {...inputProps}
+              name="location"
+              value={values.location}
+              onChange={handleChange}
+              placeholder="e.g. 123 Main St, City, State"
+              required
+            />
+          )}
+        </FormField>
 
-        <label>
-          <span>Billing client</span>
-          <select
-            name="clientId"
-            value={creatingClient ? "__new__" : values.clientId || ""}
-            onChange={(e) => {
-              if (e.target.value === "__new__") {
-                setCreatingClient(true);
-                setValues((prev) => ({ ...prev, clientId: null }));
-                return;
-              }
-              handleChange(e);
-            }}
-          >
-            <option value="">None (needed to replenish)</option>
-            <option value="__new__">Create new client…</option>
-            {clients.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <FormField label="Billing client">
+          {(inputProps) => (
+            <select
+              {...inputProps}
+              name="clientId"
+              value={creatingClient ? "__new__" : values.clientId || ""}
+              onChange={(e) => {
+                if (e.target.value === "__new__") {
+                  setCreatingClient(true);
+                  setValues((prev) => ({ ...prev, clientId: null }));
+                  return;
+                }
+                handleChange(e);
+              }}
+            >
+              <option value="">None (needed to replenish)</option>
+              <option value="__new__">Create new client…</option>
+              {clients.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          )}
+        </FormField>
 
-        <label>
-          <span>Markup % override</span>
-          <input
-            name="markupPercentage"
-            type="number"
-            step="any"
-            value={values.markupPercentage ?? ""}
-            onChange={handleChange}
-            placeholder="Use client default if blank"
-          />
-        </label>
+        <FormField label="Markup % override" hint="Use client default if blank">
+          {(inputProps) => (
+            <input
+              {...inputProps}
+              name="markupPercentage"
+              type="number"
+              step="any"
+              value={values.markupPercentage ?? ""}
+              onChange={handleChange}
+              placeholder="Use client default if blank"
+            />
+          )}
+        </FormField>
       </div>
 
       {creatingClient && (
-        <div
-          className="form-grid"
-          style={{
-            marginTop: "12px",
-            padding: "12px",
-            background: "#f8fafc",
-            borderRadius: "8px",
-          }}
-        >
-          <label>
-            <span>Client name *</span>
-            <input
-              value={newClientName}
-              onChange={(e) => setNewClientName(e.target.value)}
-              placeholder="Client or company name"
-              required
-            />
-          </label>
-          <label>
-            <span>Client email *</span>
-            <input
-              type="email"
-              value={newClientEmail}
-              onChange={(e) => setNewClientEmail(e.target.value)}
-              placeholder="billing@example.com"
-              required
-            />
-          </label>
-          <label>
-            <span>Default markup %</span>
-            <input
-              type="number"
-              step="any"
-              value={newClientMarkup}
-              onChange={(e) => setNewClientMarkup(e.target.value)}
-            />
-          </label>
+        <div className="form-grid property-form-new-client">
+          <FormField label="Client name" required>
+            {(inputProps) => (
+              <input
+                {...inputProps}
+                value={newClientName}
+                onChange={(e) => setNewClientName(e.target.value)}
+                placeholder="Client or company name"
+                required
+              />
+            )}
+          </FormField>
+          <FormField label="Client email" required>
+            {(inputProps) => (
+              <input
+                {...inputProps}
+                type="email"
+                value={newClientEmail}
+                onChange={(e) => setNewClientEmail(e.target.value)}
+                placeholder="billing@example.com"
+                required
+              />
+            )}
+          </FormField>
+          <FormField label="Default markup %">
+            {(inputProps) => (
+              <input
+                {...inputProps}
+                type="number"
+                step="any"
+                value={newClientMarkup}
+                onChange={(e) => setNewClientMarkup(e.target.value)}
+              />
+            )}
+          </FormField>
         </div>
       )}
 
       {!initialValues && stockLocations.length > 0 && (
-        <div style={{ marginTop: "16px" }}>
-          <strong style={{ display: "block", marginBottom: "8px" }}>
-            Link stock locations
-          </strong>
-          <p style={{ margin: "0 0 8px", fontSize: "13px", color: "#64748b" }}>
+        <fieldset className="property-form-linked-locations">
+          <legend className="property-form-section-title">Link stock locations</legend>
+          <p className="property-form-section-copy">
             Defaults to Central supply so you can replenish without a separate link step.
           </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+          <div className="property-form-location-list">
             {stockLocations.map((loc) => (
-              <label key={loc.id} style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+              <label key={loc.id} className="property-form-location-option">
                 <input
                   type="checkbox"
                   checked={(values.stockLocationIds || []).includes(loc.id)}
@@ -309,7 +314,7 @@ export const PropertyForm: React.FC<Props> = ({
               </label>
             ))}
           </div>
-        </div>
+        </fieldset>
       )}
 
       {!initialValues && (
@@ -321,7 +326,10 @@ export const PropertyForm: React.FC<Props> = ({
             aria-controls="property-create-stocked-items-content"
             onClick={() => setStockedItemsOpen((open) => !open)}
           >
-            <span>Set up stocked items (optional)</span>
+            <span className="property-create-stocked-items-toggle-copy">
+              <Icon name={stockedItemsOpen ? "chevron-down" : "chevron-right"} size={16} />
+              <span>Set up stocked items (optional)</span>
+            </span>
             <span className="property-create-stocked-items-summary">
               {stockedSupplyItems.length > 0
                 ? `${stockedSupplyItems.length} selected`
@@ -348,36 +356,36 @@ export const PropertyForm: React.FC<Props> = ({
               ) : (
                 <div className="property-create-stocked-items-list">
                   {activeSupplyItems.map((item) => {
-                      const selected = stockedSupplyItems.find(
-                        (stockedItem) => stockedItem.supplyItemId === item.id
-                      );
-                      return (
-                        <div key={item.id} className="property-create-stocked-item">
-                          <label>
+                    const selected = stockedSupplyItems.find(
+                      (stockedItem) => stockedItem.supplyItemId === item.id
+                    );
+                    return (
+                      <div key={item.id} className="property-create-stocked-item">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={Boolean(selected)}
+                            onChange={() => toggleStockedItem(item.id)}
+                          />
+                          <span>{item.name}</span>
+                        </label>
+                        {selected && (
+                          <label className="property-create-stocked-item-par">
+                            <span>Par quantity</span>
                             <input
-                              type="checkbox"
-                              checked={Boolean(selected)}
-                              onChange={() => toggleStockedItem(item.id)}
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={selected.parQuantity}
+                              onChange={(event) =>
+                                updateStockedItemPar(item.id, event.target.value)
+                              }
                             />
-                            <span>{item.name}</span>
                           </label>
-                          {selected && (
-                            <label className="property-create-stocked-item-par">
-                              <span>Par quantity</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={selected.parQuantity}
-                                onChange={(event) =>
-                                  updateStockedItemPar(item.id, event.target.value)
-                                }
-                              />
-                            </label>
-                          )}
-                        </div>
-                      );
-                    })}
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -387,13 +395,13 @@ export const PropertyForm: React.FC<Props> = ({
 
       <div className="form-actions">
         {onCancel && (
-          <button type="button" className="secondary" onClick={onCancel} disabled={busy}>
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={busy}>
             Cancel
-          </button>
+          </Button>
         )}
-        <button type="submit" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           {busy ? "Saving…" : initialValues ? "Save changes" : "Add property"}
-        </button>
+        </Button>
       </div>
     </form>
   );
