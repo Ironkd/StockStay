@@ -1,8 +1,9 @@
 import React, { useState } from "react";
-import { Link, useNavigate, useLocation, Navigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Button, FormField, Icon, Modal } from "../components/ui";
 import { useAuth } from "../contexts/useAuth";
-import { authApi } from "../services/authApi";
 import { track } from "../lib/analytics";
+import { authApi } from "../services/authApi";
 
 const PASSWORD_MIN_LENGTH = 8;
 const PASSWORD_HAS_UPPER = /[A-Z]/;
@@ -37,24 +38,15 @@ function PasswordToggle({
   onToggle: () => void;
 }) {
   return (
-    <button
+    <Button
       type="button"
+      variant="ghost"
       className="password-toggle"
       onClick={onToggle}
       aria-label={show ? "Hide password" : "Show password"}
     >
-      {show ? (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"></path>
-          <line x1="1" y1="1" x2="23" y2="23"></line>
-        </svg>
-      ) : (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-          <circle cx="12" cy="12" r="3"></circle>
-        </svg>
-      )}
-    </button>
+      <Icon name={show ? "eye-off" : "eye"} size={20} />
+    </Button>
   );
 }
 
@@ -245,9 +237,7 @@ export const LoginPage: React.FC = () => {
         setForgotPasswordMessage("");
       }, 5000);
     } catch (err) {
-      setForgotPasswordMessage(
-        err instanceof Error ? err.message : "Something went wrong. Please try again."
-      );
+      setForgotPasswordMessage(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     }
   };
 
@@ -259,10 +249,7 @@ export const LoginPage: React.FC = () => {
     <div className="login-container">
       <div className="login-card">
         <Link to="/" className="login-home-button" aria-label="Go to home">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-            <polyline points="9 22 9 12 15 12 15 22" />
-          </svg>
+          <Icon name="home" size={18} />
           Home
         </Link>
         <img src="/logo.png" alt="StockStay" className="login-logo" />
@@ -270,45 +257,49 @@ export const LoginPage: React.FC = () => {
           <span className="brand-stock">Stock</span>
           <span className="brand-stay">Stay</span>
         </h1>
-        <p className="login-subtitle">
-          {isSignUpMode ? "Create your free account" : "Sign in to continue"}
-        </p>
+        <p className="login-subtitle">{isSignUpMode ? "Create your free account" : "Sign in to continue"}</p>
 
-        {showEmailAlreadyRegisteredPopup ? (
-          <div className="modal-overlay" onClick={() => setShowEmailAlreadyRegisteredPopup(false)} role="dialog" aria-modal="true" aria-labelledby="email-registered-title">
-            <div className="modal-content email-already-registered-popup" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "400px" }}>
-              <h2 id="email-registered-title" className="email-registered-title">Your email is already registered</h2>
-              <p className="email-registered-text">Sign in with your password, or reset it if you don&apos;t remember it.</p>
-              <div className="email-registered-actions">
-                <button
-                  type="button"
-                  className="login-button"
-                  onClick={() => {
-                    setShowEmailAlreadyRegisteredPopup(false);
-                    setForgotPasswordEmail(email);
-                    setShowForgotPassword(true);
-                  }}
-                >
-                  Forgot password?
-                </button>
-                <button
-                  type="button"
-                  className="login-button secondary"
-                  onClick={() => setShowEmailAlreadyRegisteredPopup(false)}
-                >
-                  Close
-                </button>
-              </div>
-            </div>
+        <Modal
+          open={showEmailAlreadyRegisteredPopup}
+          onClose={() => setShowEmailAlreadyRegisteredPopup(false)}
+          className="modal-content email-already-registered-popup"
+          maxWidth={400}
+        >
+          <h2 id="email-registered-title" className="email-registered-title">
+            Your email is already registered
+          </h2>
+          <p className="email-registered-text">Sign in with your password, or reset it if you don&apos;t remember it.</p>
+          <div className="email-registered-actions">
+            <Button
+              type="button"
+              className="login-button"
+              onClick={() => {
+                setShowEmailAlreadyRegisteredPopup(false);
+                setForgotPasswordEmail(email);
+                setShowForgotPassword(true);
+              }}
+            >
+              Forgot password?
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              className="login-button"
+              onClick={() => setShowEmailAlreadyRegisteredPopup(false)}
+            >
+              Close
+            </Button>
           </div>
-        ) : !showForgotPassword ? (
+        </Modal>
+
+        {!showForgotPassword ? (
           signupSuccess ? (
             <div className="login-form signup-success-view">
               <div className="success-message" role="alert">
                 {signupSuccess}
               </div>
               <p className="signup-success-hint">Check your inbox for the verification link, then sign in below.</p>
-              <button
+              <Button
                 type="button"
                 className="login-button"
                 onClick={() => {
@@ -317,238 +308,249 @@ export const LoginPage: React.FC = () => {
                 }}
               >
                 Sign in
-              </button>
+              </Button>
             </div>
           ) : (
-          <form onSubmit={handleSubmit} className="login-form">
-            {resetSuccessMessage && (
-              <div className="forgot-password-message success">{resetSuccessMessage}</div>
-            )}
-            {!inviteToken && trialStartedFromUrl && (
-              <div className="forgot-password-message success" role="alert">
-                Your trial is active. Verify your email to sign in.
-              </div>
-            )}
-            {error && <div className="error-message">{error}</div>}
-
-            {isSignUpMode && (
-              <>
-                <p className="invite-signup-hint" style={{ fontSize: "13px", color: "#64748b", marginBottom: "8px" }}>
-                  {isInviteSignup
-                    ? "You're signing up to join a team. No payment required."
-                    : "You'll start on the Free plan. Upgrade anytime from Settings after you sign in."}
-                </p>
-                <label>
-                  <span>First name</span>
-                  <input
-                    type="text"
-                    value={firstName}
-                    onChange={(e) => setFirstName(e.target.value)}
-                    placeholder="First name"
-                    required
-                    autoFocus
-                  />
-                </label>
-                <label>
-                  <span>Last name</span>
-                  <input
-                    type="text"
-                    value={lastName}
-                    onChange={(e) => setLastName(e.target.value)}
-                    placeholder="Last name"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Password</span>
-                  <div className="password-input-wrapper">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="8+ chars, upper, lower, number, symbol"
-                      required
-                      minLength={8}
-                    />
-                    <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
-                  </div>
-                </label>
-                <label>
-                  <span>Confirm password</span>
-                  <div className="password-input-wrapper">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      placeholder="Re-enter your password"
-                      required
-                      minLength={8}
-                    />
-                    <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
-                  </div>
-                </label>
-                <p className="password-requirements">
-                  At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
-                </p>
-                <label className="trial-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={agreeToTerms}
-                    onChange={(e) => setAgreeToTerms(e.target.checked)}
-                    required
-                  />
-                  <span>
-                    I agree to the{" "}
-                    <Link to="/terms" target="_blank" rel="noopener noreferrer">
-                      Terms of Service
-                    </Link>{" "}
-                    and{" "}
-                    <Link to="/privacy" target="_blank" rel="noopener noreferrer">
-                      Privacy Policy
-                    </Link>
-                  </span>
-                </label>
-                <button type="submit" className="login-button" disabled={loading}>
-                  {loading ? "Creating account..." : "Create free account"}
-                </button>
-              </>
-            )}
-
-            {!isSignUpMode && (
-              <>
-                <label>
-                  <span>Email</span>
-                  <input
-                    type="email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    placeholder="your@email.com"
-                    required
-                    autoFocus
-                  />
-                </label>
-                <label>
-                  <span>Password</span>
-                  <div className="password-input-wrapper">
-                    <input
-                      type={showPassword ? "text" : "password"}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Enter your password"
-                      required
-                    />
-                    <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
-                  </div>
-                </label>
-                <div className="forgot-password-link">
-                  <button
-                    type="button"
-                    onClick={() => setShowForgotPassword(true)}
-                    className="forgot-password-button"
-                  >
-                    Forgot Password?
-                  </button>
+            <form onSubmit={handleSubmit} className="login-form">
+              {resetSuccessMessage && <div className="forgot-password-message success">{resetSuccessMessage}</div>}
+              {!inviteToken && trialStartedFromUrl && (
+                <div className="forgot-password-message success" role="alert">
+                  Your trial is active. Verify your email to sign in.
                 </div>
-                <button type="submit" className="login-button" disabled={loading}>
-                  {loading ? "Signing in..." : "Sign In"}
-                </button>
-              </>
-            )}
+              )}
+              {error && <div className="error-message">{error}</div>}
 
-            <div className="auth-switch">
-              {isSignUpMode ? (
+              {isSignUpMode && (
                 <>
-                  <span>Already have an account?</span>
-                  <button
-                    type="button"
-                    className="auth-switch-button"
-                    onClick={() => {
-                      setIsSignUpMode(false);
-                      setSignupSuccess("");
-                    }}
-                  >
-                    Sign in
-                  </button>
-                </>
-              ) : (
-                <>
-                  <span>Don&apos;t have an account?</span>
-                  <button
-                    type="button"
-                    className="auth-switch-button"
-                    onClick={() => {
-                      setIsSignUpMode(true);
-                      setShowForgotPassword(false);
-                      setSignupSuccess("");
-                    }}
-                  >
-                    Sign up
-                  </button>
+                  <p className="invite-signup-hint">
+                    {isInviteSignup
+                      ? "You're signing up to join a team. No payment required."
+                      : "You'll start on the Free plan. Upgrade anytime from Settings after you sign in."}
+                  </p>
+                  <FormField label="First name" required>
+                    {(inputProps) => (
+                      <input
+                        {...inputProps}
+                        type="text"
+                        value={firstName}
+                        onChange={(e) => setFirstName(e.target.value)}
+                        placeholder="First name"
+                        required
+                        autoFocus
+                      />
+                    )}
+                  </FormField>
+                  <FormField label="Last name" required>
+                    {(inputProps) => (
+                      <input
+                        {...inputProps}
+                        type="text"
+                        value={lastName}
+                        onChange={(e) => setLastName(e.target.value)}
+                        placeholder="Last name"
+                        required
+                      />
+                    )}
+                  </FormField>
+                  <FormField label="Email" required>
+                    {(inputProps) => (
+                      <input
+                        {...inputProps}
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        required
+                      />
+                    )}
+                  </FormField>
+                  <FormField label="Password" required>
+                    {(inputProps) => (
+                      <div className="password-input-wrapper">
+                        <input
+                          {...inputProps}
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="8+ chars, upper, lower, number, symbol"
+                          required
+                          minLength={8}
+                        />
+                        <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
+                      </div>
+                    )}
+                  </FormField>
+                  <FormField label="Confirm password" required>
+                    {(inputProps) => (
+                      <div className="password-input-wrapper">
+                        <input
+                          {...inputProps}
+                          type={showPassword ? "text" : "password"}
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          placeholder="Re-enter your password"
+                          required
+                          minLength={8}
+                        />
+                        <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
+                      </div>
+                    )}
+                  </FormField>
+                  <p className="password-requirements">
+                    At least 8 characters, with uppercase, lowercase, a number, and a symbol (e.g. !@#$%^&*).
+                  </p>
+                  <label className="trial-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={agreeToTerms}
+                      onChange={(e) => setAgreeToTerms(e.target.checked)}
+                      required
+                    />
+                    <span>
+                      I agree to the{" "}
+                      <Link to="/terms" target="_blank" rel="noopener noreferrer">
+                        Terms of Service
+                      </Link>{" "}
+                      and{" "}
+                      <Link to="/privacy" target="_blank" rel="noopener noreferrer">
+                        Privacy Policy
+                      </Link>
+                    </span>
+                  </label>
+                  <Button type="submit" className="login-button" disabled={loading}>
+                    {loading ? "Creating account..." : "Create free account"}
+                  </Button>
                 </>
               )}
-            </div>
-          </form>
+
+              {!isSignUpMode && (
+                <>
+                  <FormField label="Email" required>
+                    {(inputProps) => (
+                      <input
+                        {...inputProps}
+                        type="email"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        placeholder="your@email.com"
+                        required
+                        autoFocus
+                      />
+                    )}
+                  </FormField>
+                  <FormField label="Password" required>
+                    {(inputProps) => (
+                      <div className="password-input-wrapper">
+                        <input
+                          {...inputProps}
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Enter your password"
+                          required
+                        />
+                        <PasswordToggle show={showPassword} onToggle={() => setShowPassword(!showPassword)} />
+                      </div>
+                    )}
+                  </FormField>
+                  <div className="forgot-password-link">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      onClick={() => setShowForgotPassword(true)}
+                      className="forgot-password-button"
+                    >
+                      Forgot Password?
+                    </Button>
+                  </div>
+                  <Button type="submit" className="login-button" disabled={loading}>
+                    {loading ? "Signing in..." : "Sign In"}
+                  </Button>
+                </>
+              )}
+
+              <div className="auth-switch">
+                {isSignUpMode ? (
+                  <>
+                    <span>Already have an account?</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="auth-switch-button"
+                      onClick={() => {
+                        setIsSignUpMode(false);
+                        setSignupSuccess("");
+                      }}
+                    >
+                      Sign in
+                    </Button>
+                  </>
+                ) : (
+                  <>
+                    <span>Don&apos;t have an account?</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="auth-switch-button"
+                      onClick={() => {
+                        setIsSignUpMode(true);
+                        setShowForgotPassword(false);
+                        setSignupSuccess("");
+                      }}
+                    >
+                      Sign up
+                    </Button>
+                  </>
+                )}
+              </div>
+            </form>
           )
         ) : (
           <form onSubmit={handleForgotPassword} className="login-form">
             <h2>Reset Password</h2>
             <p className="forgot-password-text">
-              Enter your email address and we&apos;ll send you instructions to reset
-              your password.
+              Enter your email address and we&apos;ll send you instructions to reset your password.
             </p>
 
             {forgotPasswordMessage && (
-              <div
-                className={`forgot-password-message ${
-                  forgotPasswordMessage.includes("sent")
-                    ? "success"
-                    : "error"
-                }`}
-              >
+              <div className={`forgot-password-message ${forgotPasswordMessage.includes("sent") ? "success" : "error"}`}>
                 {forgotPasswordMessage}
               </div>
             )}
 
-            <label>
-              <span>Email</span>
-              <input
-                type="email"
-                value={forgotPasswordEmail}
-                onChange={(e) => setForgotPasswordEmail(e.target.value)}
-                placeholder="your@email.com"
-                required
-                autoFocus
-              />
-            </label>
+            <FormField label="Email" required>
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  type="email"
+                  value={forgotPasswordEmail}
+                  onChange={(e) => setForgotPasswordEmail(e.target.value)}
+                  placeholder="your@email.com"
+                  required
+                  autoFocus
+                />
+              )}
+            </FormField>
 
             <div className="forgot-password-actions">
-              <button
+              <Button
                 type="button"
+                variant="secondary"
+                className="login-button"
                 onClick={() => {
                   setShowForgotPassword(false);
                   setForgotPasswordEmail("");
                   setForgotPasswordMessage("");
                 }}
-                className="login-button secondary"
               >
                 Cancel
-              </button>
-              <button type="submit" className="login-button">
+              </Button>
+              <Button type="submit" className="login-button">
                 Send Reset Link
-              </button>
+              </Button>
             </div>
           </form>
-        ) }
+        )}
       </div>
     </div>
   );

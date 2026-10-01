@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Badge, Button, Icon } from "../components/ui";
 import { fetchPlansConfig } from "../services/plansApi";
-import { Icon } from "../components/ui/Icon";
 import type { PlansConfig } from "../types";
 
 function formatCap(n: number | null | undefined, unlimitedLabel = "Unlimited"): string {
@@ -21,16 +21,14 @@ export const PricingPage: React.FC = () => {
       .catch((err) => setError(err instanceof Error ? err.message : "Failed to load plans"));
   }, []);
 
-  const tiers = config
-    ? [config.plans.free, config.plans.starter, config.plans.pro]
-    : [];
+  const tiers = config ? [config.plans.free, config.plans.starter, config.plans.pro] : [];
 
   return (
     <div className="landing-page">
-      <header className="landing-hero" style={{ paddingBottom: "24px" }}>
+      <header className="landing-hero legal-hero">
         <div className="landing-container">
           <nav className="landing-nav">
-            <Link to="/" className="landing-logo" style={{ textDecoration: "none", color: "inherit" }}>
+            <Link to="/" className="landing-logo legal-logo-link">
               <img src="/logo.png" alt="Stock Stay" className="logo-img" />
               <span className="logo-text">
                 <span className="brand-stock">Stock</span>
@@ -38,12 +36,12 @@ export const PricingPage: React.FC = () => {
               </span>
             </Link>
             <div className="landing-nav-links">
-              <button type="button" onClick={() => navigate("/login")} className="nav-button secondary">
+              <Button type="button" variant="secondary" className="nav-button" onClick={() => navigate("/login")}>
                 Sign In
-              </button>
-              <button type="button" onClick={() => navigate("/login?mode=signup")} className="nav-button primary">
+              </Button>
+              <Button type="button" className="nav-button primary" onClick={() => navigate("/login?mode=signup")}>
                 Get Started
-              </button>
+              </Button>
             </div>
           </nav>
         </div>
@@ -57,38 +55,43 @@ export const PricingPage: React.FC = () => {
             {config ? ` (${config.currency})` : ""}.
           </p>
 
-          {error && <p style={{ color: "#b91c1c" }}>{error}</p>}
+          {error && (
+            <div className="error-message pricing-error" role="alert">
+              {error}
+            </div>
+          )}
 
-          <div className="billing-toggle" style={{ marginBottom: "24px" }}>
-            <button
+          <div className="billing-toggle" role="group" aria-label="Billing period">
+            <Button
               type="button"
+              variant="ghost"
               className={`billing-option ${billingPeriod === "monthly" ? "active" : ""}`}
               onClick={() => setBillingPeriod("monthly")}
             >
               Monthly
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               className={`billing-option ${billingPeriod === "annual" ? "active" : ""}`}
               onClick={() => setBillingPeriod("annual")}
             >
               Annual
-            </button>
+            </Button>
           </div>
 
           <div className="pricing-grid">
             {tiers.map((plan) => (
-              <div
-                key={plan.id}
-                className={`pricing-card ${plan.id === "starter" ? "featured" : ""}`}
-              >
+              <div key={plan.id} className={`pricing-card ${plan.id === "starter" ? "featured" : ""}`}>
                 <div className="pricing-header">
+                  {plan.id === "starter" ? (
+                    <div className="pricing-card-badge-row">
+                      <Badge tone="info">Most popular</Badge>
+                    </div>
+                  ) : null}
                   <h3>{plan.name}</h3>
                   <div className="pricing-price">
-                    <span className="price-amount">
-                      $
-                      {billingPeriod === "monthly" ? plan.monthlyPrice : plan.annualPrice}
-                    </span>
+                    <span className="price-amount">${billingPeriod === "monthly" ? plan.monthlyPrice : plan.annualPrice}</span>
                     <span className="price-period">
                       {plan.monthlyPrice === 0
                         ? " forever"
@@ -109,21 +112,24 @@ export const PricingPage: React.FC = () => {
                         `${formatCap(plan.maxSkus)} SKUs`,
                       ]
                   ).map((line) => (
-                    <li key={line}><Icon name="check" size={14} /> {line}</li>
+                    <li key={line}>
+                      <Icon name="check" size={14} />
+                      {line}
+                    </li>
                   ))}
                 </ul>
                 {config && plan.id !== "free" && (plan.maxExtraUserSlots ?? 0) > 0 && (
-                  <p style={{ fontSize: "13px", color: "#64748b" }}>
+                  <p className="pricing-extra-users">
                     Extra users: up to {plan.maxExtraUserSlots} @ ${config.extraUserPrice}/mo each
                   </p>
                 )}
-                <button
+                <Button
                   type="button"
-                  onClick={() => navigate("/login?mode=signup")}
                   className={`pricing-button ${plan.id === "starter" ? "primary" : ""}`}
+                  onClick={() => navigate("/login?mode=signup")}
                 >
                   Get started
-                </button>
+                </Button>
               </div>
             ))}
           </div>

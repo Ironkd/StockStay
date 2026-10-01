@@ -5,6 +5,7 @@ import React, {
 } from "react";
 import { createPortal } from "react-dom";
 import { ToastContext, type ToastApi } from "./toastContextInstance";
+import { Icon } from "../components/ui";
 
 type ToastVariant = "success" | "error" | "info";
 
@@ -62,7 +63,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({
                   onClick={() => dismiss(toast.id)}
                   aria-label="Dismiss"
                 >
-                  ✕
+                  <Icon name="close" size={14} />
                 </button>
               </div>
             ))}

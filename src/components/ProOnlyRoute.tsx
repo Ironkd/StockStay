@@ -22,14 +22,7 @@ export const ProOnlyRoute: React.FC<{ children: React.ReactNode }> = ({
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "50vh",
-        }}
-      >
+      <div className="route-loading route-loading-compact">
         <div>Loading...</div>
       </div>
     );

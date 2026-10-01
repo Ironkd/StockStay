@@ -1,4 +1,5 @@
 import React from "react";
+import { Button } from "./ui";
 
 type Props = {
   children: React.ReactNode;
@@ -47,48 +48,23 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
     if (this.props.compact) {
       return (
-        <div style={{ padding: "24px", maxWidth: 480 }} role="alert">
-          <p style={{ margin: "0 0 12px", color: "#0f172a" }}>{message}</p>
-          <button type="button" className="btn primary" onClick={this.handleReload}>
-            Reload
-          </button>
+        <div className="error-boundary-compact" role="alert">
+          <p>{message}</p>
+          <Button onClick={this.handleReload}>Reload</Button>
         </div>
       );
     }
 
     return (
-      <div
-        style={{
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px",
-          background: "#f8fafc",
-        }}
-        role="alert"
-      >
-        <div
-          style={{
-            maxWidth: 440,
-            width: "100%",
-            background: "#fff",
-            borderRadius: 12,
-            padding: "28px 24px",
-            boxShadow: "0 8px 30px rgba(15, 23, 42, 0.08)",
-          }}
-        >
-          <h1 style={{ margin: "0 0 8px", fontSize: 20, color: "#0f172a" }}>
-            Something went wrong
-          </h1>
-          <p style={{ margin: "0 0 20px", color: "#64748b", lineHeight: 1.5 }}>{message}</p>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <button type="button" className="btn primary" onClick={this.handleReload}>
-              Reload page
-            </button>
-            <button type="button" className="btn secondary" onClick={this.handleHome}>
+      <div className="error-boundary-page" role="alert">
+        <div className="error-boundary-card">
+          <h1>Something went wrong</h1>
+          <p>{message}</p>
+          <div className="error-boundary-actions">
+            <Button onClick={this.handleReload}>Reload page</Button>
+            <Button variant="secondary" onClick={this.handleHome}>
               Go home
-            </button>
+            </Button>
           </div>
         </div>
       </div>

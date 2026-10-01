@@ -26,6 +26,8 @@ import {
   Flame,
   Gift,
   Download,
+  Eye,
+  EyeOff,
   type LucideProps,
 } from "lucide-react";
 
@@ -56,6 +58,8 @@ const registry = {
   flame: Flame,
   gift: Gift,
   download: Download,
+  eye: Eye,
+  "eye-off": EyeOff,
 } as const;
 
 export type IconName = keyof typeof registry;

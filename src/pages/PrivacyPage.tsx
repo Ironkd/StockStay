@@ -1,15 +1,16 @@
 import React from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Button } from "../components/ui";
 
 export const PrivacyPage: React.FC = () => {
   const navigate = useNavigate();
 
   return (
     <div className="landing-page">
-      <header className="landing-hero" style={{ paddingBottom: "24px" }}>
+      <header className="landing-hero legal-hero">
         <div className="landing-container">
           <nav className="landing-nav">
-            <Link to="/" className="landing-logo" style={{ textDecoration: "none", color: "inherit" }}>
+            <Link to="/" className="landing-logo legal-logo-link">
               <img src="/logo.png" alt="Stock Stay" className="logo-img" />
               <span className="logo-text">
                 <span className="brand-stock">Stock</span>
@@ -17,12 +18,12 @@ export const PrivacyPage: React.FC = () => {
               </span>
             </Link>
             <div className="landing-nav-links">
-              <button type="button" onClick={() => navigate("/login")} className="nav-button secondary">
+              <Button type="button" variant="secondary" className="nav-button" onClick={() => navigate("/login")}>
                 Sign In
-              </button>
-              <button type="button" onClick={() => navigate("/login")} className="nav-button primary">
+              </Button>
+              <Button type="button" className="nav-button primary" onClick={() => navigate("/login")}>
                 Get Started
-              </button>
+              </Button>
             </div>
           </nav>
         </div>
@@ -32,7 +33,7 @@ export const PrivacyPage: React.FC = () => {
         <div className="legal-inner">
           <h1>Privacy Policy</h1>
           <p className="legal-updated">Last updated: August 2026</p>
-          <p style={{ fontSize: "13px", color: "#64748b" }}>
+          <p className="legal-note">
             This is product boilerplate for an alpha SaaS release and is not a substitute for legal advice.
           </p>
 

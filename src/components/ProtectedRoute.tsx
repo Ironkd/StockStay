@@ -19,14 +19,7 @@ export const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
 
   if (loading) {
     return (
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "center",
-          alignItems: "center",
-          minHeight: "100vh"
-        }}
-      >
+      <div className="route-loading">
         <div>Loading...</div>
       </div>
     );
