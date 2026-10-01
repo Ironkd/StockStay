@@ -6,7 +6,7 @@ import { replenishmentApi } from "../services/replenishmentApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { effectiveMarkup, estimateBillBack, formatMoney } from "../utils/billBack";
 import { StockFlowModal } from "./StockFlowModal";
-import { Icon } from "./ui/Icon";
+import { Button, FormField, Icon } from "./ui";
 
 type LineDraft = {
   id: string;
@@ -186,85 +186,90 @@ export const ReplenishModal: React.FC<Props> = ({
       maxWidth={640}
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="inventory-form">
+      <form onSubmit={handleSubmit} className="inventory-form stacked-form">
         <div className="form-grid">
           {initialPropertyId ? (
-            <div className="context-field">
+            <div className="stock-flow-context">
               <span>Property</span>
               <strong>{selectedProperty?.name || "Selected property"}</strong>
             </div>
           ) : (
-            <label>
-              <span>Property *</span>
+            <FormField label="Property" required>
+              {(inputProps) => (
+                <select
+                  {...inputProps}
+                  value={propertyId}
+                  onChange={(e) => setPropertyId(e.target.value)}
+                  required
+                >
+                  <option value="">Select property…</option>
+                  {properties.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                      {!p.clientId ? " (no billing client)" : ""}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
+          )}
+          <FormField label="Stock location" required>
+            {(inputProps) => (
               <select
-                value={propertyId}
-                onChange={(e) => setPropertyId(e.target.value)}
+                {...inputProps}
+                value={stockLocationId}
+                onChange={(e) => setStockLocationId(e.target.value)}
                 required
+                disabled={!propertyId}
               >
-                <option value="">Select property…</option>
-                {properties.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {!p.clientId ? " (no billing client)" : ""}
+                <option value="">
+                  {!propertyId
+                    ? "Select a property first"
+                    : linkedLocations.length === 0
+                      ? "No linked locations"
+                      : "Select location…"}
+                </option>
+                {linkedLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
                   </option>
                 ))}
               </select>
-            </label>
-          )}
-          <label>
-            <span>Stock location *</span>
-            <select
-              value={stockLocationId}
-              onChange={(e) => setStockLocationId(e.target.value)}
-              required
-              disabled={!propertyId}
-            >
-              <option value="">
-                {!propertyId
-                  ? "Select a property first"
-                  : linkedLocations.length === 0
-                    ? "No linked locations"
-                    : "Select location…"}
-              </option>
-              {linkedLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          </label>
+            )}
+          </FormField>
         </div>
 
         {selectedProperty && (
-          <p style={{ fontSize: "13px", color: "#64748b", marginTop: "8px" }}>
+          <p className="stock-form-note">
             Markup: {markupInfo.label}
             {billingClient ? ` · Client ${billingClient.name}` : ""}
           </p>
         )}
 
         {selectedProperty && !selectedProperty.clientId && (
-          <p style={{ color: "#b45309", fontSize: "13px" }}>
+          <p className="form-banner stock-form-warning">
             Assign a billing client via Add new → Property before replenishing.
           </p>
         )}
 
         {selectedProperty && linkedLocations.length === 0 && (
-          <p style={{ color: "#b45309", fontSize: "13px" }}>
+          <p className="form-banner stock-form-warning">
             Link a stock location via Add new → Link location ↔ property.
           </p>
         )}
 
-        <div style={{ marginTop: "16px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+        <div className="stock-flow-section">
+          <div className="stock-flow-section-header">
             <strong>Lines</strong>
-            <button
+            <Button
               type="button"
-              className="secondary"
+              variant="secondary"
+              size="sm"
               onClick={() => setLines((prev) => [...prev, newLine()])}
               disabled={!stockLocationId}
             >
               Add line
-            </button>
+            </Button>
           </div>
           {lines.map((line) => {
             const sku = skus.find((s) => s.id === line.skuId);
@@ -274,49 +279,46 @@ export const ReplenishModal: React.FC<Props> = ({
             const onHand = sku?.stockOnHand ? Number(sku.stockOnHand.quantity) : null;
             const lineBill = estimateBillBack(base, unitRate, markupInfo.pct);
             return (
-              <div
-                key={line.id}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: "1fr 100px auto",
-                  gap: "8px",
-                  marginBottom: "10px",
-                  alignItems: "end",
-                }}
-              >
-                <label style={{ margin: 0 }}>
-                  <span>SKU</span>
-                  <select
-                    value={line.skuId}
-                    onChange={(e) => updateLine(line.id, { skuId: e.target.value })}
-                    disabled={!stockLocationId}
-                  >
-                    <option value="">Select SKU…</option>
-                    {skus
-                      .filter((s) => !initialSupplyItemId || s.supplyItemId === initialSupplyItemId)
-                      .map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.name}
-                        {s.stockOnHand
-                          ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} packs)`
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label style={{ margin: 0 }}>
-                  <span>Base qty</span>
-                  <input
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={line.baseQty}
-                    onChange={(e) => updateLine(line.id, { baseQty: e.target.value })}
-                  />
-                </label>
-                <button
+              <div key={line.id} className="stock-flow-line">
+                <FormField label="SKU" className="stock-flow-line-field">
+                  {(inputProps) => (
+                    <select
+                      {...inputProps}
+                      value={line.skuId}
+                      onChange={(e) => updateLine(line.id, { skuId: e.target.value })}
+                      disabled={!stockLocationId}
+                    >
+                      <option value="">Select SKU…</option>
+                      {skus
+                        .filter((s) => !initialSupplyItemId || s.supplyItemId === initialSupplyItemId)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.name}
+                            {s.stockOnHand
+                              ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} packs)`
+                              : ""}
+                          </option>
+                        ))}
+                    </select>
+                  )}
+                </FormField>
+                <FormField label="Base qty" className="stock-flow-line-qty">
+                  {(inputProps) => (
+                    <input
+                      {...inputProps}
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={line.baseQty}
+                      onChange={(e) => updateLine(line.id, { baseQty: e.target.value })}
+                    />
+                  )}
+                </FormField>
+                <Button
                   type="button"
-                  className="icon-button"
+                  variant="ghost"
+                  size="sm"
+                  className="stock-flow-remove-button"
                   onClick={() =>
                     setLines((prev) => (prev.length <= 1 ? prev : prev.filter((l) => l.id !== line.id)))
                   }
@@ -324,9 +326,9 @@ export const ReplenishModal: React.FC<Props> = ({
                   aria-label="Remove line"
                 >
                   <Icon name="close" size={16} />
-                </button>
+                </Button>
                 {sku && base > 0 && (
-                  <div style={{ gridColumn: "1 / -1", fontSize: "12px", color: "#64748b" }}>
+                  <div className="stock-flow-line-summary">
                     Packs used ≈ {packQtyPreview(base, packSize)}
                     {onHand != null ? ` · on hand ${onHand.toFixed(4)}` : ""}
                     {" · "}
@@ -338,17 +340,17 @@ export const ReplenishModal: React.FC<Props> = ({
           })}
         </div>
 
-        <p style={{ fontWeight: 600, marginTop: "12px" }}>
+        <p className="stock-flow-total">
           Estimated bill-back total: ${formatMoney(estimatedTotal)}
         </p>
 
         <div className="form-actions">
-          <button type="button" className="secondary" onClick={onClose} disabled={loading}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
-          </button>
-          <button type="submit" disabled={loading}>
+          </Button>
+          <Button type="submit" disabled={loading}>
             {loading ? "Replenishing…" : "Confirm replenish"}
-          </button>
+          </Button>
         </div>
       </form>
     </StockFlowModal>

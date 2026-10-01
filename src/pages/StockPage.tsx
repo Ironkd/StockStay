@@ -21,6 +21,7 @@ import { useAuth } from "../contexts/useAuth";
 import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
 import { EditStockLocationModal } from "../components/EditStockLocationModal";
 import { OverflowNameList } from "../components/OverflowNameList";
+import { Badge, Button, EmptyState, FormField, Icon, Modal, Tabs } from "../components/ui";
 import { isCategoryVisible } from "../utils/stockLocationVisibility";
 import { formatQty as formatQtyShared } from "../utils/format";
 
@@ -58,53 +59,6 @@ function localDateInputValue(d = new Date()) {
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");
   return `${y}-${m}-${day}`;
-}
-
-function StockEmptyState({
-  title,
-  body,
-  primaryLabel,
-  onPrimary,
-  secondaryLabel,
-  onSecondary,
-  showActions,
-}: {
-  title: string;
-  body: string;
-  primaryLabel?: string;
-  onPrimary?: () => void;
-  secondaryLabel?: string;
-  onSecondary?: () => void;
-  showActions?: boolean;
-}) {
-  return (
-    <div className="empty-state">
-      <h3>{title}</h3>
-      <p>{body}</p>
-      {showActions && (onPrimary || onSecondary) ? (
-        <div
-          style={{
-            display: "flex",
-            gap: "8px",
-            justifyContent: "center",
-            flexWrap: "wrap",
-            marginTop: "12px",
-          }}
-        >
-          {onPrimary && primaryLabel ? (
-            <button type="button" onClick={onPrimary}>
-              {primaryLabel}
-            </button>
-          ) : null}
-          {onSecondary && secondaryLabel ? (
-            <button type="button" className="secondary" onClick={onSecondary}>
-              {secondaryLabel}
-            </button>
-          ) : null}
-        </div>
-      ) : null}
-    </div>
-  );
 }
 
 export const StockPage: React.FC = () => {
@@ -657,32 +611,25 @@ export const StockPage: React.FC = () => {
   if (!isDetail) {
     return (
       <div className="inventory-page">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px", gap: "12px", flexWrap: "wrap" }}>
-          <h2 style={{ margin: 0 }}>Stock Locations</h2>
+        <div className="stock-page-header">
+          <h2 className="stock-page-title">Stock Locations</h2>
           {canWrite && (
-            <button type="button" className="add-property-button" onClick={openNewLocationModal}>
-              + New location
-            </button>
+            <Button onClick={openNewLocationModal}>New location</Button>
           )}
         </div>
 
         <section className="panel">
           {!locationsLoaded ? (
-            <p style={{ color: "#64748b", fontSize: "14px" }}>Loading…</p>
+            <p className="stock-page-loading">Loading…</p>
           ) : locations.length === 0 ? (
-            <div className="empty-state">
-              <h3>No stock locations yet</h3>
-              <p>Create a stock location to start receiving packs.</p>
-              <div style={{ marginTop: "12px" }}>
-                {canWrite && (
-                  <button type="button" className="add-property-button" onClick={openNewLocationModal}>
-                    + New location
-                  </button>
-                )}
-              </div>
-            </div>
+            <EmptyState
+              title="No stock locations yet"
+              body="Create a stock location to start receiving packs."
+              primaryLabel={canWrite ? "New location" : undefined}
+              onPrimary={canWrite ? openNewLocationModal : undefined}
+            />
           ) : (
-            <div style={{ overflowX: "auto" }}>
+            <div className="table-wrapper">
               <table className="inventory-table">
                 <thead>
                   <tr>
@@ -701,8 +648,8 @@ export const StockPage: React.FC = () => {
                     return (
                       <tr
                         key={loc.id}
+                        className="stock-location-row"
                         onClick={() => navigate(`/stock/${loc.id}`)}
-                        style={{ cursor: "pointer" }}
                       >
                         <td>
                           <strong>{loc.name}</strong>
@@ -715,17 +662,15 @@ export const StockPage: React.FC = () => {
                           <OverflowNameList names={categoryNames} />
                         </td>
                         <td>
-                          <div
-                            style={{ display: "flex", gap: "6px", justifyContent: "flex-end", flexWrap: "wrap" }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <button
+                          <div className="row-actions stock-row-actions" onClick={(e) => e.stopPropagation()}>
+                            <Button
                               type="button"
-                              className="secondary"
+                              variant="secondary"
+                              size="sm"
                               onClick={() => openEditLocation(loc)}
                             >
                               Edit
-                            </button>
+                            </Button>
                           </div>
                         </td>
                       </tr>
@@ -746,131 +691,85 @@ export const StockPage: React.FC = () => {
 
   return (
     <div className="inventory-page">
-      <div style={{ marginBottom: "8px" }}>
+      <div className="stock-page-backlink-row">
         {locations.length > 1 && (
-          <Link to="/stock" style={{ fontSize: "13px", color: "#2563eb", textDecoration: "none" }}>
-            ← All locations
+          <Link to="/stock" className="stock-page-backlink">
+            <Icon name="back" size={14} />
+            All locations
           </Link>
         )}
       </div>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: "12px",
-          marginBottom: "4px",
-        }}
-      >
-        <h2 style={{ margin: 0 }}>{detailLocation?.name || "Stock location"}</h2>
-        <div style={{ display: "flex", gap: "8px", flexShrink: 0, flexWrap: "wrap" }}>
+      <div className="stock-page-detail-header">
+        <h2 className="stock-page-title">{detailLocation?.name || "Stock location"}</h2>
+        <div className="stock-page-actions">
           {canWrite && routeLocationId ? (
-            <button
+            <Button
               type="button"
-              className="secondary"
+              variant="secondary"
               onClick={() => openReceiveModal(routeLocationId)}
               disabled={busy}
             >
               Receive packs
-            </button>
+            </Button>
           ) : null}
-          <button
+          <Button
             type="button"
-            className="secondary"
+            variant="secondary"
             onClick={() => detailLocation && openEditLocation(detailLocation)}
             disabled={!detailLocation}
           >
             Edit
-          </button>
+          </Button>
         </div>
       </div>
-      <p style={{ marginTop: 0, marginBottom: "16px", color: "#64748b", fontSize: "14px" }}>
+      <p className="stock-page-description">
         {detailLocation?.address || "Manage packs, catalogue, and activity for this location."}
       </p>
 
-      <div className="property-tabs">
-        <button
-          type="button"
-          className={`property-tab ${activeTab === "onhand" ? "active" : ""}`}
-          onClick={() => setActiveTab("onhand")}
-        >
-          On hand
-          <span className="tab-count">({onHandGroups.length})</span>
-        </button>
-        <button
-          type="button"
-          className={`property-tab ${activeTab === "catalogue" ? "active" : ""}`}
-          onClick={() => setActiveTab("catalogue")}
-        >
-          Catalogue
-          <span className="tab-count">({visibleSupplyItems.length})</span>
-        </button>
-        <button
-          type="button"
-          className={`property-tab ${activeTab === "activity" ? "active" : ""}`}
-          onClick={() => setActiveTab("activity")}
-        >
-          Activity
-        </button>
-      </div>
+      <Tabs
+        items={[
+          { key: "onhand", label: "On hand", count: onHandGroups.length },
+          { key: "catalogue", label: "Catalogue", count: visibleSupplyItems.length },
+          { key: "activity", label: "Activity" },
+        ]}
+        active={activeTab}
+        onChange={(key) => setActiveTab(key as Tab)}
+      />
 
       <section className="panel">
         {activeTab === "onhand" && (
           <>
             {lowGroupCount > 0 ? (
-              <div style={{ marginBottom: "12px" }}>
-                <span
-                  style={{
-                    fontSize: "12px",
-                    fontWeight: 600,
-                    color: "#b45309",
-                    background: "#fffbeb",
-                    border: "1px solid #fde68a",
-                    borderRadius: "999px",
-                    padding: "2px 8px",
-                  }}
-                >
-                  {lowGroupCount} low
-                </span>
+              <div className="stock-page-low-summary">
+                <Badge tone="warning">{lowGroupCount} low</Badge>
               </div>
             ) : null}
             {visibleSupplyItems.length === 0 ? (
               supplyItems.length === 0 ? (
-                <StockEmptyState
+                <EmptyState
                   title="Nothing here yet"
                   body="Add a supply item, then receive packs to see stock on hand."
-                  showActions={canWrite}
-                  primaryLabel="New supply item"
-                  onPrimary={openSupplyItemModal}
+                  primaryLabel={canWrite ? "New supply item" : undefined}
+                  onPrimary={canWrite ? openSupplyItemModal : undefined}
                 />
               ) : (
-                <StockEmptyState
+                <EmptyState
                   title="No visible stock"
                   body="Nothing matches this location’s category filters."
-                  showActions={canWrite}
-                  primaryLabel="New supply item"
-                  onPrimary={openSupplyItemModal}
-                  secondaryLabel="Edit stock location"
-                  onSecondary={() => detailLocation && openEditLocation(detailLocation)}
+                  primaryLabel={canWrite ? "New supply item" : undefined}
+                  onPrimary={canWrite ? openSupplyItemModal : undefined}
+                  secondaryLabel={detailLocation ? "Edit stock location" : undefined}
+                  onSecondary={
+                    detailLocation ? () => openEditLocation(detailLocation) : undefined
+                  }
                 />
               )
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", gap: "24px" }}>
+              <div className="stock-onhand-groups">
                 {onHandByCategory.map(({ category, groups }) => (
-                  <div key={category}>
-                    <h4
-                      style={{
-                        margin: "0 0 12px",
-                        fontSize: "12px",
-                        fontWeight: 600,
-                        color: "#64748b",
-                        textTransform: "uppercase",
-                        letterSpacing: "0.04em",
-                      }}
-                    >
-                      {category}
-                    </h4>
-                    <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+                  <div key={category} className="stock-category-section">
+                    <h4 className="stock-category-title">{category}</h4>
+                    <div className="stock-category-groups">
                       {groups.map((group) => {
                         const thr = thresholdBySupplyItem.get(group.supplyItemId);
                         const point = Number(thr?.reorderPoint) || 0;
@@ -889,59 +788,40 @@ export const StockPage: React.FC = () => {
                         return (
                           <div
                             key={group.supplyItemId}
-                            style={{
-                              border: isLow ? "1px solid #fbbf24" : "1px solid #e2e8f0",
-                              borderRadius: "8px",
-                              overflow: "hidden",
-                            }}
+                            className={isLow ? "stock-group-card is-low" : "stock-group-card"}
                           >
-                            <div
-                              style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                gap: "12px",
-                                flexWrap: "wrap",
-                                padding: "12px 14px",
-                                background: isLow ? "#fffbeb" : "#f8fafc",
-                                borderBottom: "1px solid #e2e8f0",
-                              }}
-                            >
+                            <div className="stock-group-card-header">
                               <div>
-                                <strong style={{ fontSize: "15px" }}>{group.name}</strong>
+                                <strong className="stock-group-name">{group.name}</strong>
                                 {isLow ? (
-                                  <span
-                                    style={{
-                                      marginLeft: "8px",
-                                      fontSize: "12px",
-                                      fontWeight: 600,
-                                      color: "#b45309",
-                                    }}
-                                  >
+                                  <Badge tone="warning" className="stock-group-badge">
                                     Low stock
-                                  </span>
+                                  </Badge>
                                 ) : null}
-                                <div style={{ marginTop: "4px", fontSize: "13px", color: "#334155" }}>
-                                  ≈ {formatQty(group.baseUnitsOnHand)} {group.baseUnitLabel}
-                                  <span style={{ color: "#94a3b8" }}>
+                                <div className="stock-group-meta">
+                                  <span>
+                                    ≈ {formatQty(group.baseUnitsOnHand)} {group.baseUnitLabel}
+                                  </span>
+                                  <span className="stock-group-meta-muted">
                                     {" "}
                                     · {formatQty(group.packsOnHand)} packs · {group.skus.length}{" "}
                                     SKU
                                     {group.skus.length === 1 ? "" : "s"}
                                   </span>
                                   {point > 0 ? (
-                                    <span style={{ color: "#64748b" }}>
+                                    <span className="stock-group-meta-note">
                                       {" "}
                                       · Reorder at {formatQty(point)}
                                     </span>
                                   ) : null}
                                 </div>
                               </div>
-                              <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
+                              <div className="row-actions stock-row-actions">
                                 {canWrite && (
-                                  <button
+                                  <Button
                                     type="button"
-                                    className="secondary"
+                                    variant="secondary"
+                                    size="sm"
                                     onClick={() => {
                                       const item = supplyItems.find(
                                         (s) => s.id === group.supplyItemId
@@ -950,42 +830,32 @@ export const StockPage: React.FC = () => {
                                     }}
                                   >
                                     Edit
-                                  </button>
+                                  </Button>
                                 )}
                               </div>
                             </div>
                             {hasNoSkus ? (
-                              <div
-                                style={{
-                                  padding: "16px 14px",
-                                  display: "flex",
-                                  alignItems: "center",
-                                  justifyContent: "space-between",
-                                  gap: "12px",
-                                  flexWrap: "wrap",
-                                }}
-                              >
-                                <p style={{ margin: 0, fontSize: "13px", color: "#64748b" }}>
-                                  No SKUs
-                                </p>
-                                {canWrite ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      const item = supplyItems.find(
-                                        (s) => s.id === group.supplyItemId
-                                      );
-                                      if (item) openEditSupplyItem(item);
-                                    }}
-                                  >
-                                    Add SKU
-                                  </button>
-                                ) : null}
+                              <div className="stock-group-card-body">
+                                <EmptyState
+                                  title="No SKUs"
+                                  body="Add a SKU to start receiving packs for this item."
+                                  primaryLabel={canWrite ? "Add SKU" : undefined}
+                                  onPrimary={
+                                    canWrite
+                                      ? () => {
+                                          const item = supplyItems.find(
+                                            (s) => s.id === group.supplyItemId
+                                          );
+                                          if (item) openEditSupplyItem(item);
+                                        }
+                                      : undefined
+                                  }
+                                />
                               </div>
                             ) : (
                               <>
-                                <div style={{ overflowX: "auto" }}>
-                                  <table className="inventory-table" style={{ margin: 0 }}>
+                                <div className="table-wrapper stock-table-wrapper">
+                                  <table className="inventory-table">
                                     <thead>
                                       <tr>
                                         <th>SKU</th>
@@ -1006,12 +876,12 @@ export const StockPage: React.FC = () => {
                                         return (
                                           <tr key={sku.id}>
                                             <td>
-                                              {sku.name}
+                                              <div className="primary-cell">
+                                                <span className="primary-text">{sku.name}</span>
                                               {sku.supplier ? (
-                                                <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-                                                  {sku.supplier}
-                                                </div>
+                                                  <span className="secondary-text">{sku.supplier}</span>
                                               ) : null}
+                                              </div>
                                             </td>
                                             <td>
                                               {formatQty(packSize)} {group.baseUnitLabel}
@@ -1024,16 +894,17 @@ export const StockPage: React.FC = () => {
                                             </td>
                                             <td>
                                               {canWrite && (
-                                                <button
+                                                <Button
                                                   type="button"
-                                                  className="secondary"
+                                                  variant="secondary"
+                                                  size="sm"
                                                   onClick={() =>
                                                     routeLocationId &&
                                                     openReceiveModal(routeLocationId, sku.id)
                                                   }
                                                 >
                                                   Receive
-                                                </button>
+                                                </Button>
                                               )}
                                             </td>
                                           </tr>
@@ -1043,19 +914,17 @@ export const StockPage: React.FC = () => {
                                   </table>
                                 </div>
                                 {canToggleZeroSkus ? (
-                                  <div
-                                    style={{ padding: "8px 14px", borderTop: "1px solid #e2e8f0" }}
-                                  >
-                                    <button
+                                  <div className="stock-group-card-footer">
+                                    <Button
                                       type="button"
-                                      className="secondary"
-                                      style={{ padding: "4px 10px", fontSize: "12px" }}
+                                      variant="secondary"
+                                      size="sm"
                                       onClick={() => toggleShowAllSkus(group.supplyItemId)}
                                     >
                                       {showAllSkusByGroup.has(group.supplyItemId)
                                         ? "Hide zero-qty SKUs"
                                         : `Show all SKUs (${zeroSkus.length} hidden)`}
-                                    </button>
+                                    </Button>
                                   </div>
                                 ) : null}
                               </>
@@ -1074,26 +943,26 @@ export const StockPage: React.FC = () => {
         {activeTab === "catalogue" && (
           <>
             {supplyItems.length === 0 ? (
-              <StockEmptyState
+              <EmptyState
                 title="No supply items yet"
                 body="Add a supply item to start building your catalogue."
-                showActions={canWrite}
-                primaryLabel="New supply item"
-                onPrimary={openSupplyItemModal}
+                primaryLabel={canWrite ? "New supply item" : undefined}
+                onPrimary={canWrite ? openSupplyItemModal : undefined}
               />
             ) : visibleSupplyItems.length === 0 ? (
-              <StockEmptyState
+              <EmptyState
                 title="No visible supply items"
                 body="Catalogue items are hidden by this location’s category filters."
-                showActions={canWrite}
-                primaryLabel="New supply item"
-                onPrimary={openSupplyItemModal}
-                secondaryLabel="Edit stock location"
-                onSecondary={() => detailLocation && openEditLocation(detailLocation)}
+                primaryLabel={canWrite ? "New supply item" : undefined}
+                onPrimary={canWrite ? openSupplyItemModal : undefined}
+                secondaryLabel={detailLocation ? "Edit stock location" : undefined}
+                onSecondary={
+                  detailLocation ? () => openEditLocation(detailLocation) : undefined
+                }
               />
             ) : (
               <>
-                <div style={{ overflowX: "auto" }}>
+                <div className="table-wrapper">
                   <table className="inventory-table">
                     <thead>
                       <tr>
@@ -1126,13 +995,14 @@ export const StockPage: React.FC = () => {
                             </td>
                             <td>
                               {canWrite && (
-                                <button
+                                <Button
                                   type="button"
-                                  className="secondary"
+                                  variant="secondary"
+                                  size="sm"
                                   onClick={() => openEditSupplyItem(item)}
                                 >
                                   Edit
-                                </button>
+                                </Button>
                               )}
                             </td>
                           </tr>
@@ -1142,10 +1012,10 @@ export const StockPage: React.FC = () => {
                   </table>
                 </div>
                 {canWrite && (
-                  <div style={{ marginTop: "16px" }}>
-                    <button type="button" className="secondary" onClick={openSupplyItemModal}>
+                  <div className="stock-page-footer-action">
+                    <Button type="button" variant="secondary" onClick={openSupplyItemModal}>
                       New supply item
-                    </button>
+                    </Button>
                   </div>
                 )}
               </>
@@ -1155,41 +1025,34 @@ export const StockPage: React.FC = () => {
 
         {activeTab === "activity" && (
           <>
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "flex-end",
-                alignItems: "center",
-                marginBottom: "8px",
-                flexWrap: "wrap",
-                gap: "8px",
-              }}
-            >
-              <label style={{ display: "flex", flexDirection: "column" }}>
-                <span style={{ fontSize: "12px", color: "#64748b" }}>Filter by SKU</span>
-                <select
-                  value={activitySkuId}
-                  onChange={(e) => setActivitySkuId(e.target.value)}
-                  style={{ minHeight: "34px", minWidth: "200px" }}
-                >
-                  <option value="">All SKUs at this location</option>
-                  {skus.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="stock-page-filter">
+              <FormField label="Filter by SKU" className="stock-page-filter-field">
+                {(inputProps) => (
+                  <select
+                    {...inputProps}
+                    value={activitySkuId}
+                    onChange={(e) => setActivitySkuId(e.target.value)}
+                    className="stock-page-filter-input"
+                  >
+                    <option value="">All SKUs at this location</option>
+                    {skus.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
             </div>
             {transactionsLoading ? (
-              <p style={{ color: "#64748b", fontSize: "14px" }}>Loading…</p>
+              <p className="stock-page-loading">Loading…</p>
             ) : transactions.length === 0 ? (
-              <div className="empty-state">
-                <h3>No activity yet</h3>
-                <p>Receipts, adjustments, and replenishments will show up here.</p>
-              </div>
+              <EmptyState
+                title="No activity yet"
+                body="Receipts, adjustments, and replenishments will show up here."
+              />
             ) : (
-              <div style={{ overflowX: "auto" }}>
+              <div className="table-wrapper">
                 <table className="inventory-table">
                   <thead>
                     <tr>
@@ -1240,125 +1103,133 @@ export const StockPage: React.FC = () => {
     const actionLocation = locations.find((l) => l.id === selectedLocationId);
     return (
       <>
-        {showLocationModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowLocationModal(false)}>
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "420px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>Add stock location</h3>
-              <form className="inventory-form" onSubmit={handleCreateLocation}>
-                <label>
-                  <span>Name *</span>
-                  <input
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    placeholder="e.g. Central Supply"
-                    required
-                  />
-                </label>
-                <label>
-                  <span>Address</span>
-                  <input
-                    value={locationAddress}
-                    onChange={(e) => setLocationAddress(e.target.value)}
-                    placeholder="Optional"
-                  />
-                </label>
-                {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowLocationModal(false)}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy}>
-                    {busy ? "Saving…" : "Create"}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {showReceiveModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowReceiveModal(false)}>
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "480px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>Receive packs</h3>
-              <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-                Record what you paid for this purchase. The SKU’s unit rate updates for future
-                replenish bill-back.
-                {actionLocation ? ` · ${actionLocation.name}` : ""}
-                {" "}You can also receive a catalogue SKU that is not tracked here yet.
+        <Modal
+          open={showLocationModal}
+          onClose={() => setShowLocationModal(false)}
+          title="Add stock location"
+          maxWidth="420px"
+          busy={busy}
+        >
+          <form className="inventory-form stacked-form" onSubmit={handleCreateLocation}>
+            <FormField label="Name" required>
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  value={locationName}
+                  onChange={(e) => setLocationName(e.target.value)}
+                  placeholder="e.g. Central Supply"
+                  required
+                />
+              )}
+            </FormField>
+            <FormField label="Address">
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  value={locationAddress}
+                  onChange={(e) => setLocationAddress(e.target.value)}
+                  placeholder="Optional"
+                />
+              )}
+            </FormField>
+            {error ? (
+              <p className="form-banner error" role="alert">
+                {error}
               </p>
-              <form className="inventory-form" onSubmit={handleReceive}>
-                <label>
-                  <span>SKU *</span>
-                  <select
-                    value={receiveSkuId}
-                    onChange={(e) => {
-                      const id = e.target.value;
-                      setReceiveSkuId(id);
-                      const sku = receiveSkuOptions.find((s) => s.id === id);
-                      if (sku) {
-                        const price =
-                          sku.stockOnHand?.lastPurchasePrice != null
-                            ? String(Number(sku.stockOnHand.lastPurchasePrice))
-                            : String(Number(sku.purchasePrice));
-                        setReceivePrice(price);
-                      }
-                    }}
-                    required
-                  >
-                    <option value="">Select SKU…</option>
-                    {(() => {
-                      const stocked = receiveSkuOptions.filter((s) =>
-                        receiveStockedSkuIds.has(s.id)
-                      );
-                      const unstocked = receiveSkuOptions.filter(
-                        (s) => !receiveStockedSkuIds.has(s.id)
-                      );
-                      return (
-                        <>
-                          {stocked.length > 0 && (
-                            <optgroup label="At this location">
-                              {stocked.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                  {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
-                                  {s.stockOnHand
-                                    ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} on hand)`
-                                    : ""}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                          {unstocked.length > 0 && (
-                            <optgroup label="Not at this location yet">
-                              {unstocked.map((s) => (
-                                <option key={s.id} value={s.id}>
-                                  {s.name}
-                                  {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
-                                </option>
-                              ))}
-                            </optgroup>
-                          )}
-                        </>
-                      );
-                    })()}
-                  </select>
-                </label>
-                <label>
-                  <span>Quantity (packs) *</span>
+            ) : null}
+            <div className="form-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowLocationModal(false)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Create"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
+
+        <Modal
+          open={showReceiveModal}
+          onClose={() => setShowReceiveModal(false)}
+          title="Receive packs"
+          maxWidth="480px"
+          busy={busy}
+        >
+          <p className="modal-intro">
+            Record what you paid for this purchase. The SKU’s unit rate updates for future
+            replenish bill-back.
+            {actionLocation ? ` · ${actionLocation.name}` : ""}
+            {" "}You can also receive a catalogue SKU that is not tracked here yet.
+          </p>
+          <form className="inventory-form stacked-form" onSubmit={handleReceive}>
+            <FormField label="SKU" required>
+              {(inputProps) => (
+                <select
+                  {...inputProps}
+                  value={receiveSkuId}
+                  onChange={(e) => {
+                    const id = e.target.value;
+                    setReceiveSkuId(id);
+                    const sku = receiveSkuOptions.find((s) => s.id === id);
+                    if (sku) {
+                      const price =
+                        sku.stockOnHand?.lastPurchasePrice != null
+                          ? String(Number(sku.stockOnHand.lastPurchasePrice))
+                          : String(Number(sku.purchasePrice));
+                      setReceivePrice(price);
+                    }
+                  }}
+                  required
+                >
+                  <option value="">Select SKU…</option>
+                  {(() => {
+                    const stocked = receiveSkuOptions.filter((s) =>
+                      receiveStockedSkuIds.has(s.id)
+                    );
+                    const unstocked = receiveSkuOptions.filter(
+                      (s) => !receiveStockedSkuIds.has(s.id)
+                    );
+                    return (
+                      <>
+                        {stocked.length > 0 && (
+                          <optgroup label="At this location">
+                            {stocked.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                                {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
+                                {s.stockOnHand
+                                  ? ` (${Number(s.stockOnHand.quantity).toFixed(2)} on hand)`
+                                  : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                        {unstocked.length > 0 && (
+                          <optgroup label="Not at this location yet">
+                            {unstocked.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.name}
+                                {s.supplyItem?.name ? ` · ${s.supplyItem.name}` : ""}
+                              </option>
+                            ))}
+                          </optgroup>
+                        )}
+                      </>
+                    );
+                  })()}
+                </select>
+              )}
+            </FormField>
+            <div className="form-grid stock-modal-grid">
+              <FormField label="Quantity (packs)" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     min="0"
                     step="any"
@@ -1366,10 +1237,12 @@ export const StockPage: React.FC = () => {
                     onChange={(e) => setReceiveQty(e.target.value)}
                     required
                   />
-                </label>
-                <label>
-                  <span>Purchase price (per pack) *</span>
+                )}
+              </FormField>
+              <FormField label="Purchase price (per pack)" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     min="0"
                     step="any"
@@ -1377,111 +1250,122 @@ export const StockPage: React.FC = () => {
                     onChange={(e) => setReceivePrice(e.target.value)}
                     required
                   />
-                </label>
-                <label>
-                  <span>Purchase date *</span>
+                )}
+              </FormField>
+              <FormField label="Purchase date" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="date"
                     value={receiveDate}
                     onChange={(e) => setReceiveDate(e.target.value)}
                     required
                   />
-                </label>
-                {receiveUnitRatePreview != null && receiveSku && (
-                  <p style={{ fontSize: "13px", color: "#64748b", margin: "0 0 8px" }}>
-                    Unit rate: ${receiveUnitRatePreview.toFixed(4)} / base unit
-                    {receiveSku.packSize
-                      ? ` (pack size ${Number(receiveSku.packSize)})`
-                      : ""}
-                  </p>
                 )}
-                {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowReceiveModal(false)}
-                    disabled={busy}
-                  >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy}>
-                    {busy ? "Receiving…" : "Receive"}
-                  </button>
-                </div>
-              </form>
+              </FormField>
             </div>
-          </div>
-        )}
+            {receiveUnitRatePreview != null && receiveSku ? (
+              <p className="stock-form-note">
+                Unit rate: ${receiveUnitRatePreview.toFixed(4)} / base unit
+                {receiveSku.packSize ? ` (pack size ${Number(receiveSku.packSize)})` : ""}
+              </p>
+            ) : null}
+            {error ? (
+              <p className="form-banner error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowReceiveModal(false)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Receiving…" : "Receive"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
 
-        {showSupplyItemModal && (
-          <div className="modal-overlay" onClick={() => !busy && setShowSupplyItemModal(false)}>
-            <div
-              className="modal-content"
-              onClick={(e) => e.stopPropagation()}
-              style={{ maxWidth: "480px" }}
-            >
-              <h3 style={{ marginTop: 0 }}>Add supply item</h3>
-              <form className="inventory-form" onSubmit={handleCreateSupplyItem}>
-                <div className="form-grid">
-                  <label>
-                    <span>Name *</span>
-                    <input
-                      value={supplyItemName}
-                      onChange={(e) => setSupplyItemName(e.target.value)}
-                      placeholder="e.g. Toilet paper"
-                      required
-                    />
-                  </label>
-                  <label>
-                    <span>Category</span>
-                    <input
-                      value={supplyItemCategory}
-                      onChange={(e) => setSupplyItemCategory(e.target.value)}
-                      placeholder="Optional"
-                    />
-                  </label>
-                  <label>
-                    <span>Base unit *</span>
-                    <select
-                      value={supplyItemBaseUnitId}
-                      onChange={(e) => setSupplyItemBaseUnitId(e.target.value)}
-                      required
-                      disabled={units.length === 0}
-                    >
-                      <option value="">Select…</option>
-                      {units.map((u) => (
-                        <option key={u.id} value={u.id}>
-                          {u.name} ({u.code})
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                {units.length === 0 && (
-                  <p style={{ color: "#b45309", fontSize: "13px" }}>
-                    No units of measure found. Run database migrations so seeded units (ea, pack, …)
-                    are available.
-                  </p>
+        <Modal
+          open={showSupplyItemModal}
+          onClose={() => setShowSupplyItemModal(false)}
+          title="Add supply item"
+          maxWidth="480px"
+          busy={busy}
+        >
+          <form className="inventory-form stacked-form" onSubmit={handleCreateSupplyItem}>
+            <div className="form-grid stock-modal-grid">
+              <FormField label="Name" required>
+                {(inputProps) => (
+                  <input
+                    {...inputProps}
+                    value={supplyItemName}
+                    onChange={(e) => setSupplyItemName(e.target.value)}
+                    placeholder="e.g. Toilet paper"
+                    required
+                  />
                 )}
-                {error && <p style={{ color: "#b91c1c", fontSize: "14px" }}>{error}</p>}
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => setShowSupplyItemModal(false)}
-                    disabled={busy}
+              </FormField>
+              <FormField label="Category">
+                {(inputProps) => (
+                  <input
+                    {...inputProps}
+                    value={supplyItemCategory}
+                    onChange={(e) => setSupplyItemCategory(e.target.value)}
+                    placeholder="Optional"
+                  />
+                )}
+              </FormField>
+              <FormField label="Base unit" required>
+                {(inputProps) => (
+                  <select
+                    {...inputProps}
+                    value={supplyItemBaseUnitId}
+                    onChange={(e) => setSupplyItemBaseUnitId(e.target.value)}
+                    required
+                    disabled={units.length === 0}
                   >
-                    Cancel
-                  </button>
-                  <button type="submit" disabled={busy}>
-                    {busy ? "Saving…" : "Add"}
-                  </button>
-                </div>
-              </form>
+                    <option value="">Select…</option>
+                    {units.map((u) => (
+                      <option key={u.id} value={u.id}>
+                        {u.name} ({u.code})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </FormField>
             </div>
-          </div>
-        )}
+            {units.length === 0 ? (
+              <p className="form-banner stock-form-warning">
+                No units of measure found. Run database migrations so seeded units (ea, pack, …)
+                are available.
+              </p>
+            ) : null}
+            {error ? (
+              <p className="form-banner error" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div className="form-actions">
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => setShowSupplyItemModal(false)}
+                disabled={busy}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" disabled={busy}>
+                {busy ? "Saving…" : "Add"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
 
         {editingLocation && (
           <EditStockLocationModal

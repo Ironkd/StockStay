@@ -1,5 +1,5 @@
 import React from "react";
-import { Icon } from "./ui/Icon";
+import { Modal } from "./ui/Modal";
 
 type Props = {
   title: string;
@@ -27,49 +27,22 @@ export const StockFlowModal: React.FC<Props> = ({
   footer,
 }) => {
   return (
-    <div
-      className="modal-overlay"
-      onClick={() => {
-        if (!loading) onClose();
-      }}
+    <Modal
+      open
+      onClose={onClose}
+      title={title}
+      maxWidth={maxWidth}
+      busy={loading}
+      className="modal-content stock-modal"
     >
-      <div
-        className="modal-content"
-        style={{ maxWidth, maxHeight: "90vh", overflowY: "auto" }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            marginBottom: "16px",
-          }}
-        >
-          <h3 style={{ margin: 0 }}>{title}</h3>
-          <button
-            type="button"
-            className="icon-button close-button"
-            onClick={onClose}
-            aria-label="Close"
-            disabled={loading}
-          >
-            <Icon name="close" size={16} />
-          </button>
-        </div>
-        {subtitle && (
-          <div style={{ marginTop: 0, marginBottom: "12px", color: "#64748b", fontSize: "14px" }}>
-            {subtitle}
-          </div>
-        )}
-        {children}
-        {error && (
-          <p style={{ color: "#b91c1c", fontSize: "14px" }} role="alert">
-            {error}
-          </p>
-        )}
-        {footer}
-      </div>
-    </div>
+      {subtitle ? <p className="modal-intro">{subtitle}</p> : null}
+      {children}
+      {error ? (
+        <p className="form-banner error" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {footer}
+    </Modal>
   );
 };
