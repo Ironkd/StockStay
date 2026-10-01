@@ -160,20 +160,14 @@ export const StockPage: React.FC = () => {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const locs = await refreshLocations();
+      await refreshLocations();
       if (cancelled) return;
       unitsOfMeasureApi.getAll().then(setUnits).catch(() => setUnits([]));
       supplyItemsApi.getAll().then(setSupplyItems).catch(() => setSupplyItems([]));
-      if (!routeLocationId) {
-        if (locs.length === 1) {
-          navigate(`/stock/${locs[0].id}`, { replace: true });
-        }
-      }
     })();
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

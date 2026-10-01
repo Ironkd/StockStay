@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import type { Client, Property, PropertyFormValues, StockLocation, SupplyItem } from "../types";
+import type { Client, Property, PropertyFormValues, StockLocation } from "../types";
 import { useProperties } from "../hooks/useProperties";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
@@ -8,8 +8,6 @@ import { PropertyForm } from "../components/PropertyForm";
 import { teamApi } from "../services/teamApi";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
-import { supplyItemsApi } from "../services/catalogueApi";
-import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import {
   Badge,
   Button,
@@ -35,9 +33,6 @@ export const PropertiesPage: React.FC = () => {
 
   const [clients, setClients] = useState<Client[]>([]);
   const [stockLocations, setStockLocations] = useState<StockLocation[]>([]);
-  const [supplyItems, setSupplyItems] = useState<SupplyItem[]>([]);
-  const [supplyItemsLoading, setSupplyItemsLoading] = useState(true);
-  const [supplyItemsLoadError, setSupplyItemsLoadError] = useState(false);
   const [maxProperties, setMaxProperties] = useState<number>(1);
   const [teamLimitsLoaded, setTeamLimitsLoaded] = useState(false);
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
@@ -49,17 +44,6 @@ export const PropertiesPage: React.FC = () => {
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
     stockLocationsApi.getAll().then(setStockLocations).catch(() => setStockLocations([]));
-    supplyItemsApi
-      .getAll()
-      .then((items) => {
-        setSupplyItems(items);
-        setSupplyItemsLoading(false);
-        setSupplyItemsLoadError(false);
-      })
-      .catch(() => {
-        setSupplyItemsLoading(false);
-        setSupplyItemsLoadError(true);
-      });
     let cancelled = false;
     teamApi.getTeamLimits().then((data) => {
       if (!cancelled && data.effectiveMaxProperties != null) {
@@ -117,19 +101,7 @@ export const PropertiesPage: React.FC = () => {
       if (editingProperty) {
         await updateProperty(editingProperty.id, values);
       } else {
-        const created = await addProperty(values);
-        const results = await Promise.allSettled(
-          (values.stockedSupplyItems || []).map((item) =>
-            propertySupplyItemsApi.upsert(created.id, item.supplyItemId, {
-              parQuantity: item.parQuantity,
-            })
-          )
-        );
-        if (results.some((result) => result.status === "rejected")) {
-          toast.error(
-            "Property created, but some stocked items could not be saved. You can add them from the property page."
-          );
-        }
+        await addProperty(values);
       }
       setEditingProperty(null);
       setShowPropertyModal(false);
@@ -228,9 +200,6 @@ export const PropertiesPage: React.FC = () => {
           initialValues={editingProperty ?? undefined}
           clients={clients}
           stockLocations={stockLocations}
-          supplyItems={supplyItems}
-          supplyItemsLoading={supplyItemsLoading}
-          supplyItemsLoadError={supplyItemsLoadError}
           onSubmit={handlePropertySubmit}
           onCancel={handleCancelPropertyEdit}
         />

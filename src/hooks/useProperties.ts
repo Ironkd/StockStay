@@ -81,7 +81,7 @@ export const useProperties = () => {
         });
         clientId = createdClient.id;
       }
-      const { newClient: _nc, stockedSupplyItems: _stockedItems, ...rest } = values;
+      const { newClient: _nc, ...rest } = values;
       const created = await propertiesApi.create({
         ...rest,
         clientId,
@@ -122,7 +122,6 @@ export const useProperties = () => {
       const {
         newClient: _nc,
         stockLocationIds: _sl,
-        stockedSupplyItems: _stockedItems,
         ...rest
       } = values;
       const updated = await propertiesApi.update(id, {

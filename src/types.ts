@@ -21,11 +21,6 @@ export type PropertyFormValues = {
     email: string;
     defaultMarkupPercentage?: number;
   } | null;
-  /** Optional create-form selections; saved separately after property creation. */
-  stockedSupplyItems?: Array<{
-    supplyItemId: string;
-    parQuantity: number | string;
-  }>;
 };
 
 export type BillingFrequency = "weekly" | "biweekly" | "monthly_eom";

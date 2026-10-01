@@ -374,75 +374,75 @@ export const ClientsPage: React.FC = () => {
           />
         ) : (
           <>
-            <div className="clients-grid">
-              {pagedClients.map((client) => {
-                const clientAddress = formatAddress(client);
-                return (
-                  <article key={client.id} className="client-card">
-                    <div className="client-header">
-                      <div>
-                        <h4>{client.name}</h4>
-                        <p className="client-subtitle">
-                          {client.company || client.email}
-                        </p>
-                      </div>
-                      {canWrite && (
-                        <div className="client-actions">
-                          <button
-                            className="icon-button"
-                            onClick={() => handleEdit(client)}
-                            title="Edit"
-                            aria-label={`Edit ${client.name}`}
-                          >
-                            <Icon name="edit" size={16} />
-                          </button>
-                          <button
-                            className="icon-button"
-                            onClick={() => setDeleteTarget(client)}
-                            title="Delete"
-                            aria-label={`Delete ${client.name}`}
-                          >
-                            <Icon name="delete" size={16} />
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                    <dl className="client-details">
-                      <div>
-                        <dt>Email</dt>
-                        <dd>{client.email}</dd>
-                      </div>
-                      <div>
-                        <dt>Default markup</dt>
-                        <dd>{Number(client.defaultMarkupPercentage ?? 0)}%</dd>
-                      </div>
-                      <div>
-                        <dt>Billing</dt>
-                        <dd>{getBillingFrequencyLabel(client.billingFrequency)}</dd>
-                      </div>
-                      {client.phone && (
-                        <div>
-                          <dt>Phone</dt>
-                          <dd>{client.phone}</dd>
-                        </div>
-                      )}
-                      {client.company && (
-                        <div>
-                          <dt>Company</dt>
-                          <dd>{client.company}</dd>
-                        </div>
-                      )}
-                      {clientAddress && (
-                        <div className="client-details-full">
-                          <dt>Address</dt>
-                          <dd>{clientAddress}</dd>
-                        </div>
-                      )}
-                    </dl>
-                    {client.notes && <p className="client-notes">{client.notes}</p>}
-                  </article>
-                );
-              })}
+            <div className="table-wrapper">
+              <table className="inventory-table clients-table">
+                <thead>
+                  <tr>
+                    <th>Client</th>
+                    <th>Contact</th>
+                    <th>Billing frequency</th>
+                    <th>Default markup</th>
+                    {canWrite ? <th aria-label="Actions" /> : null}
+                  </tr>
+                </thead>
+                <tbody>
+                  {pagedClients.map((client) => {
+                    const clientAddress = formatAddress(client);
+                    return (
+                      <tr key={client.id}>
+                        <td>
+                          <div className="primary-cell">
+                            <span className="primary-text">{client.name}</span>
+                            {client.company ? (
+                              <span className="secondary-text">{client.company}</span>
+                            ) : null}
+                            {client.notes ? (
+                              <span className="client-table-note">{client.notes}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>
+                          <div className="primary-cell">
+                            <span>{client.email}</span>
+                            {client.phone ? (
+                              <span className="secondary-text">{client.phone}</span>
+                            ) : null}
+                            {clientAddress ? (
+                              <span className="secondary-text">{clientAddress}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                        <td>{getBillingFrequencyLabel(client.billingFrequency)}</td>
+                        <td>{Number(client.defaultMarkupPercentage ?? 0)}%</td>
+                        {canWrite ? (
+                          <td>
+                            <div className="client-table-actions">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => handleEdit(client)}
+                                title={`Edit ${client.name}`}
+                                aria-label={`Edit ${client.name}`}
+                              >
+                                <Icon name="edit" size={16} />
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setDeleteTarget(client)}
+                                title={`Delete ${client.name}`}
+                                aria-label={`Delete ${client.name}`}
+                              >
+                                <Icon name="delete" size={16} />
+                              </Button>
+                            </div>
+                          </td>
+                        ) : null}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
             {clients.length > PAGE_SIZE && (
               <div className="pagination-controls">
