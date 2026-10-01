@@ -121,7 +121,7 @@ body {
   padding: 6px;
   background: var(--color-gray-0);
   border: 1px solid rgba(148, 163, 184, 0.35);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-md);
   z-index: 40;
   display: flex;
@@ -134,7 +134,7 @@ body {
   width: 100%;
   text-align: left;
   border: none;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
   background: transparent;
   color: var(--color-gray-900);
@@ -171,7 +171,7 @@ body {
 }
 
 .clear-button {
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px solid rgba(148, 163, 184, 0.6);
   padding: 8px 16px;
   background: rgba(248, 250, 252, 0.8);
@@ -256,7 +256,7 @@ main {
   gap: 10px;
   padding: 16px;
   border: 1px solid var(--color-gray-200);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-50);
 }
 
@@ -307,7 +307,7 @@ main {
   font-weight: 600;
   color: var(--color-gray-800);
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .property-supply-card-par-value:hover:not(:disabled) {
@@ -329,7 +329,7 @@ main {
   width: 80px;
   padding: 4px 6px;
   border: 1px solid var(--color-gray-300);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .property-add-item-form {
@@ -340,7 +340,7 @@ main {
   padding: 14px 16px;
   margin-bottom: 16px;
   border: 1px dashed var(--color-gray-300);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-50);
 }
 
@@ -356,7 +356,7 @@ main {
 .property-add-item-form input {
   padding: 8px 10px;
   border: 1px solid var(--color-gray-300);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   min-width: 200px;
 }
 
@@ -367,7 +367,7 @@ main {
 .property-create-stocked-items {
   padding: 14px 16px;
   border: 1px solid var(--color-gray-200);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-50);
 }
 
@@ -425,7 +425,7 @@ main {
   gap: 16px;
   padding: 9px 10px;
   border: 1px solid var(--color-gray-200);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--color-gray-0);
 }
 
@@ -738,7 +738,7 @@ button.btn-sm {
   );
   background-size: 200% 100%;
   animation: skeleton-shimmer 1.2s ease-in-out infinite;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   min-height: 1em;
 }
 
@@ -865,7 +865,7 @@ button.btn-sm {
 .onboarding-checklist {
   margin-bottom: 24px;
   padding: 20px 22px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(37, 99, 235, 0.2);
   background: linear-gradient(
     135deg,
@@ -912,7 +912,7 @@ button.btn-sm {
 
 .summary-chip {
   padding: 8px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   background: rgba(248, 250, 252, 0.96);
   border: 1px solid rgba(148, 163, 184, 0.5);
   display: flex;
@@ -966,7 +966,7 @@ button.btn-sm {
 
 .export-property-select {
   padding: 8px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid rgba(148, 163, 184, 0.5);
   font-size: 13px;
   background: var(--color-gray-0);
@@ -982,7 +982,7 @@ button.btn-sm {
 .import-button {
   position: relative;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   border: 1px dashed rgba(148, 163, 184, 0.9);
   padding: 7px 16px;
   font-size: 13px;
@@ -1160,7 +1160,7 @@ button.btn-sm {
 .bill-to-client-row-button {
   font-size: 11px;
   padding: 4px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-gray-200);
   background: var(--color-gray-50);
   color: var(--color-gray-600);
@@ -1193,7 +1193,7 @@ button.btn-sm {
   margin-bottom: 32px;
   padding: 24px;
   border: 1px solid rgba(148, 163, 184, 0.25);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -1239,7 +1239,7 @@ button.btn-sm {
 .report-card {
   background: var(--color-gray-0);
   border: 1px solid var(--color-gray-200);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -1289,7 +1289,7 @@ button.btn-sm {
 .report-filter-select,
 .report-filter-input {
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-gray-200);
   font-size: 14px;
   min-width: 180px;
@@ -1316,7 +1316,7 @@ button.btn-sm {
 .report-value-block {
   background: var(--color-gray-0);
   border: 1px solid var(--color-gray-200);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
@@ -1337,7 +1337,7 @@ button.btn-sm {
   padding: 14px 16px;
   background: #f0f9ff;
   border: 1px solid var(--color-info-border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 1rem;
   color: #0c4a6e;
 }
@@ -1411,7 +1411,7 @@ button.btn-sm {
   text-align: center;
   color: var(--color-gray-500);
   border: 1px dashed var(--color-gray-300);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-50);
 }
 
@@ -1471,7 +1471,7 @@ button.btn-sm {
 
 .shopping-list-category {
   background: rgba(255, 255, 255, 0.8);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   padding: 20px 24px;
   border: 1px solid rgba(148, 163, 184, 0.25);
   box-shadow: var(--shadow-sm);
@@ -1584,7 +1584,7 @@ button.btn-sm {
 
 .login-card {
   background: rgba(255, 255, 255, 0.96);
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   padding: 32px 40px;
   box-shadow: var(--shadow-lg);
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -1602,7 +1602,7 @@ button.btn-sm {
   align-items: center;
   gap: 6px;
   padding: 8px 14px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: rgba(248, 250, 252, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.5);
   color: var(--color-gray-500);
@@ -1687,7 +1687,7 @@ button.btn-sm {
 
 .login-form input {
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.7);
   padding: 10px 12px;
   font-size: 14px;
@@ -1718,7 +1718,7 @@ button.btn-sm {
 .login-form .province-select,
 .login-form select.province-select {
   width: 100%;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.7);
   padding: 10px 12px;
   font-size: 14px;
@@ -1740,7 +1740,7 @@ button.btn-sm {
 .login-form .phone-country-select {
   flex: 0 0 auto;
   width: 140px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.7);
   padding: 10px 12px;
   font-size: 14px;
@@ -1795,7 +1795,7 @@ button.btn-sm {
   padding: 16px;
   background: linear-gradient(135deg, rgba(16, 185, 129, 0.05), rgba(59, 130, 246, 0.05));
   border: 2px solid rgba(16, 185, 129, 0.2);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -1842,7 +1842,7 @@ button.btn-sm {
   color: var(--color-gray-500);
   transition: color 0.15s ease;
   box-shadow: none;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .password-toggle:hover {
@@ -1864,7 +1864,7 @@ button.btn-sm {
 
 .error-message {
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-danger-bg);
   color: var(--color-danger);
   font-size: 13px;
@@ -1874,7 +1874,7 @@ button.btn-sm {
 
 .success-message {
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-success-bg);
   color: var(--color-success);
   font-size: 13px;
@@ -1885,7 +1885,7 @@ button.btn-sm {
 .plan-over-limit-banner {
   margin: 0 16px 12px;
   padding: 12px 16px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-0)7ed;
   border: 1px solid #fdba74;
   color: var(--color-warning);
@@ -1921,7 +1921,7 @@ button.btn-sm {
   gap: 8px;
   padding: 12px 16px;
   margin-bottom: 20px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   background: var(--color-success-bg);
   color: var(--color-success);
   font-size: 14px;
@@ -1947,7 +1947,7 @@ button.btn-sm {
   font-size: 20px;
   line-height: 1;
   cursor: pointer;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
 }
 
 .sale-created-invoice-banner .banner-dismiss:hover {
@@ -2037,7 +2037,7 @@ button.btn-sm {
 
 .forgot-password-message {
   padding: 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 13px;
   text-align: center;
 }
@@ -2192,7 +2192,7 @@ button.btn-sm {
   align-items: center;
   gap: 6px;
   padding: 8px 16px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   text-decoration: none;
   color: var(--color-gray-500);
   font-size: 13px;
@@ -2235,7 +2235,7 @@ button.btn-sm {
   }
 
   .main-nav .nav-link {
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     justify-content: flex-start;
   }
 }
@@ -2259,7 +2259,7 @@ button.btn-sm {
 
 .stat-card {
   background: rgba(255, 255, 255, 0.96);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 24px;
   display: flex;
   align-items: center;
@@ -2321,7 +2321,7 @@ button.btn-sm {
 
 .chart-panel {
   background: rgba(255, 255, 255, 0.96);
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   padding: 24px;
   box-shadow: var(--shadow-lg);
   border: 1px solid rgba(148, 163, 184, 0.25);
@@ -2358,7 +2358,7 @@ button.btn-sm {
   gap: 24px;
   padding: 12px 16px;
   background: var(--color-danger-bg);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-danger-border);
 }
 
@@ -2424,7 +2424,7 @@ button.btn-sm {
 
 .client-card {
   background: rgba(255, 255, 255, 0.96);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.3);
   box-shadow: var(--shadow-sm);
@@ -2468,7 +2468,7 @@ button.btn-sm {
   margin: 16px 0;
   padding: 16px;
   background: rgba(248, 250, 252, 0.5);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
 }
 
 .invoice-items-section h4 {
@@ -2503,7 +2503,7 @@ button.btn-sm {
   margin-top: 12px;
   padding: 12px 16px;
   background: rgba(241, 245, 249, 0.9);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.25);
   font-size: 14px;
   color: var(--color-gray-700);
@@ -2515,7 +2515,7 @@ button.btn-sm {
 
 .invoice-card {
   background: rgba(255, 255, 255, 0.96);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 16px;
   border: 1px solid rgba(148, 163, 184, 0.3);
   box-shadow: var(--shadow-sm);
@@ -2541,7 +2541,7 @@ button.btn-sm {
 
 .status-badge {
   padding: 4px 12px;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   font-size: 11px;
   font-weight: 600;
   color: white;
@@ -2597,7 +2597,7 @@ button.btn-sm {
 
 .month-picker {
   padding: 8px 12px;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.5);
   background: rgba(248, 250, 252, 0.8);
   font-size: 14px;
@@ -2613,7 +2613,7 @@ button.btn-sm {
 .sold-by-month-client {
   padding: 16px;
   background: rgba(248, 250, 252, 0.6);
-  border-radius: 14px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -2707,7 +2707,7 @@ button.btn-sm {
   max-height: 200px;
   overflow-y: auto;
   border: 1px solid var(--color-gray-200);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   padding: 8px 12px;
 }
 
@@ -2812,7 +2812,7 @@ button.btn-sm {
   justify-content: space-between;
   padding: 12px;
   background: rgba(248, 250, 252, 0.5);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 14px;
 }
 
@@ -2840,7 +2840,7 @@ button.btn-sm {
   background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-600));
   color: var(--color-gray-50);
   border: none;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   padding: 8px 18px;
   font-size: 13px;
   font-weight: 500;
@@ -2867,7 +2867,7 @@ button.btn-sm {
   margin-bottom: 16px;
   padding: 12px 14px;
   border: 1px solid var(--color-gray-200);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-50);
 }
 
@@ -2914,7 +2914,7 @@ button.btn-sm {
 .legacy-items-details {
   margin-top: 20px;
   border: 1px solid var(--color-gray-200);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 8px 12px 12px;
   background: var(--color-gray-0);
 }
@@ -3029,7 +3029,7 @@ button.btn-sm {
   font-size: 1rem;
   line-height: 1.5;
   border: 1px solid var(--color-gray-200);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   background: var(--color-gray-0);
   color: var(--color-gray-900);
   box-sizing: border-box;
@@ -3046,7 +3046,7 @@ button.btn-sm {
   margin-bottom: 20px;
   padding: 16px;
   background: var(--color-gray-50);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-gray-200);
 }
 
@@ -3317,7 +3317,7 @@ button.property-tab.active:hover {
 
 .nav-button {
   padding: 10px 20px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 14px;
   font-weight: 500;
   cursor: pointer;
@@ -3456,7 +3456,7 @@ button.property-tab.active:hover {
 
 .cta-button {
   padding: 16px 32px;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
@@ -3518,7 +3518,7 @@ button.property-tab.active:hover {
 .step-card {
   background: white;
   padding: 32px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   border: 1px solid var(--color-gray-200);
 }
@@ -3547,7 +3547,7 @@ button.property-tab.active:hover {
   color: white;
   font-size: 18px;
   font-weight: 700;
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   margin-bottom: 16px;
 }
 
@@ -3586,7 +3586,7 @@ button.property-tab.active:hover {
   padding: 12px 20px;
   background: white;
   border: 1px solid var(--color-gray-200);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   font-size: 15px;
   color: var(--color-gray-700);
   font-weight: 500;
@@ -3613,7 +3613,7 @@ button.property-tab.active:hover {
 
 .who-card {
   padding: 32px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   border: 1px solid var(--color-gray-200);
 }
 
@@ -3672,7 +3672,7 @@ button.property-tab.active:hover {
   padding: 16px 32px;
   font-size: 18px;
   font-weight: 600;
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -3730,7 +3730,7 @@ button.property-tab.active:hover {
 .feature-card {
   background: white;
   padding: 40px;
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   box-shadow: var(--shadow-sm);
   transition: all 0.3s ease;
 }
@@ -3765,7 +3765,7 @@ button.property-tab.active:hover {
   padding: 32px 40px;
   background: linear-gradient(135deg, var(--color-info-bg) 0%, var(--color-success-bg) 100%);
   border: 1px solid rgba(37, 99, 235, 0.2);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   text-align: center;
   position: relative;
 }
@@ -3779,7 +3779,7 @@ button.property-tab.active:hover {
   font-weight: 600;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  border-radius: 999px;
+  border-radius: var(--radius-full);
   margin-bottom: 24px;
 }
 
@@ -3796,7 +3796,7 @@ button.property-tab.active:hover {
   max-width: 420px;
   padding: 24px 20px;
   background: rgba(255, 255, 255, 0.7);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
@@ -3829,14 +3829,14 @@ button.property-tab.active:hover {
   margin: 32px auto;
   padding: 6px;
   background: var(--color-gray-100);
-  border-radius: 12px;
+  border-radius: var(--radius-md);
   max-width: 360px;
 }
 
 .billing-option {
   flex: 1;
   padding: 12px 24px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
@@ -3862,7 +3862,7 @@ button.property-tab.active:hover {
   background: linear-gradient(135deg, var(--color-success) 0%, var(--color-success) 100%);
   color: white;
   padding: 2px 8px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   text-transform: uppercase;
   letter-spacing: 0.3px;
 }
@@ -3878,7 +3878,7 @@ button.property-tab.active:hover {
 .pricing-card {
   background: white;
   border: 2px solid var(--color-gray-200);
-  border-radius: 16px;
+  border-radius: var(--radius-md);
   padding: 40px;
   position: relative;
   transition: all 0.3s ease;
@@ -3939,7 +3939,7 @@ button.property-tab.active:hover {
   background: linear-gradient(135deg, var(--color-primary-400) 0%, #8b5cf6 100%);
   color: white;
   padding: 6px 20px;
-  border-radius: 20px;
+  border-radius: var(--radius-md);
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
@@ -4008,7 +4008,7 @@ button.property-tab.active:hover {
 .pricing-button {
   width: 100%;
   padding: 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
