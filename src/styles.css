@@ -1710,42 +1710,6 @@ button.btn-sm {
   font-weight: 600;
 }
 
-.report-value-tables {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: 24px;
-  margin-bottom: 16px;
-}
-
-.report-value-block {
-  background: var(--color-gray-0);
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.report-value-block .reports-movements-table {
-  margin: 0;
-}
-
-.report-value-title {
-  margin: 0;
-  padding: 12px 14px;
-  font-size: 0.9375rem;
-  font-weight: 600;
-  background: var(--color-gray-50);
-  border-bottom: 1px solid var(--color-gray-200);
-}
-
-.report-portfolio-total {
-  padding: 14px 16px;
-  background: var(--color-info-bg);
-  border: 1px solid var(--color-info-border);
-  border-radius: var(--radius-md);
-  font-size: 1rem;
-  color: var(--color-info);
-}
-
 .reports-movements-table {
   width: 100%;
   border-collapse: collapse;
@@ -3928,25 +3892,6 @@ button.clickable-stat-card {
   .settings-summary-card {
     flex-direction: column;
   }
-}
-
-.add-property-button {
-  background: linear-gradient(135deg, var(--color-primary-500), var(--color-primary-600));
-  color: var(--color-gray-50);
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 8px 18px;
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  box-shadow: var(--shadow-md);
-  transition: transform 0.12s ease, box-shadow 0.12s ease, filter 0.12s ease;
-}
-
-.add-property-button:hover {
-  transform: translateY(-1px);
-  box-shadow: var(--shadow-lg);
-  filter: brightness(1.02);
 }
 
 .stock-toolbar {
