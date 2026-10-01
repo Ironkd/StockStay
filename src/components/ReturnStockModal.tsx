@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import type { Replenishment, ReplenishmentLine } from "../types";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { StockFlowModal } from "./StockFlowModal";
+import { Button, EmptyState, FormField } from "./ui";
 
 type Props = {
   onClose: () => void;
@@ -120,63 +121,74 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
       onClose={onClose}
     >
       {loadingList ? (
-        <p>Loading replenishment lines…</p>
+        <p className="stock-form-note">Loading replenishment lines…</p>
       ) : options.length === 0 ? (
-        <>
-          <p>
-            No returnable replenishment lines yet. Use <strong>Replenish</strong> to deploy
-            stock to a property first; returns credit the next invoice.
-          </p>
-          <div className="form-actions">
-            <button type="button" className="secondary" onClick={onClose}>
-              Close
-            </button>
-          </div>
-        </>
+        <EmptyState
+          title="No returnable replenishment lines"
+          body={
+            <>
+              Use <strong>Replenish</strong> to deploy stock to a property first; returns credit
+              the next invoice.
+            </>
+          }
+          secondaryLabel="Close"
+          onSecondary={onClose}
+        />
       ) : (
-        <form onSubmit={handleSubmit} className="inventory-form">
-          <label>
-            <span>Replenishment line *</span>
-            <select value={lineId} onChange={(e) => setLineId(e.target.value)} required>
-              <option value="">Select line…</option>
-              {options.map(({ line, replenishment, remaining }) => (
-                <option key={line.id} value={line.id}>
-                  {(line.supplyItem?.name || line.sku?.name || "Item") +
-                    ` · ${replenishment.property?.name || "Property"}` +
-                    ` · remaining ${remaining.toFixed(2)}` +
-                    ` · ${new Date(replenishment.createdAt).toLocaleDateString()}`}
-                </option>
-              ))}
-            </select>
-          </label>
+        <form onSubmit={handleSubmit} className="inventory-form stacked-form">
+          <FormField label="Replenishment line" required>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={lineId}
+                onChange={(e) => setLineId(e.target.value)}
+                required
+                disabled={loading}
+              >
+                <option value="">Select line…</option>
+                {options.map(({ line, replenishment, remaining }) => (
+                  <option key={line.id} value={line.id}>
+                    {(line.supplyItem?.name || line.sku?.name || "Item") +
+                      ` · ${replenishment.property?.name || "Property"}` +
+                      ` · remaining ${remaining.toFixed(2)}` +
+                      ` · ${new Date(replenishment.createdAt).toLocaleDateString()}`}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
 
-          {selected && (
-            <p style={{ fontSize: "13px", color: "#64748b" }}>
+          {selected ? (
+            <p className="stock-form-note">
               Original {Number(selected.line.baseQtyDeployed).toFixed(2)} base · remaining{" "}
-              {selected.remaining.toFixed(2)} · bill-back was $
-              {Number(selected.line.billBackAmount).toFixed(2)}
+              {selected.remaining.toFixed(2)} · bill-back was ${
+                Number(selected.line.billBackAmount).toFixed(2)
+              }
             </p>
-          )}
+          ) : null}
 
-          <label>
-            <span>Base qty to return *</span>
-            <input
-              type="number"
-              min="0"
-              step="any"
-              value={baseQty}
-              onChange={(e) => setBaseQty(e.target.value)}
-              required
-            />
-          </label>
+          <FormField label="Base qty to return" required>
+            {(inputProps) => (
+              <input
+                {...inputProps}
+                type="number"
+                min="0"
+                step="any"
+                value={baseQty}
+                onChange={(e) => setBaseQty(e.target.value)}
+                required
+                disabled={loading}
+              />
+            )}
+          </FormField>
 
           <div className="form-actions">
-            <button type="button" className="secondary" onClick={onClose} disabled={loading}>
+            <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
               Cancel
-            </button>
-            <button type="submit" disabled={loading}>
+            </Button>
+            <Button type="submit" disabled={loading}>
               {loading ? "Returning…" : "Confirm return"}
-            </button>
+            </Button>
           </div>
         </form>
       )}

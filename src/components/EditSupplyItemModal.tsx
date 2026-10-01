@@ -11,6 +11,7 @@ import {
   supplyItemsApi,
 } from "../services/catalogueApi";
 import { formatQty as formatQtyShared } from "../utils/format";
+import { Button, EmptyState, FormField, Modal } from "./ui";
 
 function formatQty(n: number): string {
   return formatQtyShared(n, 4);
@@ -229,68 +230,71 @@ export const EditSupplyItemModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={() => !busy && onClose()}>
-      <div
-        className="modal-content"
-        onClick={(e) => e.stopPropagation()}
-        style={{ maxWidth: "560px", maxHeight: "90vh", overflowY: "auto" }}
-      >
-        <h3 style={{ marginTop: 0 }}>Edit supply item</h3>
-        <p style={{ marginTop: 0, color: "#64748b", fontSize: "13px" }}>
-          Update properties{locationId ? ", reorder for this location," : ""} and manage SKUs.
-        </p>
+    <Modal open onClose={onClose} title="Edit supply item" maxWidth="560px" busy={busy}>
+      <p className="modal-intro">
+        Update properties{locationId ? ", reorder for this location," : ""} and manage SKUs.
+      </p>
 
-        <form className="inventory-form" onSubmit={handleSave}>
-          <h4 style={{ margin: "8px 0 0", fontSize: "14px" }}>Properties</h4>
-          <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-            <label>
-              <span>Name *</span>
-              <input
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-                disabled={busy}
-              />
-            </label>
-            <label>
-              <span>Category</span>
-              <input
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                placeholder="Optional"
-                disabled={busy}
-              />
-            </label>
-            <label>
-              <span>Base unit *</span>
-              <select
-                value={baseUnitId}
-                onChange={(e) => setBaseUnitId(e.target.value)}
-                required
-                disabled={busy || units.length === 0}
-              >
-                <option value="">Select…</option>
-                {units.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name} ({u.code})
-                  </option>
-                ))}
-              </select>
-            </label>
+      <form className="inventory-form stacked-form" onSubmit={handleSave}>
+        <div>
+          <div className="checklist-group-heading">Properties</div>
+          <div className="form-grid stock-modal-grid">
+            <FormField label="Name" required>
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  required
+                  disabled={busy}
+                />
+              )}
+            </FormField>
+            <FormField label="Category">
+              {(inputProps) => (
+                <input
+                  {...inputProps}
+                  value={category}
+                  onChange={(e) => setCategory(e.target.value)}
+                  placeholder="Optional"
+                  disabled={busy}
+                />
+              )}
+            </FormField>
+            <FormField label="Base unit" required>
+              {(inputProps) => (
+                <select
+                  {...inputProps}
+                  value={baseUnitId}
+                  onChange={(e) => setBaseUnitId(e.target.value)}
+                  required
+                  disabled={busy || units.length === 0}
+                >
+                  <option value="">Select…</option>
+                  {units.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} ({u.code})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </FormField>
           </div>
+        </div>
 
-          {locationId ? (
-            <>
-              <h4 style={{ margin: "12px 0 0", fontSize: "14px" }}>
-                Reorder at {locationName || "this location"}
-              </h4>
-              <p style={{ margin: 0, color: "#64748b", fontSize: "12px" }}>
-                Thresholds are in {baseUnitLabel}. Set reorder point to 0 to turn alerts off.
-              </p>
-              <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                <label>
-                  <span>Reorder point</span>
+        {locationId ? (
+          <div>
+            <div className="checklist-group-heading">
+              Reorder at {locationName || "this location"}
+            </div>
+            <p className="stock-form-note">
+              Thresholds are in {baseUnitLabel}. Set reorder point to 0 to turn alerts off.
+            </p>
+            <div className="form-grid stock-modal-grid">
+              <FormField label="Reorder point">
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     min="0"
                     step="any"
@@ -299,10 +303,12 @@ export const EditSupplyItemModal: React.FC<Props> = ({
                     placeholder="0"
                     disabled={busy}
                   />
-                </label>
-                <label>
-                  <span>Suggested buy qty</span>
+                )}
+              </FormField>
+              <FormField label="Suggested buy qty">
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     min="0"
                     step="any"
@@ -311,72 +317,53 @@ export const EditSupplyItemModal: React.FC<Props> = ({
                     placeholder="0"
                     disabled={busy}
                   />
-                </label>
-              </div>
-            </>
-          ) : (
-            <p style={{ margin: "8px 0 0", color: "#64748b", fontSize: "12px" }}>
-              Reorder thresholds are set per stock location. Open a location to configure them.
-            </p>
-          )}
-
-          <div className="form-actions" style={{ marginTop: "8px" }}>
-            <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-              Cancel
-            </button>
-            <button type="submit" disabled={busy}>
-              {busy ? "Saving…" : "Save supply item"}
-            </button>
+                )}
+              </FormField>
+            </div>
           </div>
-        </form>
+        ) : (
+          <p className="stock-form-note">
+            Reorder thresholds are set per stock location. Open a location to configure them.
+          </p>
+        )}
 
-        <hr style={{ border: 0, borderTop: "1px solid #e2e8f0", margin: "20px 0" }} />
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "8px",
-            marginBottom: "8px",
-          }}
-        >
-          <h4 style={{ margin: 0, fontSize: "14px" }}>SKUs</h4>
-          {!editingSku && (
-            <button type="button" className="secondary" onClick={openNewSku} disabled={busy}>
-              Add SKU
-            </button>
-          )}
+        <div className="form-actions">
+          <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
+            Cancel
+          </Button>
+          <Button type="submit" disabled={busy}>
+            {busy ? "Saving…" : "Save supply item"}
+          </Button>
         </div>
+      </form>
 
-        {editingSku && (
-          <form
-            className="inventory-form"
-            onSubmit={handleSaveSku}
-            style={{
-              marginBottom: "12px",
-              padding: "12px",
-              border: "1px solid #e2e8f0",
-              borderRadius: "10px",
-              background: "#f8fafc",
-            }}
-          >
-            <h4 style={{ margin: "0 0 8px", fontSize: "13px" }}>
-              {editingSku.id ? "Edit SKU" : "New SKU"}
-            </h4>
-            <div className="form-grid" style={{ gridTemplateColumns: "1fr 1fr" }}>
-              <label>
-                <span>Name *</span>
+      <div className="checklist-group-heading">SKUs</div>
+      {!editingSku ? (
+        <div className="form-actions">
+          <Button type="button" variant="secondary" onClick={openNewSku} disabled={busy}>
+            Add SKU
+          </Button>
+        </div>
+      ) : null}
+
+      {editingSku ? (
+        <form className="inventory-form stacked-form" onSubmit={handleSaveSku}>
+          <div className="form-grid stock-modal-grid">
+            <FormField label="Name" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   value={editingSku.name}
                   onChange={(e) => setEditingSku({ ...editingSku, name: e.target.value })}
                   required
                   disabled={busy}
                 />
-              </label>
-              <label>
-                <span>Pack size ({baseUnitLabel}) *</span>
+              )}
+            </FormField>
+            <FormField label={`Pack size (${baseUnitLabel})`} required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="number"
                   min="0"
                   step="any"
@@ -385,10 +372,12 @@ export const EditSupplyItemModal: React.FC<Props> = ({
                   required
                   disabled={busy}
                 />
-              </label>
-              <label>
-                <span>Purchase price *</span>
+              )}
+            </FormField>
+            <FormField label="Purchase price" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="number"
                   min="0"
                   step="any"
@@ -399,94 +388,101 @@ export const EditSupplyItemModal: React.FC<Props> = ({
                   required
                   disabled={busy}
                 />
-              </label>
-              <label>
-                <span>Supplier</span>
+              )}
+            </FormField>
+            <FormField label="Supplier">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   value={editingSku.supplier}
                   onChange={(e) => setEditingSku({ ...editingSku, supplier: e.target.value })}
                   placeholder="Optional"
                   disabled={busy}
                 />
-              </label>
-            </div>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => setEditingSku(null)}
-                disabled={busy}
-              >
-                Cancel
-              </button>
-              <button type="submit" disabled={busy}>
-                {busy ? "Saving…" : editingSku.id ? "Update SKU" : "Add SKU"}
-              </button>
-            </div>
-          </form>
-        )}
-
-        {loadingSkus ? (
-          <p style={{ color: "#64748b", fontSize: "13px" }}>Loading SKUs…</p>
-        ) : sortedSkus.length === 0 ? (
-          <p style={{ color: "#64748b", fontSize: "13px" }}>
-            No SKUs yet. Add a purchasable pack size for this supply item.
-          </p>
-        ) : (
-          <div style={{ overflowX: "auto" }}>
-            <table className="inventory-table" style={{ margin: 0 }}>
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Pack size</th>
-                  <th>Price</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedSkus.map((sku) => (
-                  <tr key={sku.id}>
-                    <td>
-                      {sku.name}
-                      {sku.supplier ? (
-                        <div style={{ fontSize: "12px", color: "#94a3b8" }}>{sku.supplier}</div>
-                      ) : null}
-                    </td>
-                    <td>
-                      {formatQty(Number(sku.packSize))} {baseUnitLabel}
-                    </td>
-                    <td>${Number(sku.purchasePrice).toFixed(2)}</td>
-                    <td>
-                      <div style={{ display: "flex", gap: "6px", justifyContent: "flex-end" }}>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => openEditSku(sku)}
-                          disabled={busy}
-                        >
-                          Edit
-                        </button>
-                        <button
-                          type="button"
-                          className="secondary"
-                          onClick={() => void handleArchiveSku(sku)}
-                          disabled={busy}
-                        >
-                          Archive
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              )}
+            </FormField>
           </div>
-        )}
+          <div className="form-actions">
+            <Button type="button" variant="secondary" onClick={() => setEditingSku(null)} disabled={busy}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={busy}>
+              {busy ? "Saving…" : editingSku.id ? "Update SKU" : "Add SKU"}
+            </Button>
+          </div>
+        </form>
+      ) : null}
 
-        {error ? (
-          <p style={{ color: "#b91c1c", fontSize: "14px", marginTop: "12px" }}>{error}</p>
-        ) : null}
-      </div>
-    </div>
+      {loadingSkus ? (
+        <p className="stock-form-note">Loading SKUs…</p>
+      ) : sortedSkus.length === 0 ? (
+        <EmptyState
+          title="No SKUs yet"
+          body="Add a purchasable pack size for this supply item."
+        />
+      ) : (
+        <table className="inventory-table">
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>Pack size</th>
+              <th>Price</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {sortedSkus.map((sku) => (
+              <tr key={sku.id}>
+                <td>
+                  {sku.name}
+                  {sku.supplier ? (
+                    <div className="checklist-label-meta">{sku.supplier}</div>
+                  ) : null}
+                </td>
+                <td>
+                  {formatQty(Number(sku.packSize))} {baseUnitLabel}
+                </td>
+                <td>${Number(sku.purchasePrice).toFixed(2)}</td>
+                <td>
+                  <div className="section-header-actions">
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => openEditSku(sku)}
+                      disabled={busy}
+                    >
+                      Edit
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => void handleArchiveSku(sku)}
+                      disabled={busy}
+                    >
+                      Archive
+                    </Button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+
+      {units.length === 0 ? (
+        <p className="form-banner stock-form-warning">
+          No units of measure found. Run database migrations so seeded units (ea, pack, …) are
+          available.
+        </p>
+      ) : null}
+
+      {error ? (
+        <p className="form-banner error" role="alert">
+          {error}
+        </p>
+      ) : null}
+    </Modal>
   );
 };

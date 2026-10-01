@@ -5,6 +5,7 @@ import { skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { effectiveMarkup, estimateBillBack, formatMoney } from "../utils/billBack";
 import { StockFlowModal } from "./StockFlowModal";
+import { Button, FormField } from "./ui";
 
 type Props = {
   properties: Property[];
@@ -167,105 +168,114 @@ export const TransferStockModal: React.FC<Props> = ({
       loading={loading}
       onClose={onClose}
     >
-      <form onSubmit={handleSubmit} className="inventory-form">
-        <div className="form-grid">
-          <label>
-            <span>From property *</span>
-            <select value={fromPropertyId} onChange={(e) => setFromPropertyId(e.target.value)} required>
-              <option value="">Select…</option>
-              {properties.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {!p.clientId ? " (no client)" : ""}
+      <form onSubmit={handleSubmit} className="inventory-form stacked-form">
+        <div className="form-grid stock-modal-grid">
+          <FormField label="From property" required>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={fromPropertyId}
+                onChange={(e) => setFromPropertyId(e.target.value)}
+                required
+                disabled={loading}
+              >
+                <option value="">Select…</option>
+                {properties.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {!p.clientId ? " (no client)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <FormField label="To property" required>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={toPropertyId}
+                onChange={(e) => setToPropertyId(e.target.value)}
+                required
+                disabled={loading || !fromPropertyId}
+              >
+                <option value="">Select…</option>
+                {toOptions.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                    {!p.clientId ? " (no client)" : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <FormField label="Pass-through location" required>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={stockLocationId}
+                onChange={(e) => setStockLocationId(e.target.value)}
+                required
+                disabled={loading || !fromPropertyId || !toPropertyId}
+              >
+                <option value="">
+                  {!fromPropertyId || !toPropertyId
+                    ? "Select both properties first"
+                    : sharedLocations.length === 0
+                      ? "No shared linked locations"
+                      : "Select…"}
                 </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>To property *</span>
-            <select
-              value={toPropertyId}
-              onChange={(e) => setToPropertyId(e.target.value)}
-              required
-              disabled={!fromPropertyId}
-            >
-              <option value="">Select…</option>
-              {toOptions.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                  {!p.clientId ? " (no client)" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>Pass-through location *</span>
-            <select
-              value={stockLocationId}
-              onChange={(e) => setStockLocationId(e.target.value)}
-              required
-              disabled={!fromPropertyId || !toPropertyId}
-            >
-              <option value="">
-                {!fromPropertyId || !toPropertyId
-                  ? "Select both properties first"
-                  : sharedLocations.length === 0
-                    ? "No shared linked locations"
-                    : "Select…"}
-              </option>
-              {sharedLocations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label>
-            <span>SKU *</span>
-            <select
-              value={skuId}
-              onChange={(e) => setSkuId(e.target.value)}
-              required
-              disabled={!stockLocationId}
-            >
-              <option value="">Select SKU…</option>
-              {skus.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                  {s.supplyItem ? ` · ${s.supplyItem.name}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+                {sharedLocations.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <FormField label="SKU" required>
+            {(inputProps) => (
+              <select
+                {...inputProps}
+                value={skuId}
+                onChange={(e) => setSkuId(e.target.value)}
+                required
+                disabled={loading || !stockLocationId}
+              >
+                <option value="">Select SKU…</option>
+                {skus.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.name}
+                    {s.supplyItem ? ` · ${s.supplyItem.name}` : ""}
+                  </option>
+                ))}
+              </select>
+            )}
+          </FormField>
+          <FormField label="Base qty to transfer" required>
+            {(inputProps) => (
+              <input
+                {...inputProps}
+                type="number"
+                min="0"
+                step="any"
+                value={baseQty}
+                onChange={(e) => setBaseQty(e.target.value)}
+                required
+                disabled={loading}
+              />
+            )}
+          </FormField>
         </div>
 
-        {selectedSku && availableBase != null && (
-          <p style={{ fontSize: "13px", color: "#64748b" }}>
+        {selectedSku && availableBase != null ? (
+          <p className="stock-form-note">
             Available to transfer (unreverted at source): {availableBase.toFixed(2)} base units
             {selectedSku.supplyItem ? ` (${selectedSku.supplyItem.name})` : ""}
           </p>
-        )}
+        ) : null}
 
-        {fromPropertyId && toPropertyId && sharedLocations.length === 0 && (
-          <p style={{ color: "#b45309", fontSize: "13px" }}>
-            Link both properties to the same stock location (Add new → Link).
-          </p>
-        )}
-
-        <label>
-          <span>Base qty *</span>
-          <input
-            type="number"
-            min="0"
-            step="any"
-            value={baseQty}
-            onChange={(e) => setBaseQty(e.target.value)}
-            required
-          />
-        </label>
-
-        {qty > 0 && selectedSku && (
-          <div style={{ fontSize: "13px", color: "#64748b", marginTop: "8px" }}>
+        {qty > 0 && selectedSku ? (
+          <div className="stock-form-note" aria-live="polite">
             <div>
               Est. credit (source): ${formatMoney(creditEst)} · {fromMarkup.label}
             </div>
@@ -273,15 +283,15 @@ export const TransferStockModal: React.FC<Props> = ({
               Est. charge (destination): ${formatMoney(chargeEst)} · {toMarkup.label}
             </div>
           </div>
-        )}
+        ) : null}
 
         <div className="form-actions">
-          <button type="button" className="secondary" onClick={onClose} disabled={loading}>
+          <Button type="button" variant="secondary" onClick={onClose} disabled={loading}>
             Cancel
-          </button>
-          <button type="submit" disabled={loading}>
+          </Button>
+          <Button type="submit" disabled={loading}>
             {loading ? "Transferring…" : "Confirm transfer"}
-          </button>
+          </Button>
         </div>
       </form>
     </StockFlowModal>
