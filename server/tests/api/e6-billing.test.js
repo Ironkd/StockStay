@@ -1,4 +1,4 @@
-import { beforeAll, beforeEach, describe, it, expect } from "vitest";
+import { beforeAll, beforeEach, describe, it, expect, vi } from "vitest";
 import request from "supertest";
 import { DateTime } from "luxon";
 import { getApp } from "../helpers/app.js";
@@ -8,14 +8,17 @@ import {
   createClient,
   authHeader,
 } from "../helpers/factories.js";
+import { sendInvoiceEmail } from "../../email.js";
 
 let app;
+let manualInvoiceSequence = 0;
 
 beforeAll(async () => {
   app = await getApp();
 });
 
 beforeEach(async () => {
+  vi.clearAllMocks();
   await resetDatabase();
 });
 
@@ -56,6 +59,24 @@ describe("E6 Client billing", () => {
       data: { createdAt: closed },
     });
     return scenario;
+  }
+
+  function buildManualInvoicePayload(scenario, overrides = {}) {
+    manualInvoiceSequence += 1;
+    return {
+      invoiceNumber: `MAN-${manualInvoiceSequence}`,
+      clientId: scenario.client.id,
+      clientName: scenario.client.name,
+      date: "2026-08-01",
+      dueDate: "2026-08-15",
+      items: [{ name: "Pods", quantity: 2, unitPrice: 5, total: 10 }],
+      tax: 13,
+      subtotal: 10,
+      total: 11.3,
+      status: "draft",
+      notes: "",
+      ...overrides,
+    };
   }
 
   it("E6-10 create/update client with markup and frequency", async () => {
@@ -122,7 +143,8 @@ describe("E6 Client billing", () => {
       .put(`/api/invoices/${draft.id}`)
       .set(authHeader(scenario.token))
       .send({ status: "sent", notes: "Reviewed" });
-    expect([200, 400]).toContain(updated.status);
+    expect(updated.status).toBe(200);
+    expect(updated.body.status).toBe("sent");
   });
 
   it("E6-5 send invoice (email mocked)", async () => {
@@ -137,7 +159,126 @@ describe("E6 Client billing", () => {
       .post(`/api/invoices/${draft.id}/send`)
       .set(authHeader(scenario.token))
       .send({});
-    expect([200, 201, 400]).toContain(send.status);
+    expect(send.status).toBe(200);
+  });
+
+  it("rejects manual invoices whose submitted totals do not match computed totals", async () => {
+    const scenario = await createStockScenario();
+    const create = await request(app)
+      .post("/api/invoices")
+      .set(authHeader(scenario.token))
+      .send(buildManualInvoicePayload(scenario, { total: 99.99 }));
+
+    expect(create.status).toBe(400);
+    expect(create.body.message).toContain("Invoice total");
+  });
+
+  it("requires invoices to be sent before they can be marked paid and blocks edits once paid", async () => {
+    const scenario = await createStockScenario();
+    const created = await request(app)
+      .post("/api/invoices")
+      .set(authHeader(scenario.token))
+      .send(buildManualInvoicePayload(scenario));
+    expect(created.status).toBe(201);
+
+    const directPaid = await request(app)
+      .put(`/api/invoices/${created.body.id}`)
+      .set(authHeader(scenario.token))
+      .send({ status: "paid" });
+    expect(directPaid.status).toBe(400);
+
+    const sent = await request(app)
+      .put(`/api/invoices/${created.body.id}`)
+      .set(authHeader(scenario.token))
+      .send({ status: "sent" });
+    expect(sent.status).toBe(200);
+    expect(sent.body.status).toBe("sent");
+
+    const paid = await request(app)
+      .put(`/api/invoices/${created.body.id}`)
+      .set(authHeader(scenario.token))
+      .send({ status: "paid" });
+    expect(paid.status).toBe(200);
+    expect(paid.body.status).toBe("paid");
+
+    const blockedEdit = await request(app)
+      .put(`/api/invoices/${created.body.id}`)
+      .set(authHeader(scenario.token))
+      .send({ notes: "cannot edit paid invoices" });
+    expect(blockedEdit.status).toBe(409);
+    expect(blockedEdit.body.message).toContain("Paid invoices cannot be edited");
+  });
+
+  it("voids sent invoices instead of hard deleting them", async () => {
+    const scenario = await createStockScenario();
+    const created = await request(app)
+      .post("/api/invoices")
+      .set(authHeader(scenario.token))
+      .send(buildManualInvoicePayload(scenario, { status: "sent" }));
+    expect(created.status).toBe(201);
+
+    const deleted = await request(app)
+      .delete(`/api/invoices/${created.body.id}`)
+      .set(authHeader(scenario.token));
+    expect(deleted.status).toBe(200);
+    expect(deleted.body.message).toContain("voided");
+
+    const invoice = await prisma.invoice.findUnique({ where: { id: created.body.id } });
+    expect(invoice).toBeTruthy();
+    expect(invoice.status).toBe("void");
+  });
+
+  it("treats duplicate send requests as idempotent and only sends one email", async () => {
+    const scenario = await createStockScenario();
+    const created = await request(app)
+      .post("/api/invoices")
+      .set(authHeader(scenario.token))
+      .send(buildManualInvoicePayload(scenario));
+    expect(created.status).toBe(201);
+
+    let releaseSend;
+    vi.mocked(sendInvoiceEmail).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          releaseSend = () => resolve({ ok: true });
+        })
+    );
+
+    const firstSend = new Promise((resolve, reject) => {
+      request(app)
+        .post(`/api/invoices/${created.body.id}/send`)
+        .set(authHeader(scenario.token))
+        .send({})
+        .end((error, response) => {
+          if (error) reject(error);
+          else resolve(response);
+        });
+    });
+
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const current = await prisma.invoice.findUnique({ where: { id: created.body.id } });
+      if (current?.status === "sending") break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+
+    const duplicateSend = await request(app)
+      .post(`/api/invoices/${created.body.id}/send`)
+      .set(authHeader(scenario.token))
+      .send({});
+    expect(duplicateSend.status).toBe(409);
+    expect(duplicateSend.body.message).toContain("already being sent");
+
+    releaseSend();
+    const firstResponse = await firstSend;
+    expect(firstResponse.status).toBe(200);
+
+    const alreadySent = await request(app)
+      .post(`/api/invoices/${created.body.id}/send`)
+      .set(authHeader(scenario.token))
+      .send({});
+    expect(alreadySent.status).toBe(200);
+    expect(alreadySent.body.message).toContain("already sent");
+    expect(vi.mocked(sendInvoiceEmail)).toHaveBeenCalledTimes(1);
   });
 
   it("E6-8/E6-9 unbilled lines carry until invoiced", async () => {

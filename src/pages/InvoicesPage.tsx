@@ -1,9 +1,8 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { useClients } from "../hooks/useClients";
-import { useInvoices } from "../hooks/useInvoices";
 import {
   Badge,
   Button,
@@ -15,13 +14,19 @@ import {
   Modal,
   SectionHeader,
 } from "../components/ui";
+import {
+  invoicesApi,
+  type InvoiceListSummary,
+  type PaginatedInvoiceListResponse,
+} from "../services/invoicesApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { teamApi } from "../services/teamApi";
-import { invoicesApi } from "../services/invoicesApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
+import { formatCurrency } from "../utils/format";
 
 const PAGE_SIZE = 20;
-const monthNames = [
+const DATE_ONLY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const MONTH_NAMES = [
   "January",
   "February",
   "March",
@@ -35,6 +40,18 @@ const monthNames = [
   "November",
   "December",
 ];
+const EMPTY_SUMMARY: InvoiceListSummary = {
+  draftTotal: 0,
+  draftCount: 0,
+  outstandingTotal: 0,
+  outstandingCount: 0,
+  overdueTotal: 0,
+  overdueCount: 0,
+  issuedMonthTotal: 0,
+  issuedMonthCount: 0,
+  issuedYearTotal: 0,
+  issuedYearCount: 0,
+};
 
 type InvoiceSectionKey = "unbilled" | "soldByMonth" | "activeInvoices" | "sentInvoices";
 
@@ -94,15 +111,60 @@ const getStatusTone = (status: Invoice["status"]) => {
   }
 };
 
-const formatCurrency = (value: number) =>
-  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+const createEmptyPaginatedResponse = (): PaginatedInvoiceListResponse => ({
+  active: { invoices: [], page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
+  sent: { invoices: [], page: 1, pageSize: PAGE_SIZE, total: 0, totalPages: 1 },
+  soldByMonth: [],
+  summary: EMPTY_SUMMARY,
+});
 
-const formatDate = (value?: string | null) =>
-  value ? new Date(value).toLocaleDateString() : "—";
+const formatCalendarDate = (value: string | Date | null | undefined) => {
+  if (!value) return "—";
+  const stringValue = typeof value === "string" ? value : "";
+  const dateOnlyMatch = stringValue.match(DATE_ONLY_PATTERN);
+  const date = dateOnlyMatch
+    ? new Date(
+        Date.UTC(
+          Number(dateOnlyMatch[1]),
+          Number(dateOnlyMatch[2]) - 1,
+          Number(dateOnlyMatch[3])
+        )
+      )
+    : value instanceof Date
+      ? value
+      : new Date(value);
+
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "numeric",
+    day: "numeric",
+  }).format(date);
+};
+
+const getUtcYearMonth = (value: string | Date | null | undefined) => {
+  if (!value) return null;
+  const stringValue = typeof value === "string" ? value : "";
+  const dateOnlyMatch = stringValue.match(DATE_ONLY_PATTERN);
+  if (dateOnlyMatch) {
+    return {
+      year: Number(dateOnlyMatch[1]),
+      month: Number(dateOnlyMatch[2]),
+    };
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+  };
+};
 
 const getBillingPeriodLabel = (invoice: Invoice) => {
   if (!invoice.billingPeriodStart || !invoice.billingPeriodEnd) return "—";
-  return `${formatDate(invoice.billingPeriodStart)} – ${formatDate(invoice.billingPeriodEnd)}`;
+  return `${formatCalendarDate(invoice.billingPeriodStart)} – ${formatCalendarDate(invoice.billingPeriodEnd)}`;
 };
 
 export const InvoicesPage: React.FC = () => {
@@ -110,7 +172,6 @@ export const InvoicesPage: React.FC = () => {
   const toast = useToast();
   const [searchParams] = useSearchParams();
   const propertyIdFilter = searchParams.get("propertyId") || "";
-  const { invoices, addInvoice, updateInvoice, removeInvoice, refresh: refreshInvoices } = useInvoices();
   const { clients } = useClients();
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -129,8 +190,13 @@ export const InvoicesPage: React.FC = () => {
   const [activePage, setActivePage] = useState(1);
   const [sentPage, setSentPage] = useState(1);
   const now = new Date();
-  const [selectedYear, setSelectedYear] = useState(now.getFullYear());
-  const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
+  const [selectedYear, setSelectedYear] = useState(now.getUTCFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(now.getUTCMonth() + 1);
+  const [invoiceData, setInvoiceData] = useState<PaginatedInvoiceListResponse>(
+    createEmptyPaginatedResponse
+  );
+  const [loadingInvoices, setLoadingInvoices] = useState(true);
+  const [invoiceError, setInvoiceError] = useState<string | null>(null);
   const [sectionVisibility, setSectionVisibility] = useState<Record<InvoiceSectionKey, boolean>>({
     unbilled: true,
     soldByMonth: true,
@@ -162,8 +228,57 @@ export const InvoicesPage: React.FC = () => {
     }));
   };
 
+  const loadUnbilledLines = useCallback(async () => {
+    try {
+      const rows = await replenishmentApi.listUnbilled();
+      setUnbilledLines(rows);
+    } catch {
+      setUnbilledLines([]);
+    }
+  }, []);
+
+  const refreshInvoices = useCallback(async () => {
+    setLoadingInvoices(true);
+    try {
+      const data = await invoicesApi.getPaginatedList({
+        activePage,
+        sentPage,
+        pageSize: PAGE_SIZE,
+        month: selectedMonth,
+        year: selectedYear,
+      });
+      setInvoiceData(data);
+      setInvoiceError(null);
+      if (data.active.page !== activePage) {
+        setActivePage(data.active.page);
+      }
+      if (data.sent.page !== sentPage) {
+        setSentPage(data.sent.page);
+      }
+    } catch (error) {
+      setInvoiceError(error instanceof Error ? error.message : "Failed to load invoices");
+      setInvoiceData(createEmptyPaginatedResponse());
+    } finally {
+      setLoadingInvoices(false);
+    }
+  }, [activePage, sentPage, selectedMonth, selectedYear]);
+
+  const refreshAllInvoiceData = useCallback(async () => {
+    await Promise.all([refreshInvoices(), loadUnbilledLines()]);
+  }, [loadUnbilledLines, refreshInvoices]);
+
   useEffect(() => {
-    const onRefresh = () => refreshInvoices();
+    void refreshInvoices();
+  }, [refreshInvoices]);
+
+  useEffect(() => {
+    void loadUnbilledLines();
+  }, [loadUnbilledLines]);
+
+  useEffect(() => {
+    const onRefresh = () => {
+      void refreshAllInvoiceData();
+    };
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") onRefresh();
     };
@@ -173,7 +288,7 @@ export const InvoicesPage: React.FC = () => {
       window.removeEventListener("invoices-refresh", onRefresh);
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [refreshInvoices]);
+  }, [refreshAllInvoiceData]);
 
   useEffect(() => {
     let cancelled = false;
@@ -195,21 +310,6 @@ export const InvoicesPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    replenishmentApi
-      .listUnbilled()
-      .then((rows) => {
-        if (!cancelled) setUnbilledLines(rows);
-      })
-      .catch(() => {
-        if (!cancelled) setUnbilledLines([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [invoices.length]);
 
   const visibleUnbilledLines = useMemo(() => {
     if (!propertyIdFilter) return unbilledLines;
@@ -235,7 +335,7 @@ export const InvoicesPage: React.FC = () => {
   }, [formData.items, formData.tax]);
 
   const years = useMemo(() => {
-    const currentYear = new Date().getFullYear();
+    const currentYear = new Date().getUTCFullYear();
     const yearList = [];
     for (let i = currentYear - 5; i <= currentYear + 5; i += 1) {
       yearList.push(i);
@@ -244,13 +344,8 @@ export const InvoicesPage: React.FC = () => {
   }, []);
 
   const soldByMonth = useMemo(() => {
-    const inMonth = (date: string) => {
-      const parsed = new Date(date);
-      return parsed.getFullYear() === selectedYear && parsed.getMonth() + 1 === selectedMonth;
-    };
-    const monthInvoices = invoices.filter((invoice) => inMonth(invoice.date));
     const byClient = new Map<string, { clientName: string; invoices: Invoice[] }>();
-    for (const invoice of monthInvoices) {
+    for (const invoice of invoiceData.soldByMonth) {
       const existing = byClient.get(invoice.clientId);
       if (existing) {
         existing.invoices.push(invoice);
@@ -266,22 +361,41 @@ export const InvoicesPage: React.FC = () => {
       clientName: data.clientName,
       invoices: data.invoices,
     }));
-  }, [invoices, selectedMonth, selectedYear]);
+  }, [invoiceData.soldByMonth]);
 
-  const { monthlyTotal, yearlyTotal } = useMemo(() => {
-    const inMonth = (date: string) => {
-      const parsed = new Date(date);
-      return parsed.getFullYear() === selectedYear && parsed.getMonth() + 1 === selectedMonth;
-    };
-    const inYear = (date: string) => new Date(date).getFullYear() === selectedYear;
-    const monthly = invoices
-      .filter((invoice) => inMonth(invoice.date))
-      .reduce((sum, invoice) => sum + (invoice.total ?? 0), 0);
-    const yearly = invoices
-      .filter((invoice) => inYear(invoice.date))
-      .reduce((sum, invoice) => sum + (invoice.total ?? 0), 0);
-    return { monthlyTotal: monthly, yearlyTotal: yearly };
-  }, [invoices, selectedMonth, selectedYear]);
+  const summary = invoiceData.summary;
+  const activeInvoices = invoiceData.active.invoices;
+  const sentInvoices = invoiceData.sent.invoices;
+  const statusOptions = useMemo(() => {
+    if (!editingInvoice) {
+      return [
+        { value: "draft", label: "Draft" },
+        { value: "sent", label: "Sent" },
+      ];
+    }
+
+    switch (editingInvoice.status) {
+      case "draft":
+        return [
+          { value: "draft", label: "Draft" },
+          { value: "sent", label: "Sent" },
+        ];
+      case "sent":
+        return [
+          { value: "sent", label: "Sent" },
+          { value: "overdue", label: "Overdue" },
+          { value: "paid", label: "Paid" },
+        ];
+      case "overdue":
+        return [
+          { value: "overdue", label: "Overdue" },
+          { value: "sent", label: "Sent" },
+          { value: "paid", label: "Paid" },
+        ];
+      default:
+        return [{ value: "paid", label: "Paid" }];
+    }
+  }, [editingInvoice]);
 
   const closeForm = () => {
     setFormData({
@@ -371,18 +485,20 @@ export const InvoicesPage: React.FC = () => {
 
     try {
       if (editingInvoice) {
-        await updateInvoice(editingInvoice.id, invoiceData as Parameters<typeof updateInvoice>[1]);
+        await invoicesApi.update(editingInvoice.id, invoiceData);
       } else if (!isScheduled) {
-        await addInvoice(invoiceData as Parameters<typeof addInvoice>[0]);
+        await invoicesApi.create(
+          invoiceData as Omit<Invoice, "id" | "createdAt" | "updatedAt">
+        );
       } else {
         throw new Error("Cannot create a scheduled invoice from this form.");
       }
 
-      await refreshInvoices();
+      await refreshAllInvoiceData();
 
       if (wasPreviouslySent && editingInvoice) {
         toast.success(
-          `An updated invoice for ${editingInvoice.clientName} has been sent with the latest changes.`
+          `Invoice updated. ${editingInvoice.clientName} was not re-emailed automatically.`
         );
       } else {
         toast.success(editingInvoice ? "Invoice updated" : "Invoice created");
@@ -418,9 +534,17 @@ export const InvoicesPage: React.FC = () => {
 
   const handleConfirmDelete = () => {
     if (!deleteInvoiceId) return;
-    removeInvoice(deleteInvoiceId);
-    toast.success("Invoice deleted");
-    setDeleteInvoiceId(null);
+    void (async () => {
+      try {
+        const result = await invoicesApi.delete(deleteInvoiceId);
+        await refreshAllInvoiceData();
+        toast.success(result?.message || "Invoice deleted");
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "Failed to delete invoice");
+      } finally {
+        setDeleteInvoiceId(null);
+      }
+    })();
   };
 
   const handleSendConfirm = async () => {
@@ -433,7 +557,7 @@ export const InvoicesPage: React.FC = () => {
     setSendingInvoice(true);
     try {
       await invoicesApi.send(sendPreviewInvoice.id);
-      await refreshInvoices();
+      await refreshAllInvoiceData();
       setSendPreviewInvoice(null);
       toast.success(`Invoice #${sendPreviewInvoice.invoiceNumber} sent to ${clientEmail}.`);
     } catch (err) {
@@ -443,27 +567,6 @@ export const InvoicesPage: React.FC = () => {
       setSendingInvoice(false);
     }
   };
-
-  const { activeInvoices, sentInvoices } = useMemo(() => {
-    const active = invoices.filter((invoice) => invoice.status !== "sent");
-    const sent = invoices
-      .filter((invoice) => invoice.status === "sent")
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return { activeInvoices: active, sentInvoices: sent };
-  }, [invoices]);
-
-  const activeTotalPages = Math.max(1, Math.ceil(activeInvoices.length / PAGE_SIZE));
-  const sentTotalPages = Math.max(1, Math.ceil(sentInvoices.length / PAGE_SIZE));
-  const activeCurrentPage = Math.min(activePage, activeTotalPages);
-  const sentCurrentPage = Math.min(sentPage, sentTotalPages);
-  const pagedActiveInvoices = useMemo(() => {
-    const start = (activeCurrentPage - 1) * PAGE_SIZE;
-    return activeInvoices.slice(start, start + PAGE_SIZE);
-  }, [activeCurrentPage, activeInvoices]);
-  const pagedSentInvoices = useMemo(() => {
-    const start = (sentCurrentPage - 1) * PAGE_SIZE;
-    return sentInvoices.slice(start, start + PAGE_SIZE);
-  }, [sentCurrentPage, sentInvoices]);
 
   const previewClientEmail = sendPreviewInvoice
     ? clients.find((client) => client.id === sendPreviewInvoice.clientId)?.email?.trim()
@@ -476,8 +579,8 @@ export const InvoicesPage: React.FC = () => {
           <div className="invoice-table-primary">#{invoice.invoiceNumber}</div>
           <div className="invoice-table-secondary">{invoice.clientName}</div>
         </td>
-        <td>{formatDate(invoice.date)}</td>
-        <td>{formatDate(invoice.dueDate)}</td>
+        <td>{formatCalendarDate(invoice.date)}</td>
+        <td>{formatCalendarDate(invoice.dueDate)}</td>
         <td>{getBillingPeriodLabel(invoice)}</td>
         <td>{formatCurrency(invoice.total)}</td>
         <td>
@@ -512,14 +615,16 @@ export const InvoicesPage: React.FC = () => {
             </button>
             {canWrite && (
               <>
-                <button
-                  className="icon-button"
-                  onClick={() => handleEdit(invoice)}
-                  title="Edit"
-                  aria-label={`Edit invoice ${invoice.invoiceNumber}`}
-                >
-                  <Icon name="edit" size={16} />
-                </button>
+                {invoice.status !== "paid" ? (
+                  <button
+                    className="icon-button"
+                    onClick={() => handleEdit(invoice)}
+                    title="Edit"
+                    aria-label={`Edit invoice ${invoice.invoiceNumber}`}
+                  >
+                    <Icon name="edit" size={16} />
+                  </button>
+                ) : null}
                 <button
                   className="icon-button"
                   onClick={() => setDeleteInvoiceId(invoice.id)}
@@ -558,6 +663,12 @@ export const InvoicesPage: React.FC = () => {
             ? "Update invoice dates, status, line items, and notes before sending or exporting."
             : "Create a one-off invoice for a client. Scheduled draft invoices still come from Generate drafts."}
         </p>
+        {editingInvoice?.status === "sent" ? (
+          <p className="form-banner error">
+            This invoice has already been emailed. Saving updates the record only and does not
+            send a revised invoice automatically.
+          </p>
+        ) : null}
         <form onSubmit={handleSubmit} className="stacked-form">
           <div className="form-grid invoice-form-grid">
             <FormField label="Invoice number" required>
@@ -644,10 +755,11 @@ export const InvoicesPage: React.FC = () => {
                     })
                   }
                 >
-                  <option value="draft">Draft</option>
-                  <option value="sent">Sent</option>
-                  <option value="paid">Paid</option>
-                  <option value="overdue">Overdue</option>
+                  {statusOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
                 </select>
               )}
             </FormField>
@@ -839,10 +951,10 @@ export const InvoicesPage: React.FC = () => {
                   <strong>Invoice</strong> {sendPreviewInvoice.invoiceNumber}
                 </p>
                 <p>
-                  <strong>Date:</strong> {formatDate(sendPreviewInvoice.date)}
+                  <strong>Date:</strong> {formatCalendarDate(sendPreviewInvoice.date)}
                 </p>
                 <p>
-                  <strong>Due date:</strong> {formatDate(sendPreviewInvoice.dueDate)}
+                  <strong>Due date:</strong> {formatCalendarDate(sendPreviewInvoice.dueDate)}
                 </p>
               </div>
 
@@ -918,6 +1030,9 @@ export const InvoicesPage: React.FC = () => {
         description={
           <>
             Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
+            <span className="billing-generate-message">
+              Saving edits never silently re-sends a sent invoice.
+            </span>
             {generateMessage ? (
               <span className="billing-generate-message">{generateMessage}</span>
             ) : null}
@@ -926,11 +1041,26 @@ export const InvoicesPage: React.FC = () => {
         actions={
           <div className="invoice-totals-bar">
             <span className="invoice-total-item">
-              <strong>Monthly total</strong> ({monthNames[selectedMonth - 1]} {selectedYear}):{" "}
-              {formatCurrency(monthlyTotal)}
+              <strong>Draft pipeline</strong> ({summary.draftCount}):{" "}
+              {formatCurrency(summary.draftTotal)}
             </span>
             <span className="invoice-total-item">
-              <strong>Yearly total</strong> ({selectedYear}): {formatCurrency(yearlyTotal)}
+              <strong>Outstanding</strong> (sent + overdue, {summary.outstandingCount}):{" "}
+              {formatCurrency(summary.outstandingTotal)}
+            </span>
+            <span className="invoice-total-item">
+              <strong>Overdue</strong> ({summary.overdueCount}):{" "}
+              {formatCurrency(summary.overdueTotal)}
+            </span>
+            <span className="invoice-total-item">
+              <strong>
+                Issued in {MONTH_NAMES[selectedMonth - 1]} {selectedYear}
+              </strong>{" "}
+              ({summary.issuedMonthCount}): {formatCurrency(summary.issuedMonthTotal)}
+            </span>
+            <span className="invoice-total-item">
+              <strong>Issued in {selectedYear}</strong> ({summary.issuedYearCount}):{" "}
+              {formatCurrency(summary.issuedYearTotal)}
             </span>
           </div>
         }
@@ -950,7 +1080,7 @@ export const InvoicesPage: React.FC = () => {
                     ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
                     : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
                 );
-                await refreshInvoices();
+                await refreshAllInvoiceData();
               } catch (err) {
                 setGenerateMessage(
                   err instanceof Error ? err.message : "Failed to generate drafts"
@@ -977,6 +1107,18 @@ export const InvoicesPage: React.FC = () => {
         </Button>
         {canWrite ? <Button onClick={openCreateForm}>Create Invoice</Button> : null}
       </div>
+
+      {loadingInvoices ? (
+        <EmptyState title="Loading invoices…" />
+      ) : invoiceError ? (
+        <EmptyState
+          title="Couldn't load invoices"
+          body={invoiceError}
+          error
+          primaryLabel="Retry invoices"
+          onPrimary={() => void refreshInvoices()}
+        />
+      ) : null}
 
       <CollapsibleSection
         title={`Unbilled charges & credits (${visibleUnbilledLines.length})`}
@@ -1031,7 +1173,7 @@ export const InvoicesPage: React.FC = () => {
                         <td className={line.isCredit ? "invoice-amount-negative" : undefined}>
                           {formatCurrency(Number(line.billBackAmount))}
                         </td>
-                        <td>{formatDate(line.createdAt)}</td>
+                        <td>{formatCalendarDate(line.createdAt)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -1042,221 +1184,236 @@ export const InvoicesPage: React.FC = () => {
         </div>
       </CollapsibleSection>
 
-      <CollapsibleSection
-        title="Billed by month · Who received what"
-        open={sectionVisibility.soldByMonth}
-        onToggle={() => toggleSection("soldByMonth")}
-        className="invoice-section-card sold-by-month-panel"
-        controls={
-          <div className="sold-by-month-controls">
-            <FormField label="Year" className="month-picker-label">
-              {(inputProps) => (
-                <select
-                  {...inputProps}
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  className="month-picker"
-                >
-                  {years.map((year) => (
-                    <option key={year} value={year}>
-                      {year}
-                    </option>
+      {!loadingInvoices && !invoiceError ? (
+        <>
+          <CollapsibleSection
+            title="Billed by month · Who received what"
+            open={sectionVisibility.soldByMonth}
+            onToggle={() => toggleSection("soldByMonth")}
+            className="invoice-section-card sold-by-month-panel"
+            controls={
+              <div className="sold-by-month-controls">
+                <FormField label="Year" className="month-picker-label">
+                  {(inputProps) => (
+                    <select
+                      {...inputProps}
+                      value={selectedYear}
+                      onChange={(e) => setSelectedYear(Number(e.target.value))}
+                      className="month-picker"
+                    >
+                      {years.map((year) => (
+                        <option key={year} value={year}>
+                          {year}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+                <FormField label="Month" className="month-picker-label">
+                  {(inputProps) => (
+                    <select
+                      {...inputProps}
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                      className="month-picker"
+                    >
+                      {MONTH_NAMES.map((name, index) => (
+                        <option key={name} value={index + 1}>
+                          {name}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </FormField>
+              </div>
+            }
+          >
+            <div className="invoice-section-body">
+              {soldByMonth.length === 0 ? (
+                <EmptyState
+                  title={`No invoices in ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
+                  body="Create invoices to see billed items per client here."
+                />
+              ) : (
+                <div className="sold-by-month-clients">
+                  {soldByMonth.map(({ clientId, clientName, invoices: clientInvoices }) => (
+                    <div key={clientId} className="sold-by-month-client">
+                      <div className="sold-by-month-client-header">
+                        <h4 className="sold-by-month-client-name">{clientName}</h4>
+                        <span className="sold-by-month-client-total">
+                          {formatCurrency(
+                            clientInvoices.reduce((sum, invoice) => sum + invoice.total, 0)
+                          )}
+                        </span>
+                      </div>
+                      <div className="invoice-table-wrap">
+                        <table className="inventory-table sold-items-table">
+                          <thead>
+                            <tr>
+                              <th>Invoice</th>
+                              <th>Billed on</th>
+                              <th>Item</th>
+                              <th>Qty</th>
+                              <th>Unit price</th>
+                              <th>Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {clientInvoices.flatMap((invoice) => {
+                              const invoiceYearMonth = getUtcYearMonth(invoice.date);
+                              return (invoice.items ?? []).map((item) => (
+                                <tr key={`${invoice.id}-${item.id}`}>
+                                  <td>
+                                    <div className="invoice-table-primary">
+                                      #{invoice.invoiceNumber}
+                                    </div>
+                                    <div className="invoice-table-secondary">
+                                      {formatCurrency(invoice.total)} ·{" "}
+                                      {MONTH_NAMES[
+                                        (invoiceYearMonth?.month ?? selectedMonth) - 1
+                                      ]}{" "}
+                                      {invoiceYearMonth?.year ?? selectedYear}
+                                    </div>
+                                  </td>
+                                  <td>{formatCalendarDate(invoice.date)}</td>
+                                  <td>{item.name}</td>
+                                  <td>{item.quantity}</td>
+                                  <td>{formatCurrency(item.unitPrice)}</td>
+                                  <td>{formatCurrency(item.total)}</td>
+                                </tr>
+                              ));
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   ))}
-                </select>
+                </div>
               )}
-            </FormField>
-            <FormField label="Month" className="month-picker-label">
-              {(inputProps) => (
-                <select
-                  {...inputProps}
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  className="month-picker"
-                >
-                  {monthNames.map((name, index) => (
-                    <option key={name} value={index + 1}>
-                      {name}
-                    </option>
-                  ))}
-                </select>
-              )}
-            </FormField>
-          </div>
-        }
-      >
-        <div className="invoice-section-body">
-          {soldByMonth.length === 0 ? (
-            <EmptyState
-              title={`No invoices in ${monthNames[selectedMonth - 1]} ${selectedYear}`}
-              body="Create invoices to see billed items per client here."
-            />
-          ) : (
-            <div className="sold-by-month-clients">
-              {soldByMonth.map(({ clientId, clientName, invoices: clientInvoices }) => (
-                <div key={clientId} className="sold-by-month-client">
-                  <div className="sold-by-month-client-header">
-                    <h4 className="sold-by-month-client-name">{clientName}</h4>
-                    <span className="sold-by-month-client-total">
-                      {formatCurrency(
-                        clientInvoices.reduce((sum, invoice) => sum + invoice.total, 0)
-                      )}
-                    </span>
-                  </div>
+            </div>
+          </CollapsibleSection>
+
+          <CollapsibleSection
+            title={`Active invoices (${invoiceData.active.total})`}
+            open={sectionVisibility.activeInvoices}
+            onToggle={() => toggleSection("activeInvoices")}
+            className="invoice-section-card"
+          >
+            <div className="invoice-section-body">
+              {activeInvoices.length === 0 ? (
+                <EmptyState
+                  title="No active invoices"
+                  body="Sent invoices are archived below. Drafts, overdue, and paid invoices stay here until sent."
+                  primaryLabel={canWrite ? "Create Invoice" : undefined}
+                  onPrimary={canWrite ? openCreateForm : undefined}
+                />
+              ) : (
+                <>
                   <div className="invoice-table-wrap">
-                    <table className="inventory-table sold-items-table">
+                    <table className="inventory-table invoice-data-table">
                       <thead>
                         <tr>
                           <th>Invoice</th>
-                          <th>Billed on</th>
-                          <th>Item</th>
-                          <th>Qty</th>
-                          <th>Unit price</th>
+                          <th>Date</th>
+                          <th>Due date</th>
+                          <th>Billing period</th>
                           <th>Total</th>
+                          <th>Status</th>
+                          <th>Actions</th>
                         </tr>
                       </thead>
-                      <tbody>
-                        {clientInvoices.flatMap((invoice) =>
-                          invoice.items.map((item) => (
-                            <tr key={`${invoice.id}-${item.id}`}> 
-                              <td>
-                                <div className="invoice-table-primary">#{invoice.invoiceNumber}</div>
-                                <div className="invoice-table-secondary">{formatCurrency(invoice.total)}</div>
-                              </td>
-                              <td>{formatDate(invoice.date)}</td>
-                              <td>{item.name}</td>
-                              <td>{item.quantity}</td>
-                              <td>{formatCurrency(item.unitPrice)}</td>
-                              <td>{formatCurrency(item.total)}</td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
+                      <tbody>{renderInvoiceRows(activeInvoices)}</tbody>
                     </table>
                   </div>
-                </div>
-              ))}
+                  {invoiceData.active.total > invoiceData.active.pageSize ? (
+                    <div className="pagination-controls">
+                      <Button
+                        variant="secondary"
+                        disabled={invoiceData.active.page <= 1 || loadingInvoices}
+                        onClick={() => setActivePage((page) => Math.max(1, page - 1))}
+                      >
+                        Prev
+                      </Button>
+                      <span className="pagination-status">
+                        Page {invoiceData.active.page} of {invoiceData.active.totalPages}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        disabled={
+                          invoiceData.active.page >= invoiceData.active.totalPages ||
+                          loadingInvoices
+                        }
+                        onClick={() => setActivePage((page) => page + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              )}
             </div>
-          )}
-        </div>
-      </CollapsibleSection>
+          </CollapsibleSection>
 
-      <CollapsibleSection
-        title={`Active invoices (${activeInvoices.length})`}
-        open={sectionVisibility.activeInvoices}
-        onToggle={() => toggleSection("activeInvoices")}
-        className="invoice-section-card"
-      >
-        <div className="invoice-section-body">
-          {activeInvoices.length === 0 ? (
-            <EmptyState
-              title="No active invoices"
-              body="Sent invoices are archived below. Drafts, overdue, and paid invoices stay here until sent."
-              primaryLabel={canWrite ? "Create Invoice" : undefined}
-              onPrimary={canWrite ? openCreateForm : undefined}
-            />
-          ) : (
-            <>
-              <div className="invoice-table-wrap">
-                <table className="inventory-table invoice-data-table">
-                  <thead>
-                    <tr>
-                      <th>Invoice</th>
-                      <th>Date</th>
-                      <th>Due date</th>
-                      <th>Billing period</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>{renderInvoiceRows(pagedActiveInvoices)}</tbody>
-                </table>
-              </div>
-              {activeInvoices.length > PAGE_SIZE ? (
-                <div className="pagination-controls">
-                  <Button
-                    variant="secondary"
-                    disabled={activeCurrentPage <= 1}
-                    onClick={() => setActivePage((page) => Math.max(1, page - 1))}
-                  >
-                    Prev
-                  </Button>
-                  <span className="pagination-status">
-                    Page {activeCurrentPage} of {activeTotalPages}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    disabled={activeCurrentPage >= activeTotalPages}
-                    onClick={() =>
-                      setActivePage((page) => Math.min(activeTotalPages, page + 1))
-                    }
-                  >
-                    Next
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </CollapsibleSection>
-
-      <CollapsibleSection
-        title={`Sent invoices (${sentInvoices.length})`}
-        open={sectionVisibility.sentInvoices}
-        onToggle={() => toggleSection("sentInvoices")}
-        className="invoice-section-card"
-      >
-        <div className="invoice-section-body">
-          {sentInvoices.length === 0 ? (
-            <EmptyState
-              title="No sent invoices yet"
-              body="Invoices are automatically archived here once they are sent to clients."
-            />
-          ) : (
-            <>
-              <div className="invoice-table-wrap">
-                <table className="inventory-table invoice-data-table">
-                  <thead>
-                    <tr>
-                      <th>Invoice</th>
-                      <th>Date</th>
-                      <th>Due date</th>
-                      <th>Billing period</th>
-                      <th>Total</th>
-                      <th>Status</th>
-                      <th>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>{renderInvoiceRows(pagedSentInvoices)}</tbody>
-                </table>
-              </div>
-              {sentInvoices.length > PAGE_SIZE ? (
-                <div className="pagination-controls">
-                  <Button
-                    variant="secondary"
-                    disabled={sentCurrentPage <= 1}
-                    onClick={() => setSentPage((page) => Math.max(1, page - 1))}
-                  >
-                    Prev
-                  </Button>
-                  <span className="pagination-status">
-                    Page {sentCurrentPage} of {sentTotalPages}
-                  </span>
-                  <Button
-                    variant="secondary"
-                    disabled={sentCurrentPage >= sentTotalPages}
-                    onClick={() =>
-                      setSentPage((page) => Math.min(sentTotalPages, page + 1))
-                    }
-                  >
-                    Next
-                  </Button>
-                </div>
-              ) : null}
-            </>
-          )}
-        </div>
-      </CollapsibleSection>
+          <CollapsibleSection
+            title={`Sent invoices (${invoiceData.sent.total})`}
+            open={sectionVisibility.sentInvoices}
+            onToggle={() => toggleSection("sentInvoices")}
+            className="invoice-section-card"
+          >
+            <div className="invoice-section-body">
+              {sentInvoices.length === 0 ? (
+                <EmptyState
+                  title="No sent invoices yet"
+                  body="Invoices are automatically archived here once they are sent to clients."
+                />
+              ) : (
+                <>
+                  <div className="invoice-table-wrap">
+                    <table className="inventory-table invoice-data-table">
+                      <thead>
+                        <tr>
+                          <th>Invoice</th>
+                          <th>Date</th>
+                          <th>Due date</th>
+                          <th>Billing period</th>
+                          <th>Total</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>{renderInvoiceRows(sentInvoices)}</tbody>
+                    </table>
+                  </div>
+                  {invoiceData.sent.total > invoiceData.sent.pageSize ? (
+                    <div className="pagination-controls">
+                      <Button
+                        variant="secondary"
+                        disabled={invoiceData.sent.page <= 1 || loadingInvoices}
+                        onClick={() => setSentPage((page) => Math.max(1, page - 1))}
+                      >
+                        Prev
+                      </Button>
+                      <span className="pagination-status">
+                        Page {invoiceData.sent.page} of {invoiceData.sent.totalPages}
+                      </span>
+                      <Button
+                        variant="secondary"
+                        disabled={
+                          invoiceData.sent.page >= invoiceData.sent.totalPages ||
+                          loadingInvoices
+                        }
+                        onClick={() => setSentPage((page) => page + 1)}
+                      >
+                        Next
+                      </Button>
+                    </div>
+                  ) : null}
+                </>
+              )}
+            </div>
+          </CollapsibleSection>
+        </>
+      ) : null}
     </div>
   );
 };

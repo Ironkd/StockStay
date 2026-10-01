@@ -85,6 +85,12 @@ model Organization {
   @@index([stripeCustomerId])
 }
 
+model ProcessedWebhookEvent {
+  id            String   @id @default(uuid())
+  stripeEventId String   @unique
+  processedAt   DateTime @default(now())
+}
+
 enum UnitDimension {
   count
   volume
@@ -472,6 +478,7 @@ model Invoice {
   @@index([invoiceNumber])
   @@index([teamId])
   @@index([teamId, clientId, billingPeriodStart])
+  @@unique([teamId, invoiceNumber])
 }
 
 model InvoiceLine {

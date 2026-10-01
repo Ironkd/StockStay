@@ -5,7 +5,7 @@
  */
 
 import Stripe from "stripe";
-import { organizationOps, teamOps } from "./db.js";
+import { organizationOps, prisma, teamOps } from "./db.js";
 import { getPlanLimits } from "./trialManager.js";
 
 const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
@@ -44,6 +44,82 @@ async function resolveOrganizationIdFromMetadata(metadata) {
     return team?.organizationId ?? null;
   }
   return null;
+}
+
+function getStripeCustomerId(customer) {
+  if (!customer) return null;
+  return typeof customer === "string" ? customer : customer.id ?? null;
+}
+
+async function claimWebhookEvent(eventId) {
+  try {
+    await prisma.processedWebhookEvent.create({
+      data: { stripeEventId: eventId },
+    });
+    return true;
+  } catch (err) {
+    if (err?.code === "P2002") return false;
+    throw err;
+  }
+}
+
+async function releaseWebhookEvent(eventId) {
+  await prisma.processedWebhookEvent.deleteMany({
+    where: { stripeEventId: eventId },
+  });
+}
+
+async function resolveVerifiedOrganizationForSubscription(subscription, eventType) {
+  const organizationId = await resolveOrganizationIdFromMetadata(subscription.metadata);
+  if (!organizationId) return null;
+
+  const org = await organizationOps.findById(organizationId);
+  if (!org) {
+    console.warn(`[BILLING] Ignoring ${eventType}: organization ${organizationId} not found`);
+    return null;
+  }
+
+  const eventCustomerId = getStripeCustomerId(subscription.customer);
+  const eventSubscriptionId = subscription.id ?? null;
+  const hasStoredStripeLink = Boolean(org.stripeCustomerId || org.stripeSubscriptionId);
+
+  if (!hasStoredStripeLink) {
+    console.log(
+      `[BILLING] First Stripe linkage for org ${organizationId} via ${eventType}: customer=${eventCustomerId ?? "unknown"} subscription=${eventSubscriptionId ?? "unknown"}`
+    );
+    return { organizationId, org, eventCustomerId, eventSubscriptionId };
+  }
+
+  const customerMismatch = org.stripeCustomerId && org.stripeCustomerId !== eventCustomerId;
+  const subscriptionMismatch =
+    org.stripeSubscriptionId && org.stripeSubscriptionId !== eventSubscriptionId;
+
+  // A customer id mismatch is always rejected - the event genuinely refers to a different
+  // Stripe customer than the one linked to this org. A subscription-id-only mismatch on a
+  // created/updated event is treated as "the customer's subscription was replaced" (e.g.
+  // cancel-then-resubscribe, or a plan change that creates a new subscription object) and is
+  // allowed through so the org adopts the new subscription id. Stripe does not guarantee
+  // webhook delivery order, so rejecting this outright could permanently strand the org on a
+  // stale subscription id with no reconciliation path. `deleted` events still require an
+  // exact subscription-id match so a stale cancellation for an already-replaced subscription
+  // can't cancel the org's current, newer subscription.
+  const allowSubscriptionReplacement =
+    subscriptionMismatch && !customerMismatch && eventType !== "customer.subscription.deleted";
+
+  if (customerMismatch || (subscriptionMismatch && !allowSubscriptionReplacement)) {
+    console.warn(
+      `[BILLING] Ignoring ${eventType} for org ${organizationId}: Stripe identity mismatch (stored customer=${org.stripeCustomerId ?? "none"}, event customer=${eventCustomerId ?? "none"}, stored subscription=${org.stripeSubscriptionId ?? "none"}, event subscription=${eventSubscriptionId ?? "none"})`
+    );
+    return null;
+  }
+
+  if (allowSubscriptionReplacement) {
+    console.log(
+      `[BILLING] ${eventType} for org ${organizationId} references a new subscription id (stored=${org.stripeSubscriptionId}, event=${eventSubscriptionId}); adopting it as the customer id matches.`
+    );
+  }
+
+  return { organizationId, org, eventCustomerId, eventSubscriptionId };
 }
 
 /**
@@ -209,57 +285,77 @@ export async function handleWebhook(rawBody, signature) {
     throw new Error(`Webhook signature verification failed: ${err.message}`);
   }
 
-  switch (event.type) {
-    case "customer.subscription.created":
-    case "customer.subscription.updated": {
-      const subscription = event.data.object;
-      const organizationId = await resolveOrganizationIdFromMetadata(subscription.metadata);
-      if (!organizationId) break;
-      const status = subscription.status;
-      const isActive = ["active", "trialing"].includes(status);
-      const plan = subscription.metadata?.plan === "starter" ? "starter" : "pro";
-      const limits = getPlanLimits(plan);
-      const items = subscription.items?.data ?? [];
-      const planItem = items.find((item) => item.price?.id && item.price.id !== stripeExtraUserPriceId);
-      const interval = planItem?.price?.recurring?.interval ?? null;
-      const billingInterval = interval === "year" || interval === "month" ? interval : null;
-      let extraUserSlots = 0;
-      if (stripeExtraUserPriceId) {
-        const extraItem = items.find((item) => item.price?.id === stripeExtraUserPriceId);
-        if (extraItem?.quantity) extraUserSlots = Math.max(0, Math.floor(Number(extraItem.quantity)));
-      }
-      await organizationOps.update(organizationId, {
-        plan: isActive ? plan : "free",
-        maxProperties: isActive ? limits.maxProperties : 1,
-        extraUserSlots: isActive ? extraUserSlots : 0,
-        stripeSubscriptionId: subscription.id,
-        stripeSubscriptionStatus: status,
-        billingInterval: isActive ? billingInterval : null,
-        isOnTrial: false,
-        trialEndsAt: null,
-        trialPlan: null,
-      });
-      console.log(`[BILLING] Subscription ${subscription.id} for org ${organizationId}: ${plan} ${status}, extraUserSlots=${extraUserSlots}`);
-      break;
-    }
-    case "customer.subscription.deleted": {
-      const subscription = event.data.object;
-      const organizationId = await resolveOrganizationIdFromMetadata(subscription.metadata);
-      if (!organizationId) break;
-      await organizationOps.update(organizationId, {
-        plan: "free",
-        maxProperties: 1,
-        extraUserSlots: 0,
-        stripeSubscriptionId: null,
-        stripeSubscriptionStatus: "canceled",
-        billingInterval: null,
-      });
-      console.log(`[BILLING] Subscription canceled for org ${organizationId}`);
-      break;
-    }
-    default:
-      break;
+  if (!event.id) {
+    throw new Error("Webhook event is missing an id.");
   }
 
-  return { received: true };
+  const claimed = await claimWebhookEvent(event.id);
+  if (!claimed) {
+    console.log(`[BILLING] Ignoring duplicate Stripe webhook event ${event.id}`);
+    return { received: true, duplicate: true };
+  }
+
+  try {
+    switch (event.type) {
+      case "customer.subscription.created":
+      case "customer.subscription.updated": {
+        const subscription = event.data.object;
+        const resolved = await resolveVerifiedOrganizationForSubscription(subscription, event.type);
+        if (!resolved) break;
+
+        const { organizationId, eventCustomerId } = resolved;
+        const status = subscription.status;
+        const isActive = ["active", "trialing"].includes(status);
+        const plan = subscription.metadata?.plan === "starter" ? "starter" : "pro";
+        const limits = getPlanLimits(plan);
+        const items = subscription.items?.data ?? [];
+        const planItem = items.find((item) => item.price?.id && item.price.id !== stripeExtraUserPriceId);
+        const interval = planItem?.price?.recurring?.interval ?? null;
+        const billingInterval = interval === "year" || interval === "month" ? interval : null;
+        let extraUserSlots = 0;
+        if (stripeExtraUserPriceId) {
+          const extraItem = items.find((item) => item.price?.id === stripeExtraUserPriceId);
+          if (extraItem?.quantity) extraUserSlots = Math.max(0, Math.floor(Number(extraItem.quantity)));
+        }
+        await organizationOps.update(organizationId, {
+          plan: isActive ? plan : "free",
+          maxProperties: isActive ? limits.maxProperties : 1,
+          extraUserSlots: isActive ? extraUserSlots : 0,
+          stripeCustomerId: eventCustomerId || undefined,
+          stripeSubscriptionId: subscription.id,
+          stripeSubscriptionStatus: status,
+          billingInterval: isActive ? billingInterval : null,
+          isOnTrial: false,
+          trialEndsAt: null,
+          trialPlan: null,
+        });
+        console.log(`[BILLING] Subscription ${subscription.id} for org ${organizationId}: ${plan} ${status}, extraUserSlots=${extraUserSlots}`);
+        break;
+      }
+      case "customer.subscription.deleted": {
+        const subscription = event.data.object;
+        const resolved = await resolveVerifiedOrganizationForSubscription(subscription, event.type);
+        if (!resolved) break;
+
+        const { organizationId } = resolved;
+        await organizationOps.update(organizationId, {
+          plan: "free",
+          maxProperties: 1,
+          extraUserSlots: 0,
+          stripeSubscriptionId: null,
+          stripeSubscriptionStatus: "canceled",
+          billingInterval: null,
+        });
+        console.log(`[BILLING] Subscription canceled for org ${organizationId}`);
+        break;
+      }
+      default:
+        break;
+    }
+
+    return { received: true };
+  } catch (err) {
+    await releaseWebhookEvent(event.id);
+    throw err;
+  }
 }

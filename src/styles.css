@@ -2796,6 +2796,14 @@ button.btn-sm {
   transition: box-shadow var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
+button.clickable-stat-card {
+  appearance: none;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  outline-offset: 2px;
+}
+
 .clickable-stat-card:hover {
   box-shadow: var(--shadow-md);
   border-color: var(--color-border-strong);
