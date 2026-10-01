@@ -11,6 +11,7 @@ import type {
   StockLocation,
   StockTransaction,
 } from "../types";
+import { Button, EmptyState, SectionHeader } from "../components/ui";
 
 const formatDate = (iso: string) =>
   new Date(iso).toLocaleString(undefined, {
@@ -255,48 +256,48 @@ export const ReportsPage: React.FC = () => {
 
   return (
     <div className="reports-page">
-      <h1 className="page-title">Reports</h1>
+      <SectionHeader title="Reports" />
 
       <section className="report-section">
-        <div className="report-section-header">
-          <h2>Location stock on hand</h2>
-          {locationOnHandRows.length > 0 && (
-            <button
-              type="button"
-              className="secondary export-report-btn"
-              onClick={() => {
-                const rows = [
-                  [
-                    "Location",
-                    "Supply item",
-                    "Category",
-                    "On hand (base)",
-                    "Reorder point",
-                    "Status",
-                  ],
-                  ...locationOnHandRows.map((r) => [
-                    r.locationName,
-                    r.supplyItemName,
-                    r.category || "—",
-                    r.onHandBase.toFixed(2),
-                    r.reorderPoint.toFixed(2),
-                    r.status,
-                  ]),
-                ];
-                downloadCsv(
-                  `location-stock-${new Date().toISOString().slice(0, 10)}.csv`,
-                  rows
-                );
-              }}
-            >
-              Export (CSV)
-            </button>
-          )}
-        </div>
-        <p className="report-description">
-          Supply-item totals at stock locations (sum of packs × pack size). Low stock uses
-          location reorder thresholds.
-        </p>
+        <SectionHeader
+          compact
+          title="Location stock on hand"
+          description="Supply-item totals at stock locations (sum of packs × pack size). Low stock uses location reorder thresholds."
+          actions={
+            locationOnHandRows.length > 0 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const rows = [
+                    [
+                      "Location",
+                      "Supply item",
+                      "Category",
+                      "On hand (base)",
+                      "Reorder point",
+                      "Status",
+                    ],
+                    ...locationOnHandRows.map((r) => [
+                      r.locationName,
+                      r.supplyItemName,
+                      r.category || "—",
+                      r.onHandBase.toFixed(2),
+                      r.reorderPoint.toFixed(2),
+                      r.status,
+                    ]),
+                  ];
+                  downloadCsv(
+                    `location-stock-${new Date().toISOString().slice(0, 10)}.csv`,
+                    rows
+                  );
+                }}
+              >
+                Export (CSV)
+              </Button>
+            ) : undefined
+          }
+        />
         <div className="report-filters">
           <label>
             <span>Location</span>
@@ -342,7 +343,7 @@ export const ReportsPage: React.FC = () => {
           </label>
         </div>
         {loadingStocks ? (
-          <div className="empty-state">Loading location stock…</div>
+          <EmptyState title="Loading location stock…" />
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">
@@ -384,45 +385,45 @@ export const ReportsPage: React.FC = () => {
           </div>
         )}
         {!loadingStocks && locationOnHandRows.length === 0 && (
-          <div className="empty-state report-empty">No location stock matches the filters.</div>
+          <EmptyState title="No location stock matches the filters." />
         )}
       </section>
 
       <section className="report-section">
-        <div className="report-section-header">
-          <h2>Recent stock transactions</h2>
-          {transactions.length > 0 && (
-            <button
-              type="button"
-              className="secondary export-report-btn"
-              onClick={() => {
-                const rows = [
-                  ["Date", "Type", "Entity", "Item", "Qty delta", "Reference"],
-                  ...transactions.map((t) => [
-                    formatDate(t.createdAt),
-                    transactionTypeLabel[t.transactionType] ?? t.transactionType,
-                    t.entityType,
-                    describeEntity(t),
-                    t.quantityDelta,
-                    t.referenceType
-                      ? `${t.referenceType}:${t.referenceId ?? ""}`
-                      : t.reason ?? "—",
-                  ]),
-                ];
-                downloadCsv(
-                  `stock-transactions-${new Date().toISOString().slice(0, 10)}.csv`,
-                  rows
-                );
-              }}
-            >
-              Export (CSV)
-            </button>
-          )}
-        </div>
-        <p className="report-description">
-          Ledger of stock movements: receipts, adjustments, and replenishment in/out.
-          Historical property_stock rows are labeled archived.
-        </p>
+        <SectionHeader
+          compact
+          title="Recent stock transactions"
+          description="Ledger of stock movements: receipts, adjustments, and replenishment in/out. Historical property_stock rows are labeled archived."
+          actions={
+            transactions.length > 0 ? (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => {
+                  const rows = [
+                    ["Date", "Type", "Entity", "Item", "Qty delta", "Reference"],
+                    ...transactions.map((t) => [
+                      formatDate(t.createdAt),
+                      transactionTypeLabel[t.transactionType] ?? t.transactionType,
+                      t.entityType,
+                      describeEntity(t),
+                      t.quantityDelta,
+                      t.referenceType
+                        ? `${t.referenceType}:${t.referenceId ?? ""}`
+                        : t.reason ?? "—",
+                    ]),
+                  ];
+                  downloadCsv(
+                    `stock-transactions-${new Date().toISOString().slice(0, 10)}.csv`,
+                    rows
+                  );
+                }}
+              >
+                Export (CSV)
+              </Button>
+            ) : undefined
+          }
+        />
         <div className="report-filters">
           <label>
             <span>Transaction type</span>
@@ -458,12 +459,12 @@ export const ReportsPage: React.FC = () => {
           </label>
         </div>
         {loadingTransactions ? (
-          <div className="empty-state">Loading transactions…</div>
+          <EmptyState title="Loading transactions…" />
         ) : transactions.length === 0 ? (
-          <div className="empty-state report-empty">
-            No transactions found. Receive stock, replenish properties, or adjust quantities to
-            see history.
-          </div>
+          <EmptyState
+            title="No transactions found"
+            body="Receive stock, replenish properties, or adjust quantities to see history."
+          />
         ) : (
           <div className="table-wrapper">
             <table className="reports-movements-table">

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { locationSupplyThresholdsApi } from "../services/catalogueApi";
 import type { LocationLowStockRow } from "../types";
-import { SectionHeader } from "../components/ui/SectionHeader";
+import { Button, EmptyState, SectionHeader } from "../components/ui";
 
 export const ShoppingListPage: React.FC = () => {
   const [lowStock, setLowStock] = useState<LocationLowStockRow[]>([]);
@@ -57,7 +57,7 @@ export const ShoppingListPage: React.FC = () => {
     return (
       <div className="shopping-list-page">
         <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
-        <div className="empty-state">Loading…</div>
+        <EmptyState title="Loading…" />
       </div>
     );
   }
@@ -66,10 +66,7 @@ export const ShoppingListPage: React.FC = () => {
     return (
       <div className="shopping-list-page">
         <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
-        <div className="empty-state error">
-          <h3>Could not load shopping list</h3>
-          <p>{error}</p>
-        </div>
+        <EmptyState error title="Could not load shopping list" body={error} />
       </div>
     );
   }
@@ -85,17 +82,17 @@ export const ShoppingListPage: React.FC = () => {
         title="Shopping List"
         description="Supply items at stock locations at or below reorder point. Receive packs at the location to clear items off the list."
         actions={
-          <button type="button" className="clear-button" onClick={() => navigate("/stock")}>
+          <Button variant="secondary" size="sm" onClick={() => navigate("/stock")}>
             View Stock
-          </button>
+          </Button>
         }
       />
 
       {totalLowStock === 0 ? (
-        <div className="empty-state">
-          No items on the shopping list. Set reorder points on supply items at a stock
-          location, or receive stock to raise on-hand levels.
-        </div>
+        <EmptyState
+          title="Nothing on the shopping list"
+          body="Set reorder points on supply items at a stock location, or receive stock to raise on-hand levels."
+        />
       ) : (
         <div className="shopping-list-by-category">
           {byCategory.order.map((category) => {
@@ -120,7 +117,11 @@ export const ShoppingListPage: React.FC = () => {
                         </span>
                         <span className="shopping-list-item-meta">
                           <span
-                            className="shopping-list-property"
+                            className={
+                              row.stockLocationId
+                                ? "shopping-list-property is-clickable"
+                                : "shopping-list-property"
+                            }
                             role="link"
                             tabIndex={0}
                             onClick={() =>
@@ -136,7 +137,6 @@ export const ShoppingListPage: React.FC = () => {
                                 navigate(`/stock/${row.stockLocationId}`);
                               }
                             }}
-                            style={{ cursor: row.stockLocationId ? "pointer" : undefined }}
                           >
                             {row.stockLocation?.name ?? "Location"}
                           </span>
