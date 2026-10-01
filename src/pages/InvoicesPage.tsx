@@ -1,18 +1,109 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { useInvoices } from "../hooks/useInvoices";
-import { useClients } from "../hooks/useClients";
-import { invoicesApi } from "../services/invoicesApi";
-import { teamApi } from "../services/teamApi";
-import { Icon } from "../components/ui/Icon";
-import { replenishmentApi } from "../services/replenishmentApi";
-import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { SectionHeader } from "../components/ui/SectionHeader";
+import { useClients } from "../hooks/useClients";
+import { useInvoices } from "../hooks/useInvoices";
+import {
+  Badge,
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Icon,
+  Modal,
+  SectionHeader,
+} from "../components/ui";
+import { replenishmentApi } from "../services/replenishmentApi";
+import { teamApi } from "../services/teamApi";
+import { invoicesApi } from "../services/invoicesApi";
+import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 
 const PAGE_SIZE = 20;
+const monthNames = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+];
+
+type InvoiceSectionKey = "unbilled" | "soldByMonth" | "activeInvoices" | "sentInvoices";
+
+type CollapsibleSectionProps = {
+  title: React.ReactNode;
+  open: boolean;
+  onToggle: () => void;
+  controls?: React.ReactNode;
+  children: React.ReactNode;
+  className?: string;
+};
+
+const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
+  title,
+  open,
+  onToggle,
+  controls,
+  children,
+  className,
+}) => (
+  <Card className={className}>
+    <div className="invoice-section-header" onClick={onToggle}>
+      <h3>{title}</h3>
+      <div
+        className="invoice-section-header-actions"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {controls}
+        <button
+          type="button"
+          className="collapse-toggle"
+          onClick={onToggle}
+          title={open ? "Hide section" : "Show section"}
+          aria-label={open ? "Collapse section" : "Expand section"}
+          aria-expanded={open}
+        >
+          <span className="sr-only">
+            {open ? "Collapse section" : "Expand section"}
+          </span>
+        </button>
+      </div>
+    </div>
+    {open ? children : null}
+  </Card>
+);
+
+const getStatusTone = (status: Invoice["status"]) => {
+  switch (status) {
+    case "paid":
+      return "success" as const;
+    case "sent":
+      return "info" as const;
+    case "overdue":
+      return "danger" as const;
+    default:
+      return "neutral" as const;
+  }
+};
+
+const formatCurrency = (value: number) =>
+  new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(value);
+
+const formatDate = (value?: string | null) =>
+  value ? new Date(value).toLocaleDateString() : "—";
+
+const getBillingPeriodLabel = (invoice: Invoice) => {
+  if (!invoice.billingPeriodStart || !invoice.billingPeriodEnd) return "—";
+  return `${formatDate(invoice.billingPeriodStart)} – ${formatDate(invoice.billingPeriodEnd)}`;
+};
 
 export const InvoicesPage: React.FC = () => {
   const { canWrite } = useAuth();
@@ -25,7 +116,12 @@ export const InvoicesPage: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [sendPreviewInvoice, setSendPreviewInvoice] = useState<Invoice | null>(null);
   const [sendingInvoice, setSendingInvoice] = useState(false);
-  const [senderBranding, setSenderBranding] = useState<{ companyName: string; companyAddress: string; companyPhone: string; companyEmail: string } | null>(null);
+  const [senderBranding, setSenderBranding] = useState<{
+    companyName: string;
+    companyAddress: string;
+    companyPhone: string;
+    companyEmail: string;
+  } | null>(null);
   const [unbilledLines, setUnbilledLines] = useState<UnbilledLine[]>([]);
   const [generatingDrafts, setGeneratingDrafts] = useState(false);
   const [generateMessage, setGenerateMessage] = useState<string | null>(null);
@@ -35,23 +131,37 @@ export const InvoicesPage: React.FC = () => {
   const now = new Date();
   const [selectedYear, setSelectedYear] = useState(now.getFullYear());
   const [selectedMonth, setSelectedMonth] = useState(now.getMonth() + 1);
-
-  // Section visibility state
-  const [sectionVisibility, setSectionVisibility] = useState({
+  const [sectionVisibility, setSectionVisibility] = useState<Record<InvoiceSectionKey, boolean>>({
     unbilled: true,
     soldByMonth: true,
     activeInvoices: true,
-    sentInvoices: true
+    sentInvoices: true,
+  });
+  const [formData, setFormData] = useState({
+    invoiceNumber: "",
+    clientId: "",
+    date: new Date().toISOString().split("T")[0],
+    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0],
+    items: [] as InvoiceItem[],
+    tax: 0,
+    status: "draft" as Invoice["status"],
+    notes: "",
+  });
+  const [currentItem, setCurrentItem] = useState({
+    name: "",
+    quantity: 1,
+    unitPrice: 0,
   });
 
-  const toggleSection = (section: keyof typeof sectionVisibility) => {
-    setSectionVisibility(prev => ({
+  const toggleSection = (section: InvoiceSectionKey) => {
+    setSectionVisibility((prev) => ({
       ...prev,
-      [section]: !prev[section]
+      [section]: !prev[section],
     }));
   };
 
-  // Refetch when tab becomes visible so invoices stay in sync
   useEffect(() => {
     const onRefresh = () => refreshInvoices();
     const onVisibilityChange = () => {
@@ -65,21 +175,25 @@ export const InvoicesPage: React.FC = () => {
     };
   }, [refreshInvoices]);
 
-  // Sender branding for invoice title and preview (company name, address, etc.)
   useEffect(() => {
     let cancelled = false;
-    teamApi.getTeam().then((data) => {
-      if (cancelled) return;
-      const t = data.team;
-      const style = t.invoiceStyle ?? {};
-      setSenderBranding({
-        companyName: (style.companyName ?? t.name ?? "Stock Stay").trim() || t.name || "Stock Stay",
-        companyAddress: (style.companyAddress ?? "").trim(),
-        companyPhone: (style.companyPhone ?? "").trim(),
-        companyEmail: (style.companyEmail ?? "").trim(),
-      });
-    }).catch(() => {});
-    return () => { cancelled = true; };
+    teamApi
+      .getTeam()
+      .then((data) => {
+        if (cancelled) return;
+        const t = data.team;
+        const style = t.invoiceStyle ?? {};
+        setSenderBranding({
+          companyName: (style.companyName ?? t.name ?? "Stock Stay").trim() || t.name || "Stock Stay",
+          companyAddress: (style.companyAddress ?? "").trim(),
+          companyPhone: (style.companyPhone ?? "").trim(),
+          companyEmail: (style.companyEmail ?? "").trim(),
+        });
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -100,39 +214,76 @@ export const InvoicesPage: React.FC = () => {
   const visibleUnbilledLines = useMemo(() => {
     if (!propertyIdFilter) return unbilledLines;
     return unbilledLines.filter((line) => line.property?.id === propertyIdFilter);
-  }, [unbilledLines, propertyIdFilter]);
+  }, [propertyIdFilter, unbilledLines]);
 
   const unbilledTotals = useMemo(() => {
     let charges = 0;
     let credits = 0;
     for (const line of visibleUnbilledLines) {
-      const amt = Number(line.billBackAmount) || 0;
-      if (amt >= 0) charges += amt;
-      else credits += amt;
+      const amount = Number(line.billBackAmount) || 0;
+      if (amount >= 0) charges += amount;
+      else credits += amount;
     }
     return { charges, credits, net: charges + credits };
   }, [visibleUnbilledLines]);
 
-  const [formData, setFormData] = useState({
-    invoiceNumber: "",
-    clientId: "",
-    date: new Date().toISOString().split("T")[0],
-    dueDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0],
-    items: [] as InvoiceItem[],
-    tax: 0,
-    status: "draft" as Invoice["status"],
-    notes: ""
-  });
+  const calculations = useMemo(() => {
+    const subtotal = formData.items.reduce((sum, item) => sum + item.total, 0);
+    const taxAmount = (subtotal * formData.tax) / 100;
+    const total = subtotal + taxAmount;
+    return { subtotal, taxAmount, total };
+  }, [formData.items, formData.tax]);
 
-  const [currentItem, setCurrentItem] = useState({
-    name: "",
-    quantity: 1,
-    unitPrice: 0
-  });
+  const years = useMemo(() => {
+    const currentYear = new Date().getFullYear();
+    const yearList = [];
+    for (let i = currentYear - 5; i <= currentYear + 5; i += 1) {
+      yearList.push(i);
+    }
+    return yearList;
+  }, []);
 
-  const resetForm = () => {
+  const soldByMonth = useMemo(() => {
+    const inMonth = (date: string) => {
+      const parsed = new Date(date);
+      return parsed.getFullYear() === selectedYear && parsed.getMonth() + 1 === selectedMonth;
+    };
+    const monthInvoices = invoices.filter((invoice) => inMonth(invoice.date));
+    const byClient = new Map<string, { clientName: string; invoices: Invoice[] }>();
+    for (const invoice of monthInvoices) {
+      const existing = byClient.get(invoice.clientId);
+      if (existing) {
+        existing.invoices.push(invoice);
+      } else {
+        byClient.set(invoice.clientId, {
+          clientName: invoice.clientName,
+          invoices: [invoice],
+        });
+      }
+    }
+    return Array.from(byClient.entries()).map(([clientId, data]) => ({
+      clientId,
+      clientName: data.clientName,
+      invoices: data.invoices,
+    }));
+  }, [invoices, selectedMonth, selectedYear]);
+
+  const { monthlyTotal, yearlyTotal } = useMemo(() => {
+    const inMonth = (date: string) => {
+      const parsed = new Date(date);
+      return parsed.getFullYear() === selectedYear && parsed.getMonth() + 1 === selectedMonth;
+    };
+    const inYear = (date: string) => new Date(date).getFullYear() === selectedYear;
+    const monthly = invoices
+      .filter((invoice) => inMonth(invoice.date))
+      .reduce((sum, invoice) => sum + (invoice.total ?? 0), 0);
+    const yearly = invoices
+      .filter((invoice) => inYear(invoice.date))
+      .reduce((sum, invoice) => sum + (invoice.total ?? 0), 0);
+    return { monthlyTotal: monthly, yearlyTotal: yearly };
+  }, [invoices, selectedMonth, selectedYear]);
+
+  const closeForm = () => {
     setFormData({
       invoiceNumber: "",
       clientId: "",
@@ -143,11 +294,16 @@ export const InvoicesPage: React.FC = () => {
       items: [],
       tax: 0,
       status: "draft",
-      notes: ""
+      notes: "",
     });
     setCurrentItem({ name: "", quantity: 1, unitPrice: 0 });
     setEditingInvoice(null);
     setShowForm(false);
+  };
+
+  const openCreateForm = () => {
+    closeForm();
+    setShowForm(true);
   };
 
   const addItemToInvoice = () => {
@@ -163,73 +319,20 @@ export const InvoicesPage: React.FC = () => {
       unitPrice: currentItem.unitPrice,
       total: currentItem.quantity * currentItem.unitPrice,
     };
-    setFormData({
-      ...formData,
-      items: [...formData.items, newItem]
-    });
 
+    setFormData((prev) => ({
+      ...prev,
+      items: [...prev.items, newItem],
+    }));
     setCurrentItem({ name: "", quantity: 1, unitPrice: 0 });
   };
 
   const removeItemFromInvoice = (itemId: string) => {
-    setFormData({
-      ...formData,
-      items: formData.items.filter((item) => item.id !== itemId)
-    });
-  };
-
-  const calculations = useMemo(() => {
-    const subtotal = formData.items.reduce((sum, item) => sum + item.total, 0);
-    const taxAmount = (subtotal * formData.tax) / 100;
-    const total = subtotal + taxAmount;
-    return { subtotal, taxAmount, total };
-  }, [formData.items, formData.tax]);
-
-  // Generate years (current year ± 5 years) — snapshot once on mount
-  const years = useMemo(() => {
-    const currentYear = new Date().getFullYear();
-    const yearList = [];
-    for (let i = currentYear - 5; i <= currentYear + 5; i++) {
-      yearList.push(i);
-    }
-    return yearList;
-  }, []);
-
-  // Month names
-  const monthNames = [
-    "January", "February", "March", "April", "May", "June",
-    "July", "August", "September", "October", "November", "December"
-  ];
-
-  const soldByMonth = useMemo(() => {
-    const inMonth = (d: string) => {
-      const dt = new Date(d);
-      return dt.getFullYear() === selectedYear && dt.getMonth() + 1 === selectedMonth;
-    };
-    const invs = invoices.filter((inv) => inMonth(inv.date));
-    const byClient = new Map<string, { clientName: string; invoices: Invoice[] }>();
-    for (const inv of invs) {
-      const existing = byClient.get(inv.clientId);
-      if (existing) existing.invoices.push(inv);
-      else byClient.set(inv.clientId, { clientName: inv.clientName, invoices: [inv] });
-    }
-    return Array.from(byClient.entries()).map(([clientId, data]) => ({
-      clientId,
-      clientName: data.clientName,
-      invoices: data.invoices
+    setFormData((prev) => ({
+      ...prev,
+      items: prev.items.filter((item) => item.id !== itemId),
     }));
-  }, [invoices, selectedYear, selectedMonth]);
-
-  const { monthlyTotal, yearlyTotal } = useMemo(() => {
-    const inMonth = (d: string) => {
-      const dt = new Date(d);
-      return dt.getFullYear() === selectedYear && dt.getMonth() + 1 === selectedMonth;
-    };
-    const inYear = (d: string) => new Date(d).getFullYear() === selectedYear;
-    const monthly = invoices.filter((inv) => inMonth(inv.date)).reduce((sum, inv) => sum + (inv.total ?? 0), 0);
-    const yearly = invoices.filter((inv) => inYear(inv.date)).reduce((sum, inv) => sum + (inv.total ?? 0), 0);
-    return { monthlyTotal: monthly, yearlyTotal: yearly };
-  }, [invoices, selectedYear, selectedMonth]);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -238,7 +341,7 @@ export const InvoicesPage: React.FC = () => {
       return;
     }
 
-    const selectedClient = clients.find((c) => c.id === formData.clientId);
+    const selectedClient = clients.find((client) => client.id === formData.clientId);
     if (!selectedClient) {
       toast.error("Please select a valid client");
       return;
@@ -246,7 +349,7 @@ export const InvoicesPage: React.FC = () => {
 
     const isScheduled =
       Boolean(editingInvoice?.billingPeriodStart) ||
-      (editingInvoice?.lines && editingInvoice.lines.length > 0);
+      Boolean(editingInvoice?.lines && editingInvoice.lines.length > 0);
 
     const invoiceData = isScheduled
       ? {
@@ -264,7 +367,6 @@ export const InvoicesPage: React.FC = () => {
           total: calculations.total,
         };
 
-    // Remember if this invoice had already been sent before editing.
     const wasPreviouslySent = editingInvoice?.status === "sent";
 
     try {
@@ -278,7 +380,6 @@ export const InvoicesPage: React.FC = () => {
 
       await refreshInvoices();
 
-      // If this invoice was already sent, treat saving edits as sending an updated version.
       if (wasPreviouslySent && editingInvoice) {
         toast.success(
           `An updated invoice for ${editingInvoice.clientName} has been sent with the latest changes.`
@@ -287,7 +388,7 @@ export const InvoicesPage: React.FC = () => {
         toast.success(editingInvoice ? "Invoice updated" : "Invoice created");
       }
 
-      resetForm();
+      closeForm();
     } catch (error) {
       console.error("Error saving invoice:", error);
       toast.error("There was a problem saving this invoice. Please try again.");
@@ -310,14 +411,9 @@ export const InvoicesPage: React.FC = () => {
       items: invoice.items,
       tax: Math.round((taxRate || 0) * 100) / 100,
       status: invoice.status,
-      notes: invoice.notes || ""
+      notes: invoice.notes || "",
     });
     setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-
-  const handleDelete = (id: string) => {
-    setDeleteInvoiceId(id);
   };
 
   const handleConfirmDelete = () => {
@@ -327,13 +423,9 @@ export const InvoicesPage: React.FC = () => {
     setDeleteInvoiceId(null);
   };
 
-  const handleSendClick = (invoice: Invoice) => {
-    setSendPreviewInvoice(invoice);
-  };
-
   const handleSendConfirm = async () => {
     if (!sendPreviewInvoice) return;
-    const clientEmail = clients.find((c) => c.id === sendPreviewInvoice.clientId)?.email?.trim();
+    const clientEmail = clients.find((client) => client.id === sendPreviewInvoice.clientId)?.email?.trim();
     if (!clientEmail) {
       toast.error("No email address for this client. Add an email in Clients before sending.");
       return;
@@ -352,31 +444,11 @@ export const InvoicesPage: React.FC = () => {
     }
   };
 
-  const getStatusColor = (status: Invoice["status"]) => {
-    switch (status) {
-      case "paid":
-        return "#10b981";
-      case "sent":
-        return "#3b82f6";
-      case "overdue":
-        return "#ef4444";
-      default:
-        return "#64748b";
-    }
-  };
-
-  const getInvoiceTitle = (_invoice: Invoice) => {
-    // Show who the invoice is from (company/sender name), not the number
-    return senderBranding?.companyName ?? "Invoice";
-  };
-
-  // Separate active invoices (not sent) from sent invoices (archived)
   const { activeInvoices, sentInvoices } = useMemo(() => {
-    const active = invoices.filter(inv => inv.status !== "sent");
-    const sent = invoices.filter(inv => inv.status === "sent").sort((a, b) => {
-      // Sort by date, most recent first
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    const active = invoices.filter((invoice) => invoice.status !== "sent");
+    const sent = invoices
+      .filter((invoice) => invoice.status === "sent")
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return { activeInvoices: active, sentInvoices: sent };
   }, [invoices]);
 
@@ -387,115 +459,81 @@ export const InvoicesPage: React.FC = () => {
   const pagedActiveInvoices = useMemo(() => {
     const start = (activeCurrentPage - 1) * PAGE_SIZE;
     return activeInvoices.slice(start, start + PAGE_SIZE);
-  }, [activeInvoices, activeCurrentPage]);
+  }, [activeCurrentPage, activeInvoices]);
   const pagedSentInvoices = useMemo(() => {
     const start = (sentCurrentPage - 1) * PAGE_SIZE;
     return sentInvoices.slice(start, start + PAGE_SIZE);
-  }, [sentInvoices, sentCurrentPage]);
-
-  // Render invoice card component
-  const renderInvoiceCard = (invoice: Invoice) => {
-    return (
-      <div key={invoice.id} className="invoice-card">
-        <div className="invoice-header">
-          <div>
-            <h4>{getInvoiceTitle(invoice)}</h4>
-            <p>{invoice.clientName} · #{invoice.invoiceNumber}</p>
-          </div>
-          <div className="invoice-meta">
-            <span
-              className="status-badge"
-              style={{ backgroundColor: getStatusColor(invoice.status) }}
-            >
-              {invoice.status.toUpperCase()}
-            </span>
-            <div className="invoice-actions">
-              {canWrite && invoice.status !== "sent" && (
-                <button
-                  onClick={() => handleSendClick(invoice)}
-                  title="Send to client (HTML + PDF)"
-                  disabled={invoice.status === "paid"}
-                  style={{
-                    backgroundColor: invoice.status === "paid" ? "#94a3b8" : "#3b82f6",
-                    color: "white",
-                    border: "none",
-                    padding: "6px 12px",
-                    borderRadius: "4px",
-                    cursor: invoice.status === "paid" ? "not-allowed" : "pointer",
-                    fontSize: "0.875rem",
-                    fontWeight: "500",
-                    marginRight: "8px"
-                  }}
-                >
-                  Send
-                </button>
-              )}
-              <button
-                className="icon-button"
-                onClick={() =>
-                  invoicesApi
-                    .exportCsv(invoice.id, invoice.invoiceNumber)
-                    .catch((err) =>
-                      toast.error(err instanceof Error ? err.message : "Export failed")
-                    )
-                }
-                title="Export CSV"
-                aria-label="Export CSV"
-              >
-                <Icon name="download" size={16} />
-              </button>
-              {canWrite && (
-                <>
-                  <button
-                    className="icon-button"
-                    onClick={() => handleEdit(invoice)}
-                    title="Edit"
-                    aria-label="Edit invoice"
-                  >
-                    <Icon name="edit" size={16} />
-                  </button>
-                  <button
-                    className="icon-button"
-                    onClick={() => handleDelete(invoice.id)}
-                    title="Delete"
-                    aria-label="Delete invoice"
-                  >
-                    <Icon name="delete" size={16} />
-                  </button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="invoice-details">
-          <p>
-            <strong>Date:</strong> {new Date(invoice.date).toLocaleDateString()}
-          </p>
-          <p>
-            <strong>Due Date:</strong>{" "}
-            {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "—"}
-          </p>
-          {invoice.billingPeriodStart && invoice.billingPeriodEnd && (
-            <p>
-              <strong>Period:</strong>{" "}
-              {new Date(invoice.billingPeriodStart).toLocaleDateString()} –{" "}
-              {new Date(invoice.billingPeriodEnd).toLocaleDateString()}
-            </p>
-          )}
-          <p>
-            <strong>Total:</strong> ${invoice.total.toFixed(2)}
-            {invoice.lines && invoice.lines.length > 0
-              ? ` · ${invoice.lines.length} line${invoice.lines.length === 1 ? "" : "s"}`
-              : ""}
-          </p>
-        </div>
-      </div>
-    );
-  };
+  }, [sentCurrentPage, sentInvoices]);
 
   const previewClientEmail = sendPreviewInvoice
-    ? clients.find((c) => c.id === sendPreviewInvoice.clientId)?.email?.trim()
+    ? clients.find((client) => client.id === sendPreviewInvoice.clientId)?.email?.trim()
     : "";
+
+  const renderInvoiceRows = (invoiceList: Invoice[]) =>
+    invoiceList.map((invoice) => (
+      <tr key={invoice.id}>
+        <td>
+          <div className="invoice-table-primary">#{invoice.invoiceNumber}</div>
+          <div className="invoice-table-secondary">{invoice.clientName}</div>
+        </td>
+        <td>{formatDate(invoice.date)}</td>
+        <td>{formatDate(invoice.dueDate)}</td>
+        <td>{getBillingPeriodLabel(invoice)}</td>
+        <td>{formatCurrency(invoice.total)}</td>
+        <td>
+          <Badge tone={getStatusTone(invoice.status)}>{invoice.status.toUpperCase()}</Badge>
+        </td>
+        <td>
+          <div className="invoice-actions">
+            {canWrite && invoice.status !== "sent" && (
+              <Button
+                size="sm"
+                className="invoice-send-button"
+                onClick={() => setSendPreviewInvoice(invoice)}
+                title="Send to client (HTML + PDF)"
+                disabled={invoice.status === "paid"}
+              >
+                Send
+              </Button>
+            )}
+            <button
+              className="icon-button"
+              onClick={() =>
+                invoicesApi
+                  .exportCsv(invoice.id, invoice.invoiceNumber)
+                  .catch((err) =>
+                    toast.error(err instanceof Error ? err.message : "Export failed")
+                  )
+              }
+              title="Export CSV"
+              aria-label={`Export invoice ${invoice.invoiceNumber} as CSV`}
+            >
+              <Icon name="download" size={16} />
+            </button>
+            {canWrite && (
+              <>
+                <button
+                  className="icon-button"
+                  onClick={() => handleEdit(invoice)}
+                  title="Edit"
+                  aria-label={`Edit invoice ${invoice.invoiceNumber}`}
+                >
+                  <Icon name="edit" size={16} />
+                </button>
+                <button
+                  className="icon-button"
+                  onClick={() => setDeleteInvoiceId(invoice.id)}
+                  title="Delete"
+                  aria-label={`Delete invoice ${invoice.invoiceNumber}`}
+                >
+                  <Icon name="delete" size={16} />
+                </button>
+              </>
+            )}
+          </div>
+        </td>
+      </tr>
+    ));
 
   return (
     <div className="invoices-page">
@@ -508,238 +546,24 @@ export const InvoicesPage: React.FC = () => {
         onConfirm={handleConfirmDelete}
         onCancel={() => setDeleteInvoiceId(null)}
       />
-      {sendPreviewInvoice && (
-        <div
-          className="invoice-send-preview-overlay"
-          style={{
-            position: "fixed",
-            inset: 0,
-            backgroundColor: "rgba(0,0,0,0.5)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            zIndex: 1000,
-            padding: "24px",
-          }}
-          onClick={() => !sendingInvoice && setSendPreviewInvoice(null)}
-        >
-          <div
-            className="invoice-send-preview-modal"
-            style={{
-              backgroundColor: "white",
-              borderRadius: "12px",
-              maxWidth: "560px",
-              width: "100%",
-              maxHeight: "90vh",
-              overflow: "auto",
-              boxShadow: "0 20px 25px -5px rgba(0,0,0,0.1), 0 8px 10px -6px rgba(0,0,0,0.1)",
-            }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ padding: "24px" }}>
-              <h3 style={{ margin: "0 0 8px", fontSize: "1.25rem" }}>
-                Preview – Invoice from {senderBranding?.companyName ?? "you"}
-              </h3>
-              <p style={{ margin: "0 0 16px", color: "#64748b", fontSize: "0.9rem" }}>
-                This is how the invoice will look when sent by email.
-              </p>
-              <div
-                style={{
-                  fontFamily: "system-ui, sans-serif",
-                  color: "#1e293b",
-                  border: "1px solid #e2e8f0",
-                  borderRadius: "8px",
-                  padding: "20px",
-                  marginBottom: "20px",
-                  backgroundColor: "#f8fafc",
-                }}
-              >
-                {senderBranding && (senderBranding.companyName || senderBranding.companyAddress || senderBranding.companyPhone || senderBranding.companyEmail) && (
-                  <div style={{ marginBottom: "16px" }}>
-                    <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>From</p>
-                    <p style={{ margin: "0", fontSize: "14px", lineHeight: 1.5, color: "#334155" }}>
-                      {senderBranding.companyName}
-                      {senderBranding.companyAddress && (
-                        <>
-                          <br />
-                          {senderBranding.companyAddress.split(/\n/).filter((l) => l.trim()).map((line, i) => (
-                            <span key={i}>{line}<br /></span>
-                          ))}
-                        </>
-                      )}
-                      {senderBranding.companyPhone && <><br />Tel: {senderBranding.companyPhone}</>}
-                      {senderBranding.companyEmail && <><br />{senderBranding.companyEmail}</>}
-                    </p>
-                  </div>
-                )}
-                <p style={{ margin: "0 0 4px", fontSize: "12px", fontWeight: 600, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.05em" }}>Bill to</p>
-                <p style={{ margin: "0 0 12px", fontSize: "14px", color: "#334155" }}>{sendPreviewInvoice.clientName}</p>
-                <p style={{ margin: "0 0 4px", fontWeight: 600, fontSize: "1rem" }}>
-                  Invoice {sendPreviewInvoice.invoiceNumber}
-                </p>
-                <p style={{ margin: "0 0 4px", fontSize: "0.9rem" }}>
-                  <strong>Date:</strong> {new Date(sendPreviewInvoice.date).toLocaleDateString()}
-                </p>
-                <p style={{ margin: "0 0 16px", fontSize: "0.9rem" }}>
-                  <strong>Due date:</strong>{" "}
-                  {sendPreviewInvoice.dueDate
-                    ? new Date(sendPreviewInvoice.dueDate).toLocaleDateString()
-                    : "—"}
-                </p>
-                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: "16px", fontSize: "0.9rem" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "2px solid #e2e8f0" }}>
-                      <th style={{ textAlign: "left", padding: "8px 8px 8px 0" }}>Item</th>
-                      <th style={{ textAlign: "right", padding: "8px" }}>Qty</th>
-                      <th style={{ textAlign: "right", padding: "8px" }}>Price</th>
-                      <th style={{ textAlign: "right", padding: "8px" }}>Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(sendPreviewInvoice.items || []).map((item) => (
-                      <tr key={item.id} style={{ borderBottom: "1px solid #e2e8f0" }}>
-                        <td style={{ padding: "8px 8px 8px 0" }}>{item.name}</td>
-                        <td style={{ textAlign: "right", padding: "8px" }}>{item.quantity}</td>
-                        <td style={{ textAlign: "right", padding: "8px" }}>
-                          ${item.unitPrice.toFixed(2)}
-                        </td>
-                        <td style={{ textAlign: "right", padding: "8px" }}>
-                          ${item.total.toFixed(2)}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-                <p style={{ margin: "0 0 4px", textAlign: "right", fontSize: "0.9rem" }}>
-                  <strong>Subtotal:</strong> ${sendPreviewInvoice.subtotal.toFixed(2)}
-                </p>
-                <p style={{ margin: "0 0 4px", textAlign: "right", fontSize: "0.9rem" }}>
-                  <strong>Tax:</strong> ${sendPreviewInvoice.tax.toFixed(2)}
-                </p>
-                <p style={{ margin: "0 0 0", textAlign: "right", fontSize: "1rem", fontWeight: 600 }}>
-                  <strong>Total:</strong> ${sendPreviewInvoice.total.toFixed(2)}
-                </p>
-                {sendPreviewInvoice.notes && (
-                  <p style={{ marginTop: "12px", color: "#64748b", fontSize: "0.875rem" }}>
-                    {sendPreviewInvoice.notes}
-                  </p>
-                )}
-              </div>
-              <p style={{ margin: "0 0 16px", fontSize: "0.9rem", color: "#64748b" }}>
-                This will be sent to: <strong style={{ color: "#1e293b" }}>{previewClientEmail || "—"}</strong>
-              </p>
-              {!previewClientEmail && (
-                <p style={{ margin: "0 0 16px", fontSize: "0.875rem", color: "#dc2626" }}>
-                  No email for this client. Add an email in Clients before sending.
-                </p>
-              )}
-              <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end" }}>
-                <button
-                  type="button"
-                  className="nav-button secondary"
-                  onClick={() => setSendPreviewInvoice(null)}
-                  disabled={sendingInvoice}
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="nav-button primary"
-                  onClick={handleSendConfirm}
-                  disabled={sendingInvoice || !previewClientEmail}
-                >
-                  {sendingInvoice ? "Sending…" : `Send to ${previewClientEmail || "client"}`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
-      <SectionHeader
-        title="Billing"
-        description={
-          <>
-            Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
-            {generateMessage && (
-              <span style={{ display: "block", marginTop: "8px", color: "#0369a1" }}>{generateMessage}</span>
-            )}
-          </>
-        }
-        actions={
-          <div className="invoice-totals-bar">
-            <span className="invoice-total-item">
-              <strong>Monthly total</strong> ({monthNames[selectedMonth - 1]} {selectedYear}):{" "}
-              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(monthlyTotal)}
-            </span>
-            <span className="invoice-total-item">
-              <strong>Yearly total</strong> ({selectedYear}):{" "}
-              {new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(yearlyTotal)}
-            </span>
-          </div>
-        }
-      />
-      <div className="section-header-actions billing-page-actions">
-          {canWrite && (
-            <button
-              type="button"
-              className="nav-button primary"
-              disabled={generatingDrafts}
-              onClick={async () => {
-                setGeneratingDrafts(true);
-                setGenerateMessage(null);
-                try {
-                  const result = await invoicesApi.generateDrafts();
-                  setGenerateMessage(
-                    result.count > 0
-                      ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
-                      : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
-                  );
-                  await refreshInvoices();
-                } catch (err) {
-                  setGenerateMessage(err instanceof Error ? err.message : "Failed to generate drafts");
-                } finally {
-                  setGeneratingDrafts(false);
-                }
-              }}
-            >
-              {generatingDrafts ? "Generating…" : "Generate drafts"}
-            </button>
-          )}
-          <button
-            type="button"
-            className="nav-button secondary"
-            onClick={async () => {
-              try {
-                await invoicesApi.exportAllCsv();
-              } catch (err) {
-                setGenerateMessage(err instanceof Error ? err.message : "CSV export failed");
-              }
-            }}
-          >
-            Export CSV
-          </button>
-          {canWrite && (
-            <button
-              className="clear-button"
-              onClick={() => {
-                resetForm();
-                setShowForm(!showForm);
-              }}
-            >
-              {showForm ? "Cancel" : "Create Invoice"}
-            </button>
-          )}
-        </div>
-
-      {showForm && (
-        <section className="panel">
-          <h3>{editingInvoice ? "Edit Invoice" : "Create New Invoice"}</h3>
-          <form onSubmit={handleSubmit} className="inventory-form">
-            <div className="form-grid">
-              <label>
-                <span>Invoice Number *</span>
+      <Modal
+        open={showForm}
+        onClose={closeForm}
+        title={editingInvoice ? "Edit invoice" : "Create invoice"}
+        maxWidth="960px"
+      >
+        <p className="modal-intro">
+          {editingInvoice
+            ? "Update invoice dates, status, line items, and notes before sending or exporting."
+            : "Create a one-off invoice for a client. Scheduled draft invoices still come from Generate drafts."}
+        </p>
+        <form onSubmit={handleSubmit} className="stacked-form">
+          <div className="form-grid invoice-form-grid">
+            <FormField label="Invoice number" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.invoiceNumber}
                   onChange={(e) =>
@@ -747,10 +571,12 @@ export const InvoicesPage: React.FC = () => {
                   }
                   required
                 />
-              </label>
-              <label>
-                <span>Client *</span>
+              )}
+            </FormField>
+            <FormField label="Client" required>
+              {(inputProps) => (
                 <select
+                  {...inputProps}
                   value={formData.clientId}
                   onChange={(e) =>
                     setFormData({ ...formData, clientId: e.target.value })
@@ -764,10 +590,12 @@ export const InvoicesPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label>
-                <span>Date *</span>
+              )}
+            </FormField>
+            <FormField label="Date" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="date"
                   value={formData.date}
                   onChange={(e) =>
@@ -775,10 +603,12 @@ export const InvoicesPage: React.FC = () => {
                   }
                   required
                 />
-              </label>
-              <label>
-                <span>Due Date *</span>
+              )}
+            </FormField>
+            <FormField label="Due date" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="date"
                   value={formData.dueDate}
                   onChange={(e) =>
@@ -786,10 +616,12 @@ export const InvoicesPage: React.FC = () => {
                   }
                   required
                 />
-              </label>
-              <label>
-                <span>Tax (%)</span>
+              )}
+            </FormField>
+            <FormField label="Tax (%)">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="number"
                   value={formData.tax}
                   onChange={(e) =>
@@ -798,15 +630,17 @@ export const InvoicesPage: React.FC = () => {
                   min={0}
                   step={0.01}
                 />
-              </label>
-              <label>
-                <span>Status</span>
+              )}
+            </FormField>
+            <FormField label="Status">
+              {(inputProps) => (
                 <select
+                  {...inputProps}
                   value={formData.status}
                   onChange={(e) =>
                     setFormData({
                       ...formData,
-                      status: e.target.value as Invoice["status"]
+                      status: e.target.value as Invoice["status"],
                     })
                   }
                 >
@@ -815,15 +649,22 @@ export const InvoicesPage: React.FC = () => {
                   <option value="paid">Paid</option>
                   <option value="overdue">Overdue</option>
                 </select>
-              </label>
-            </div>
+              )}
+            </FormField>
+          </div>
 
-            <div className="invoice-items-section">
-              <h4>Items</h4>
-              <div className="form-grid">
-                <label>
-                  <span>Item name *</span>
+          <div className="invoice-items-section">
+            <div className="invoice-items-heading">
+              <div>
+                <h4>Items</h4>
+                <p>Add one or more line items to calculate totals.</p>
+              </div>
+            </div>
+            <div className="form-grid invoice-form-grid">
+              <FormField label="Item name" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="text"
                     value={currentItem.name}
                     onChange={(e) =>
@@ -831,56 +672,61 @@ export const InvoicesPage: React.FC = () => {
                     }
                     placeholder="e.g. Cleaning supplies"
                   />
-                </label>
-                <label>
-                  <span>Quantity *</span>
+                )}
+              </FormField>
+              <FormField label="Quantity" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     value={currentItem.quantity}
                     onChange={(e) =>
                       setCurrentItem({
                         ...currentItem,
-                        quantity: Number(e.target.value)
+                        quantity: Number(e.target.value),
                       })
                     }
                     min={1}
                   />
-                </label>
-                <label>
-                  <span>Unit price *</span>
+                )}
+              </FormField>
+              <FormField label="Unit price" required>
+                {(inputProps) => (
                   <input
+                    {...inputProps}
                     type="number"
                     value={currentItem.unitPrice}
                     onChange={(e) =>
                       setCurrentItem({
                         ...currentItem,
-                        unitPrice: Number(e.target.value)
+                        unitPrice: Number(e.target.value),
                       })
                     }
                     min={0}
                     step={0.01}
                   />
-                </label>
-                <label>
-                  <span>Action</span>
-                  <button
-                    type="button"
-                    onClick={addItemToInvoice}
-                    className="secondary"
-                    disabled={!currentItem.name.trim() || currentItem.quantity <= 0}
-                  >
-                    Add Item
-                  </button>
-                </label>
+                )}
+              </FormField>
+              <div className="field invoice-item-action">
+                <span className="field-label">Action</span>
+                <Button
+                  variant="secondary"
+                  onClick={addItemToInvoice}
+                  disabled={!currentItem.name.trim() || currentItem.quantity <= 0}
+                >
+                  Add Item
+                </Button>
               </div>
+            </div>
 
-              {formData.items.length > 0 && (
-                <table className="inventory-table">
+            {formData.items.length > 0 ? (
+              <div className="invoice-table-wrap">
+                <table className="inventory-table invoice-line-items-table">
                   <thead>
                     <tr>
                       <th>Item</th>
                       <th>Quantity</th>
-                      <th>Unit Price</th>
+                      <th>Unit price</th>
                       <th>Total</th>
                       <th>Action</th>
                     </tr>
@@ -890,13 +736,14 @@ export const InvoicesPage: React.FC = () => {
                       <tr key={item.id}>
                         <td>{item.name}</td>
                         <td>{item.quantity}</td>
-                        <td>${item.unitPrice.toFixed(2)}</td>
-                        <td>${item.total.toFixed(2)}</td>
+                        <td>{formatCurrency(item.unitPrice)}</td>
+                        <td>{formatCurrency(item.total)}</td>
                         <td>
                           <button
                             type="button"
                             onClick={() => item.id && removeItemFromInvoice(item.id)}
                             className="icon-button"
+                            aria-label={`Remove ${item.name}`}
                           >
                             <Icon name="delete" size={16} />
                           </button>
@@ -905,131 +752,310 @@ export const InvoicesPage: React.FC = () => {
                     ))}
                   </tbody>
                 </table>
-              )}
+              </div>
+            ) : (
+              <EmptyState title="No items yet" body="Add line items to build the invoice total." />
+            )}
 
-              <div className="invoice-totals">
-                <div>
-                  <strong>Subtotal:</strong> ${calculations.subtotal.toFixed(2)}
-                </div>
-                <div>
-                  <strong>Tax:</strong> ${calculations.taxAmount.toFixed(2)}
-                </div>
-                <div className="invoice-total">
-                  <strong>Total:</strong> ${calculations.total.toFixed(2)}
-                </div>
+            <div className="invoice-totals">
+              <div>
+                <strong>Subtotal:</strong> {formatCurrency(calculations.subtotal)}
+              </div>
+              <div>
+                <strong>Tax:</strong> {formatCurrency(calculations.taxAmount)}
+              </div>
+              <div className="invoice-total">
+                <strong>Total:</strong> {formatCurrency(calculations.total)}
               </div>
             </div>
+          </div>
 
-            <label className="notes-field">
-              <span>Notes</span>
+          <FormField label="Notes" className="notes-field">
+            {(inputProps) => (
               <textarea
+                {...inputProps}
                 value={formData.notes}
                 onChange={(e) =>
                   setFormData({ ...formData, notes: e.target.value })
                 }
                 rows={3}
               />
-            </label>
-
-            <div className="form-actions">
-              <button type="button" className="secondary" onClick={resetForm}>
-                Cancel
-              </button>
-              <button type="submit">
-                {editingInvoice ? "Save Changes" : "Create Invoice"}
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <section className="panel">
-        <div
-          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
-          onClick={() => toggleSection("unbilled")}
-        >
-          <h3 style={{ margin: 0 }}>
-            Unbilled charges &amp; credits ({visibleUnbilledLines.length})
-          </h3>
-          <button
-            type="button"
-            className="collapse-toggle"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSection("unbilled");
-            }}
-            title={sectionVisibility.unbilled ? "Hide section" : "Show section"}
-            aria-label={sectionVisibility.unbilled ? "Collapse section" : "Expand section"}
-            aria-expanded={sectionVisibility.unbilled}
-          >
-            <span className="sr-only">
-              {sectionVisibility.unbilled ? "Collapse section" : "Expand section"}
-            </span>
-          </button>
-        </div>
-        {sectionVisibility.unbilled && (
-          <div style={{ marginTop: "12px" }}>
-            <p style={{ color: "#64748b", fontSize: "14px", marginTop: 0 }}>
-              These lines are included when you click <strong>Generate drafts</strong> for each
-              client&apos;s closed billing period (per client frequency, team timezone). Credits are
-              returns with negative amounts.
-              {propertyIdFilter && " Filtered to the selected property."}
-            </p>
-            {visibleUnbilledLines.length === 0 ? (
-              <div className="empty-state">No unbilled charges or credits.</div>
-            ) : (
-              <>
-                <p style={{ fontSize: "14px" }}>
-                  Charges ${unbilledTotals.charges.toFixed(2)} · Credits $
-                  {unbilledTotals.credits.toFixed(2)} · Net ${unbilledTotals.net.toFixed(2)}
-                </p>
-                <div style={{ overflowX: "auto" }}>
-                  <table className="inventory-table">
-                    <thead>
-                      <tr>
-                        <th>Type</th>
-                        <th>Client</th>
-                        <th>Property</th>
-                        <th>Item</th>
-                        <th>Qty</th>
-                        <th>Amount</th>
-                        <th>Date</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {visibleUnbilledLines.map((line) => (
-                        <tr key={line.id}>
-                          <td>{line.isCredit ? "Credit" : "Charge"}</td>
-                          <td>{line.property?.client?.name || "—"}</td>
-                          <td>{line.property?.name || "—"}</td>
-                          <td>{line.supplyItem?.name || line.sku?.name || "—"}</td>
-                          <td>{Number(line.baseQtyDeployed).toFixed(2)}</td>
-                          <td style={{ color: line.isCredit ? "#b91c1c" : undefined }}>
-                            ${Number(line.billBackAmount).toFixed(2)}
-                          </td>
-                          <td>{new Date(line.createdAt).toLocaleDateString()}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </>
             )}
+          </FormField>
+
+          <div className="form-actions">
+            <Button variant="secondary" onClick={closeForm}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingInvoice ? "Save Changes" : "Create Invoice"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <Modal
+        open={Boolean(sendPreviewInvoice)}
+        onClose={() => setSendPreviewInvoice(null)}
+        title={`Preview — Invoice from ${senderBranding?.companyName ?? "you"}`}
+        maxWidth="640px"
+        busy={sendingInvoice}
+        className="modal-content invoice-send-preview-modal"
+      >
+        {sendPreviewInvoice && (
+          <div className="invoice-send-preview">
+            <p className="modal-intro">This is how the invoice will look when sent by email.</p>
+            <div className="invoice-preview-sheet">
+              {senderBranding &&
+              (senderBranding.companyName ||
+                senderBranding.companyAddress ||
+                senderBranding.companyPhone ||
+                senderBranding.companyEmail) ? (
+                <div className="invoice-preview-block">
+                  <p className="invoice-preview-label">From</p>
+                  <p className="invoice-preview-copy">
+                    {senderBranding.companyName}
+                    {senderBranding.companyAddress
+                      ? `\n${senderBranding.companyAddress
+                          .split(/\n/)
+                          .filter((line) => line.trim())
+                          .join("\n")}`
+                      : ""}
+                    {senderBranding.companyPhone ? `\nTel: ${senderBranding.companyPhone}` : ""}
+                    {senderBranding.companyEmail ? `\n${senderBranding.companyEmail}` : ""}
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="invoice-preview-block">
+                <p className="invoice-preview-label">Bill to</p>
+                <p className="invoice-preview-copy invoice-preview-copy--strong">
+                  {sendPreviewInvoice.clientName}
+                </p>
+              </div>
+
+              <div className="invoice-preview-meta">
+                <p>
+                  <strong>Invoice</strong> {sendPreviewInvoice.invoiceNumber}
+                </p>
+                <p>
+                  <strong>Date:</strong> {formatDate(sendPreviewInvoice.date)}
+                </p>
+                <p>
+                  <strong>Due date:</strong> {formatDate(sendPreviewInvoice.dueDate)}
+                </p>
+              </div>
+
+              <div className="invoice-table-wrap">
+                <table className="inventory-table invoice-preview-table">
+                  <thead>
+                    <tr>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Price</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(sendPreviewInvoice.items || []).map((item) => (
+                      <tr key={item.id}>
+                        <td>{item.name}</td>
+                        <td>{item.quantity}</td>
+                        <td>{formatCurrency(item.unitPrice)}</td>
+                        <td>{formatCurrency(item.total)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="invoice-preview-summary">
+                <p>
+                  <strong>Subtotal:</strong> {formatCurrency(sendPreviewInvoice.subtotal)}
+                </p>
+                <p>
+                  <strong>Tax:</strong> {formatCurrency(sendPreviewInvoice.tax)}
+                </p>
+                <p className="invoice-preview-total">
+                  <strong>Total:</strong> {formatCurrency(sendPreviewInvoice.total)}
+                </p>
+              </div>
+
+              {sendPreviewInvoice.notes && (
+                <p className="invoice-preview-notes">{sendPreviewInvoice.notes}</p>
+              )}
+            </div>
+
+            <p className="invoice-preview-recipient">
+              This will be sent to: <strong>{previewClientEmail || "—"}</strong>
+            </p>
+            {!previewClientEmail && (
+              <p className="form-banner error">
+                No email for this client. Add an email in Clients before sending.
+              </p>
+            )}
+            <div className="form-actions">
+              <Button
+                variant="secondary"
+                onClick={() => setSendPreviewInvoice(null)}
+                disabled={sendingInvoice}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleSendConfirm}
+                disabled={sendingInvoice || !previewClientEmail}
+              >
+                {sendingInvoice ? "Sending…" : `Send to ${previewClientEmail || "client"}`}
+              </Button>
+            </div>
           </div>
         )}
-      </section>
+      </Modal>
 
-      <section className="panel sold-by-month-panel">
-        <div className="sold-by-month-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => toggleSection("soldByMonth")}>
-          <h3 style={{ margin: 0 }}>Billed by month · Who received what</h3>
-          <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-            <div style={{ display: "flex", gap: "8px", alignItems: "center" }} onClick={(e) => e.stopPropagation()}>
-              <label>
-                <span>Year</span>
+      <SectionHeader
+        title="Billing"
+        description={
+          <>
+            Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
+            {generateMessage ? (
+              <span className="billing-generate-message">{generateMessage}</span>
+            ) : null}
+          </>
+        }
+        actions={
+          <div className="invoice-totals-bar">
+            <span className="invoice-total-item">
+              <strong>Monthly total</strong> ({monthNames[selectedMonth - 1]} {selectedYear}):{" "}
+              {formatCurrency(monthlyTotal)}
+            </span>
+            <span className="invoice-total-item">
+              <strong>Yearly total</strong> ({selectedYear}): {formatCurrency(yearlyTotal)}
+            </span>
+          </div>
+        }
+      />
+
+      <div className="section-header-actions billing-page-actions">
+        {canWrite ? (
+          <Button
+            disabled={generatingDrafts}
+            onClick={async () => {
+              setGeneratingDrafts(true);
+              setGenerateMessage(null);
+              try {
+                const result = await invoicesApi.generateDrafts();
+                setGenerateMessage(
+                  result.count > 0
+                    ? `Created ${result.count} draft invoice${result.count === 1 ? "" : "s"}.`
+                    : "No new drafts — no closed periods with unbilled lines, or invoices already exist."
+                );
+                await refreshInvoices();
+              } catch (err) {
+                setGenerateMessage(
+                  err instanceof Error ? err.message : "Failed to generate drafts"
+                );
+              } finally {
+                setGeneratingDrafts(false);
+              }
+            }}
+          >
+            {generatingDrafts ? "Generating…" : "Generate drafts"}
+          </Button>
+        ) : null}
+        <Button
+          variant="secondary"
+          onClick={async () => {
+            try {
+              await invoicesApi.exportAllCsv();
+            } catch (err) {
+              setGenerateMessage(err instanceof Error ? err.message : "CSV export failed");
+            }
+          }}
+        >
+          Export CSV
+        </Button>
+        {canWrite ? <Button onClick={openCreateForm}>Create Invoice</Button> : null}
+      </div>
+
+      <CollapsibleSection
+        title={`Unbilled charges & credits (${visibleUnbilledLines.length})`}
+        open={sectionVisibility.unbilled}
+        onToggle={() => toggleSection("unbilled")}
+        className="invoice-section-card"
+      >
+        <div className="invoice-section-body">
+          <p className="invoice-section-copy">
+            These lines are included when you click <strong>Generate drafts</strong> for each
+            client&apos;s closed billing period (per client frequency, team timezone). Credits are
+            returns with negative amounts.
+            {propertyIdFilter ? " Filtered to the selected property." : ""}
+          </p>
+          {visibleUnbilledLines.length === 0 ? (
+            <EmptyState
+              title="No unbilled charges or credits"
+              body="Closed-period replenishment will appear here before draft invoices are generated."
+            />
+          ) : (
+            <>
+              <div className="invoice-summary-row">
+                <span>Charges {formatCurrency(unbilledTotals.charges)}</span>
+                <span>Credits {formatCurrency(unbilledTotals.credits)}</span>
+                <span>Net {formatCurrency(unbilledTotals.net)}</span>
+              </div>
+              <div className="invoice-table-wrap">
+                <table className="inventory-table invoice-data-table">
+                  <thead>
+                    <tr>
+                      <th>Type</th>
+                      <th>Client</th>
+                      <th>Property</th>
+                      <th>Item</th>
+                      <th>Qty</th>
+                      <th>Amount</th>
+                      <th>Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {visibleUnbilledLines.map((line) => (
+                      <tr key={line.id}>
+                        <td>
+                          <Badge tone={line.isCredit ? "warning" : "info"}>
+                            {line.isCredit ? "Credit" : "Charge"}
+                          </Badge>
+                        </td>
+                        <td>{line.property?.client?.name || "—"}</td>
+                        <td>{line.property?.name || "—"}</td>
+                        <td>{line.supplyItem?.name || line.sku?.name || "—"}</td>
+                        <td>{Number(line.baseQtyDeployed).toFixed(2)}</td>
+                        <td className={line.isCredit ? "invoice-amount-negative" : undefined}>
+                          {formatCurrency(Number(line.billBackAmount))}
+                        </td>
+                        <td>{formatDate(line.createdAt)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title="Billed by month · Who received what"
+        open={sectionVisibility.soldByMonth}
+        onToggle={() => toggleSection("soldByMonth")}
+        className="invoice-section-card sold-by-month-panel"
+        controls={
+          <div className="sold-by-month-controls">
+            <FormField label="Year" className="month-picker-label">
+              {(inputProps) => (
                 <select
+                  {...inputProps}
                   value={selectedYear}
                   onChange={(e) => setSelectedYear(Number(e.target.value))}
-                  style={{ padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                  className="month-picker"
                 >
                   {years.map((year) => (
                     <option key={year} value={year}>
@@ -1037,67 +1063,51 @@ export const InvoicesPage: React.FC = () => {
                     </option>
                   ))}
                 </select>
-              </label>
-              <label>
-                <span>Month</span>
+              )}
+            </FormField>
+            <FormField label="Month" className="month-picker-label">
+              {(inputProps) => (
                 <select
+                  {...inputProps}
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(Number(e.target.value))}
-                  style={{ padding: "6px", borderRadius: "4px", border: "1px solid #cbd5e1" }}
+                  className="month-picker"
                 >
                   {monthNames.map((name, index) => (
-                    <option key={index + 1} value={index + 1}>
+                    <option key={name} value={index + 1}>
                       {name}
                     </option>
                   ))}
                 </select>
-              </label>
-            </div>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleSection("soldByMonth");
-              }}
-              className="collapse-toggle"
-              title={sectionVisibility.soldByMonth ? "Hide section" : "Show section"}
-              aria-label={sectionVisibility.soldByMonth ? "Collapse section" : "Expand section"}
-              aria-expanded={sectionVisibility.soldByMonth}
-            >
-              <span className="sr-only">
-                {sectionVisibility.soldByMonth ? "Collapse section" : "Expand section"}
-              </span>
-            </button>
+              )}
+            </FormField>
           </div>
-        </div>
-        {sectionVisibility.soldByMonth && (
-          <>
-            {soldByMonth.length === 0 ? (
-          <div className="empty-state">
-            No invoices in {monthNames[selectedMonth - 1]} {selectedYear}. Create invoices to see billed items per client here.
-          </div>
-        ) : (
-          <div className="sold-by-month-clients">
-            {soldByMonth.map(({ clientId, clientName, invoices: clientInvoices }) => (
-              <div key={clientId} className="sold-by-month-client">
-                <h4 className="sold-by-month-client-name">{clientName}</h4>
-                {clientInvoices.map((inv) => (
-                  <div key={inv.id} className="sold-by-month-invoice">
-                    <div className="sold-by-month-invoice-meta">
-                      <span className="sold-invoice-num">
-                        {new Date(inv.date).toLocaleDateString("en-US", {
-                          month: "long",
-                          year: "numeric"
-                        })}
-                      </span>
-                      <span className="sold-invoice-date">
-                        {new Date(inv.date).toLocaleDateString()}
-                      </span>
-                      <span className="sold-invoice-total">${inv.total.toFixed(2)}</span>
-                    </div>
+        }
+      >
+        <div className="invoice-section-body">
+          {soldByMonth.length === 0 ? (
+            <EmptyState
+              title={`No invoices in ${monthNames[selectedMonth - 1]} ${selectedYear}`}
+              body="Create invoices to see billed items per client here."
+            />
+          ) : (
+            <div className="sold-by-month-clients">
+              {soldByMonth.map(({ clientId, clientName, invoices: clientInvoices }) => (
+                <div key={clientId} className="sold-by-month-client">
+                  <div className="sold-by-month-client-header">
+                    <h4 className="sold-by-month-client-name">{clientName}</h4>
+                    <span className="sold-by-month-client-total">
+                      {formatCurrency(
+                        clientInvoices.reduce((sum, invoice) => sum + invoice.total, 0)
+                      )}
+                    </span>
+                  </div>
+                  <div className="invoice-table-wrap">
                     <table className="inventory-table sold-items-table">
                       <thead>
                         <tr>
+                          <th>Invoice</th>
+                          <th>Billed on</th>
                           <th>Item</th>
                           <th>Qty</th>
                           <th>Unit price</th>
@@ -1105,139 +1115,148 @@ export const InvoicesPage: React.FC = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {inv.items.map((item) => (
-                          <tr key={item.id}>
-                            <td>{item.name}</td>
-                            <td>{item.quantity}</td>
-                            <td>${item.unitPrice.toFixed(2)}</td>
-                            <td>${item.total.toFixed(2)}</td>
-                          </tr>
-                        ))}
+                        {clientInvoices.flatMap((invoice) =>
+                          invoice.items.map((item) => (
+                            <tr key={`${invoice.id}-${item.id}`}> 
+                              <td>
+                                <div className="invoice-table-primary">#{invoice.invoiceNumber}</div>
+                                <div className="invoice-table-secondary">{formatCurrency(invoice.total)}</div>
+                              </td>
+                              <td>{formatDate(invoice.date)}</td>
+                              <td>{item.name}</td>
+                              <td>{item.quantity}</td>
+                              <td>{formatCurrency(item.unitPrice)}</td>
+                              <td>{formatCurrency(item.total)}</td>
+                            </tr>
+                          ))
+                        )}
                       </tbody>
                     </table>
                   </div>
-                ))}
-              </div>
-            ))}
-          </div>
-            )}
-          </>
-        )}
-      </section>
-
-      <section className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => toggleSection("activeInvoices")}>
-          <h3 style={{ margin: 0 }}>Active Invoices ({activeInvoices.length})</h3>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSection("activeInvoices");
-            }}
-            className="collapse-toggle"
-            title={sectionVisibility.activeInvoices ? "Hide section" : "Show section"}
-            aria-label={sectionVisibility.activeInvoices ? "Collapse section" : "Expand section"}
-            aria-expanded={sectionVisibility.activeInvoices}
-          >
-            <span className="sr-only">
-              {sectionVisibility.activeInvoices ? "Collapse section" : "Expand section"}
-            </span>
-          </button>
-        </div>
-        {sectionVisibility.activeInvoices && (
-          <>
-            {activeInvoices.length === 0 ? (
-          <div className="empty-state">No active invoices. Sent invoices are archived below.</div>
-        ) : (
-          <>
-            <div className="invoices-list">
-              {pagedActiveInvoices.map((invoice) => renderInvoiceCard(invoice))}
+                </div>
+              ))}
             </div>
-            {activeInvoices.length > PAGE_SIZE && (
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={activeCurrentPage <= 1}
-                  onClick={() => setActivePage((p) => Math.max(1, p - 1))}
-                >
-                  Prev
-                </button>
-                <span className="pagination-status">
-                  Page {activeCurrentPage} of {activeTotalPages}
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={activeCurrentPage >= activeTotalPages}
-                  onClick={() => setActivePage((p) => Math.min(activeTotalPages, p + 1))}
-                >
-                  Next
-                </button>
-              </div>
-            )}
-          </>
-            )}
-          </>
-        )}
-      </section>
-
-      <section className="panel">
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }} onClick={() => toggleSection("sentInvoices")}>
-          <h3 style={{ margin: 0 }}>Sent Invoices ({sentInvoices.length})</h3>
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleSection("sentInvoices");
-            }}
-            className="collapse-toggle"
-            title={sectionVisibility.sentInvoices ? "Hide section" : "Show section"}
-            aria-label={sectionVisibility.sentInvoices ? "Collapse section" : "Expand section"}
-            aria-expanded={sectionVisibility.sentInvoices}
-          >
-            <span className="sr-only">
-              {sectionVisibility.sentInvoices ? "Collapse section" : "Expand section"}
-            </span>
-          </button>
+          )}
         </div>
-        {sectionVisibility.sentInvoices && (
-          <>
-            {sentInvoices.length === 0 ? (
-          <div className="empty-state">No sent invoices yet. Invoices will be automatically archived here once sent.</div>
-        ) : (
-          <>
-            <div className="invoices-list">
-              {pagedSentInvoices.map((invoice) => renderInvoiceCard(invoice))}
-            </div>
-            {sentInvoices.length > PAGE_SIZE && (
-              <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={sentCurrentPage <= 1}
-                  onClick={() => setSentPage((p) => Math.max(1, p - 1))}
-                >
-                  Prev
-                </button>
-                <span className="pagination-status">
-                  Page {sentCurrentPage} of {sentTotalPages}
-                </span>
-                <button
-                  type="button"
-                  className="secondary"
-                  disabled={sentCurrentPage >= sentTotalPages}
-                  onClick={() => setSentPage((p) => Math.min(sentTotalPages, p + 1))}
-                >
-                  Next
-                </button>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title={`Active invoices (${activeInvoices.length})`}
+        open={sectionVisibility.activeInvoices}
+        onToggle={() => toggleSection("activeInvoices")}
+        className="invoice-section-card"
+      >
+        <div className="invoice-section-body">
+          {activeInvoices.length === 0 ? (
+            <EmptyState
+              title="No active invoices"
+              body="Sent invoices are archived below. Drafts, overdue, and paid invoices stay here until sent."
+              primaryLabel={canWrite ? "Create Invoice" : undefined}
+              onPrimary={canWrite ? openCreateForm : undefined}
+            />
+          ) : (
+            <>
+              <div className="invoice-table-wrap">
+                <table className="inventory-table invoice-data-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice</th>
+                      <th>Date</th>
+                      <th>Due date</th>
+                      <th>Billing period</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>{renderInvoiceRows(pagedActiveInvoices)}</tbody>
+                </table>
               </div>
-            )}
-          </>
-            )}
-          </>
-        )}
-      </section>
+              {activeInvoices.length > PAGE_SIZE ? (
+                <div className="pagination-controls">
+                  <Button
+                    variant="secondary"
+                    disabled={activeCurrentPage <= 1}
+                    onClick={() => setActivePage((page) => Math.max(1, page - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <span className="pagination-status">
+                    Page {activeCurrentPage} of {activeTotalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    disabled={activeCurrentPage >= activeTotalPages}
+                    onClick={() =>
+                      setActivePage((page) => Math.min(activeTotalPages, page + 1))
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection
+        title={`Sent invoices (${sentInvoices.length})`}
+        open={sectionVisibility.sentInvoices}
+        onToggle={() => toggleSection("sentInvoices")}
+        className="invoice-section-card"
+      >
+        <div className="invoice-section-body">
+          {sentInvoices.length === 0 ? (
+            <EmptyState
+              title="No sent invoices yet"
+              body="Invoices are automatically archived here once they are sent to clients."
+            />
+          ) : (
+            <>
+              <div className="invoice-table-wrap">
+                <table className="inventory-table invoice-data-table">
+                  <thead>
+                    <tr>
+                      <th>Invoice</th>
+                      <th>Date</th>
+                      <th>Due date</th>
+                      <th>Billing period</th>
+                      <th>Total</th>
+                      <th>Status</th>
+                      <th>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>{renderInvoiceRows(pagedSentInvoices)}</tbody>
+                </table>
+              </div>
+              {sentInvoices.length > PAGE_SIZE ? (
+                <div className="pagination-controls">
+                  <Button
+                    variant="secondary"
+                    disabled={sentCurrentPage <= 1}
+                    onClick={() => setSentPage((page) => Math.max(1, page - 1))}
+                  >
+                    Prev
+                  </Button>
+                  <span className="pagination-status">
+                    Page {sentCurrentPage} of {sentTotalPages}
+                  </span>
+                  <Button
+                    variant="secondary"
+                    disabled={sentCurrentPage >= sentTotalPages}
+                    onClick={() =>
+                      setSentPage((page) => Math.min(sentTotalPages, page + 1))
+                    }
+                  >
+                    Next
+                  </Button>
+                </div>
+              ) : null}
+            </>
+          )}
+        </div>
+      </CollapsibleSection>
     </div>
   );
 };

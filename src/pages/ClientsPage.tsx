@@ -1,14 +1,43 @@
 import React, { useMemo, useState } from "react";
-import { useClients } from "../hooks/useClients";
 import { AddressAutocomplete } from "../components/AddressAutocomplete";
-import { ConfirmDialog } from "../components/ui/ConfirmDialog";
-import { Client } from "../types";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
-import { SectionHeader } from "../components/ui/SectionHeader";
-import { Icon } from "../components/ui/Icon";
+import { useClients } from "../hooks/useClients";
+import { Client } from "../types";
+import {
+  Button,
+  Card,
+  ConfirmDialog,
+  EmptyState,
+  FormField,
+  Icon,
+  Modal,
+  SectionHeader,
+} from "../components/ui";
 
 const PAGE_SIZE = 20;
+
+const emptyClientForm = {
+  name: "",
+  email: "",
+  phone: "",
+  address: "",
+  streetAddress: "",
+  city: "",
+  province: "",
+  postalCode: "",
+  country: "",
+  company: "",
+  notes: "",
+  defaultMarkupPercentage: "0",
+  billingFrequency: "monthly_eom" as "weekly" | "biweekly" | "monthly_eom",
+};
+
+const getBillingFrequencyLabel = (billingFrequency?: Client["billingFrequency"]): string => {
+  if (billingFrequency === "weekly") return "Weekly";
+  if (billingFrequency === "biweekly") return "Biweekly";
+  return "Monthly EOM";
+};
 
 export const ClientsPage: React.FC = () => {
   const { canWrite } = useAuth();
@@ -18,22 +47,7 @@ export const ClientsPage: React.FC = () => {
   const [showForm, setShowForm] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Client | null>(null);
   const [page, setPage] = useState(1);
-
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    address: "",
-    streetAddress: "",
-    city: "",
-    province: "",
-    postalCode: "",
-    country: "",
-    company: "",
-    notes: "",
-    defaultMarkupPercentage: "0",
-    billingFrequency: "monthly_eom" as "weekly" | "biweekly" | "monthly_eom",
-  });
+  const [formData, setFormData] = useState(emptyClientForm);
 
   const totalPages = Math.max(1, Math.ceil(clients.length / PAGE_SIZE));
   const currentPage = Math.min(page, totalPages);
@@ -42,24 +56,16 @@ export const ClientsPage: React.FC = () => {
     return clients.slice(start, start + PAGE_SIZE);
   }, [clients, currentPage]);
 
-  const resetForm = () => {
-    setFormData({
-      name: "",
-      email: "",
-      phone: "",
-      address: "",
-      streetAddress: "",
-      city: "",
-      province: "",
-      postalCode: "",
-      country: "",
-      company: "",
-      notes: "",
-      defaultMarkupPercentage: "0",
-      billingFrequency: "monthly_eom",
-    });
+  const closeForm = () => {
+    setFormData(emptyClientForm);
     setEditingClient(null);
     setShowForm(false);
+  };
+
+  const openCreateForm = () => {
+    setFormData(emptyClientForm);
+    setEditingClient(null);
+    setShowForm(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -81,7 +87,7 @@ export const ClientsPage: React.FC = () => {
       addClient(payload);
       toast.success("Client added");
     }
-    resetForm();
+    closeForm();
   };
 
   const handleEdit = (client: Client) => {
@@ -102,7 +108,6 @@ export const ClientsPage: React.FC = () => {
       billingFrequency: client.billingFrequency || "monthly_eom",
     });
     setShowForm(true);
-    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   const handleConfirmDelete = () => {
@@ -118,7 +123,7 @@ export const ClientsPage: React.FC = () => {
       client.city,
       client.province,
       client.postalCode,
-      client.country
+      client.country,
     ].filter(Boolean);
 
     if (addressParts.length > 0) {
@@ -144,32 +149,23 @@ export const ClientsPage: React.FC = () => {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      <SectionHeader
-        title="Clients"
-        description="Manage the people and companies you bill for stock usage."
-        actions={
-          canWrite ? (
-            <button
-              className="clear-button"
-              onClick={() => {
-                resetForm();
-                setShowForm(!showForm);
-              }}
-            >
-              {showForm ? "Cancel" : "Add Client"}
-            </button>
-          ) : null
-        }
-      />
-
-      {showForm && canWrite && (
-        <section className="panel">
-          <h3>{editingClient ? "Edit Client" : "Add New Client"}</h3>
-          <form onSubmit={handleSubmit} className="inventory-form">
-            <div className="form-grid">
-              <label>
-                <span>Name *</span>
+      <Modal
+        open={showForm && canWrite}
+        onClose={closeForm}
+        title={editingClient ? "Edit client" : "Add client"}
+        maxWidth="760px"
+      >
+        <p className="modal-intro">
+          {editingClient
+            ? "Update billing details, markup defaults, and notes for this client."
+            : "Add a client so you can assign properties and bill for supply usage."}
+        </p>
+        <form onSubmit={handleSubmit} className="stacked-form">
+          <div className="form-grid client-form-grid">
+            <FormField label="Name" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.name}
                   onChange={(e) =>
@@ -177,10 +173,12 @@ export const ClientsPage: React.FC = () => {
                   }
                   required
                 />
-              </label>
-              <label>
-                <span>Email *</span>
+              )}
+            </FormField>
+            <FormField label="Email" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="email"
                   value={formData.email}
                   onChange={(e) =>
@@ -188,30 +186,37 @@ export const ClientsPage: React.FC = () => {
                   }
                   required
                 />
-              </label>
-              <label>
-                <span>Phone</span>
+              )}
+            </FormField>
+            <FormField label="Phone">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="tel"
                   value={formData.phone}
                   onChange={(e) =>
                     setFormData({ ...formData, phone: e.target.value })
                   }
                 />
-              </label>
-              <label>
-                <span>Company</span>
+              )}
+            </FormField>
+            <FormField label="Company">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.company}
                   onChange={(e) =>
                     setFormData({ ...formData, company: e.target.value })
                   }
                 />
-              </label>
-            </div>
+              )}
+            </FormField>
+          </div>
+
+          <div className="client-address-field">
             <AddressAutocomplete
-              label="Street Address"
+              label="Street address"
               value={formData.streetAddress}
               onChange={(v) => setFormData({ ...formData, streetAddress: v })}
               placeholder="Street address or start typing to search"
@@ -226,73 +231,80 @@ export const ClientsPage: React.FC = () => {
                 });
               }}
             />
-            <div className="form-grid">
-              <label>
-                <span>City</span>
+          </div>
+
+          <div className="form-grid client-form-grid">
+            <FormField label="City">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.city}
                   onChange={(e) =>
                     setFormData({ ...formData, city: e.target.value })
                   }
                 />
-              </label>
-              <label>
-                <span>Province/State</span>
+              )}
+            </FormField>
+            <FormField label="Province/State">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.province}
                   onChange={(e) =>
                     setFormData({ ...formData, province: e.target.value })
                   }
                 />
-              </label>
-              <label>
-                <span>Postal Code</span>
+              )}
+            </FormField>
+            <FormField label="Postal code">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.postalCode}
                   onChange={(e) =>
                     setFormData({ ...formData, postalCode: e.target.value })
                   }
                 />
-              </label>
-              <label>
-                <span>Country</span>
+              )}
+            </FormField>
+            <FormField label="Country">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={formData.country}
                   onChange={(e) =>
                     setFormData({ ...formData, country: e.target.value })
                   }
                 />
-              </label>
-            </div>
-            <label className="notes-field">
-              <span>Notes</span>
-              <textarea
-                value={formData.notes}
-                onChange={(e) =>
-                  setFormData({ ...formData, notes: e.target.value })
-                }
-                rows={3}
-              />
-            </label>
-            <div className="form-grid">
-              <label>
-                <span>Default markup %</span>
+              )}
+            </FormField>
+          </div>
+
+          <div className="form-grid client-form-grid client-form-grid--compact">
+            <FormField label="Default markup %">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="number"
                   step="any"
                   value={formData.defaultMarkupPercentage}
                   onChange={(e) =>
-                    setFormData({ ...formData, defaultMarkupPercentage: e.target.value })
+                    setFormData({
+                      ...formData,
+                      defaultMarkupPercentage: e.target.value,
+                    })
                   }
                 />
-              </label>
-              <label>
-                <span>Billing frequency</span>
+              )}
+            </FormField>
+            <FormField label="Billing frequency">
+              {(inputProps) => (
                 <select
+                  {...inputProps}
                   value={formData.billingFrequency}
                   onChange={(e) =>
                     setFormData({
@@ -305,42 +317,82 @@ export const ClientsPage: React.FC = () => {
                   <option value="biweekly">Biweekly</option>
                   <option value="monthly_eom">Monthly (end of month)</option>
                 </select>
-              </label>
-            </div>
-            <div className="form-actions">
-              <button type="button" className="secondary" onClick={resetForm}>
-                Cancel
-              </button>
-              <button type="submit">
-                {editingClient ? "Save Changes" : "Add Client"}
-              </button>
-            </div>
-          </form>
-        </section>
-      )}
-
-      <section className="panel">
-        <h3>All Clients ({clients.length})</h3>
-        {clients.length === 0 ? (
-          <div className="empty-state">
-            {canWrite
-              ? "No clients yet. Add your first client above."
-              : "No clients yet. Ask a team member with edit access to add clients."}
+              )}
+            </FormField>
           </div>
+
+          <FormField label="Notes" className="notes-field">
+            {(inputProps) => (
+              <textarea
+                {...inputProps}
+                value={formData.notes}
+                onChange={(e) =>
+                  setFormData({ ...formData, notes: e.target.value })
+                }
+                rows={3}
+              />
+            )}
+          </FormField>
+
+          <div className="form-actions">
+            <Button variant="secondary" onClick={closeForm}>
+              Cancel
+            </Button>
+            <Button type="submit">
+              {editingClient ? "Save Changes" : "Add Client"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      <SectionHeader
+        title="Clients"
+        description="Manage the people and companies you bill for stock usage."
+        actions={
+          canWrite ? (
+            <Button onClick={openCreateForm}>Add Client</Button>
+          ) : null
+        }
+      />
+
+      <Card className="clients-list-card">
+        <div className="clients-list-header">
+          <h3>All clients</h3>
+          <span className="clients-count">{clients.length}</span>
+        </div>
+
+        {clients.length === 0 ? (
+          <EmptyState
+            title="No clients yet"
+            body={
+              canWrite
+                ? "Add your first client to start billing for stock usage."
+                : "Ask a team member with edit access to add clients."
+            }
+            primaryLabel={canWrite ? "Add Client" : undefined}
+            onPrimary={canWrite ? openCreateForm : undefined}
+          />
         ) : (
           <>
             <div className="clients-grid">
-              {pagedClients.map((client) => (
-                <div key={client.id} className="client-card">
-                  <div className="client-header">
-                    <h4>{client.name}</h4>
-                    <div className="client-actions">
+              {pagedClients.map((client) => {
+                const clientAddress = formatAddress(client);
+                return (
+                  <article key={client.id} className="client-card">
+                    <div className="client-header">
+                      <div>
+                        <h4>{client.name}</h4>
+                        <p className="client-subtitle">
+                          {client.company || client.email}
+                        </p>
+                      </div>
                       {canWrite && (
-                        <>
+                        <div className="client-actions">
                           <button
                             className="icon-button"
                             onClick={() => handleEdit(client)}
                             title="Edit"
+                            aria-label={`Edit ${client.name}`}
                           >
                             <Icon name="edit" size={16} />
                           </button>
@@ -348,77 +400,74 @@ export const ClientsPage: React.FC = () => {
                             className="icon-button"
                             onClick={() => setDeleteTarget(client)}
                             title="Delete"
+                            aria-label={`Delete ${client.name}`}
                           >
                             <Icon name="delete" size={16} />
                           </button>
-                        </>
+                        </div>
                       )}
                     </div>
-                  </div>
-                  <div className="client-details">
-                    <p>
-                      <strong>Email:</strong> {client.email}
-                    </p>
-                    <p>
-                      <strong>Default markup:</strong>{" "}
-                      {Number(client.defaultMarkupPercentage ?? 0)}%
-                    </p>
-                    <p>
-                      <strong>Billing:</strong>{" "}
-                      {client.billingFrequency === "weekly"
-                        ? "Weekly"
-                        : client.billingFrequency === "biweekly"
-                          ? "Biweekly"
-                          : "Monthly EOM"}
-                    </p>
-                    {client.phone && (
-                      <p>
-                        <strong>Phone:</strong> {client.phone}
-                      </p>
-                    )}
-                    {client.company && (
-                      <p>
-                        <strong>Company:</strong> {client.company}
-                      </p>
-                    )}
-                    {formatAddress(client) && (
-                      <p>
-                        <strong>Address:</strong> {formatAddress(client)}
-                      </p>
-                    )}
-                    {client.notes && (
-                      <p className="client-notes">{client.notes}</p>
-                    )}
-                  </div>
-                </div>
-              ))}
+                    <dl className="client-details">
+                      <div>
+                        <dt>Email</dt>
+                        <dd>{client.email}</dd>
+                      </div>
+                      <div>
+                        <dt>Default markup</dt>
+                        <dd>{Number(client.defaultMarkupPercentage ?? 0)}%</dd>
+                      </div>
+                      <div>
+                        <dt>Billing</dt>
+                        <dd>{getBillingFrequencyLabel(client.billingFrequency)}</dd>
+                      </div>
+                      {client.phone && (
+                        <div>
+                          <dt>Phone</dt>
+                          <dd>{client.phone}</dd>
+                        </div>
+                      )}
+                      {client.company && (
+                        <div>
+                          <dt>Company</dt>
+                          <dd>{client.company}</dd>
+                        </div>
+                      )}
+                      {clientAddress && (
+                        <div className="client-details-full">
+                          <dt>Address</dt>
+                          <dd>{clientAddress}</dd>
+                        </div>
+                      )}
+                    </dl>
+                    {client.notes && <p className="client-notes">{client.notes}</p>}
+                  </article>
+                );
+              })}
             </div>
             {clients.length > PAGE_SIZE && (
               <div className="pagination-controls">
-                <button
-                  type="button"
-                  className="secondary"
+                <Button
+                  variant="secondary"
                   disabled={currentPage <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
                   Prev
-                </button>
+                </Button>
                 <span className="pagination-status">
                   Page {currentPage} of {totalPages}
                 </span>
-                <button
-                  type="button"
-                  className="secondary"
+                <Button
+                  variant="secondary"
                   disabled={currentPage >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
                   Next
-                </button>
+                </Button>
               </div>
             )}
           </>
         )}
-      </section>
+      </Card>
     </div>
   );
 };
