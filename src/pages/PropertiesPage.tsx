@@ -12,6 +12,7 @@ import { stockLocationsApi } from "../services/stockLocationsApi";
 import { supplyItemsApi } from "../services/catalogueApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { Icon } from "../components/ui/Icon";
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
@@ -194,7 +195,7 @@ export const PropertiesPage: React.FC = () => {
                 onClick={() => setShowUpgradeModal(false)}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <p style={{ marginBottom: "20px" }}>
@@ -230,7 +231,7 @@ export const PropertiesPage: React.FC = () => {
                 onClick={handleCancelPropertyEdit}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <PropertyForm
@@ -297,7 +298,7 @@ export const PropertiesPage: React.FC = () => {
                             title="Edit"
                             onClick={(e) => handleEditProperty(property, e)}
                           >
-                            ✏️
+                            <Icon name="edit" size={16} />
                           </button>
                           <button
                             type="button"
@@ -305,7 +306,7 @@ export const PropertiesPage: React.FC = () => {
                             title="Delete"
                             onClick={(e) => handleDeleteProperty(property, e)}
                           >
-                            🗑️
+                            <Icon name="delete" size={16} />
                           </button>
                         </div>
                       )}

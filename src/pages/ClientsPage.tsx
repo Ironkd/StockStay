@@ -6,6 +6,7 @@ import { Client } from "../types";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { SectionHeader } from "../components/ui/SectionHeader";
+import { Icon } from "../components/ui/Icon";
 
 const PAGE_SIZE = 20;
 
@@ -341,14 +342,14 @@ export const ClientsPage: React.FC = () => {
                             onClick={() => handleEdit(client)}
                             title="Edit"
                           >
-                            ✏️
+                            <Icon name="edit" size={16} />
                           </button>
                           <button
                             className="icon-button"
                             onClick={() => setDeleteTarget(client)}
                             title="Delete"
                           >
-                            🗑️
+                            <Icon name="delete" size={16} />
                           </button>
                         </>
                       )}

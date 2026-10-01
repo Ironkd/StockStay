@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { locationSupplyThresholdsApi, skusApi } from "../services/catalogueApi";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { useInvoices } from "../hooks/useInvoices";
+import { Icon } from "../components/ui/Icon";
 import { useProperties } from "../hooks/useProperties";
 import type { LocationLowStockRow, Sku, UnbilledLine } from "../types";
 import { SectionHeader } from "../components/ui/SectionHeader";
@@ -172,7 +173,7 @@ export const HomePage: React.FC = () => {
           onClick={() => navigate("/stock")}
           style={{ cursor: "pointer" }}
         >
-          <div className="stat-icon">⚠️</div>
+          <div className="stat-icon"><Icon name="warning" size={26} /></div>
           <div className="stat-content">
             <div className="stat-value">{stats.lowStockCount}</div>
             <div className="stat-label">Location items low on stock</div>
@@ -183,7 +184,7 @@ export const HomePage: React.FC = () => {
           onClick={() => navigate("/billing")}
           style={{ cursor: "pointer" }}
         >
-          <div className="stat-icon">🧾</div>
+          <div className="stat-icon"><Icon name="billing" size={26} /></div>
           <div className="stat-content">
             <div className="stat-value">{stats.unbilledCount}</div>
             <div className="stat-label">Unbilled Lines</div>
@@ -195,7 +196,7 @@ export const HomePage: React.FC = () => {
             onClick={() => navigate("/stock")}
             style={{ cursor: "pointer" }}
           >
-            <div className="stat-icon">📦</div>
+            <div className="stat-icon"><Icon name="stock" size={26} /></div>
             <div className="stat-content">
               <div className="stat-value">0</div>
               <div className="stat-label">No Packs On Hand — Receive Stock</div>

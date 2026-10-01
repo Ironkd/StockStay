@@ -3,6 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../contexts/useAuth";
 import { apiRequest } from "../config/api";
 import { fetchPlansConfig } from "../services/plansApi";
+import { Icon } from "../components/ui/Icon";
 import { track } from "../lib/analytics";
 import type { PlansConfig } from "../types";
 
@@ -117,7 +118,7 @@ export const LandingPage: React.FC = () => {
 
           <div className="features-grid">
             <div className="feature-card">
-              <div className="feature-icon">📦</div>
+              <div className="feature-icon"><Icon name="stock" size={22} /></div>
               <h3>Supplies Per Property</h3>
               <p>
                 Track toiletries, linens, cleaning supplies, and coffee pods for each Airbnb or vacation rental. Get low-stock alerts before turnovers so you're never caught short.
@@ -125,7 +126,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">🔄</div>
+              <div className="feature-icon"><Icon name="refresh" size={22} /></div>
               <h3>Transfers & Restocking</h3>
               <p>
                 Move supplies between properties with one click. Auto-generated shopping lists from low-stock items so you know exactly what to buy before your next guest arrives.
@@ -133,7 +134,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">👤</div>
+              <div className="feature-icon"><Icon name="user" size={22} /></div>
               <h3>Owner & Guest Contacts</h3>
               <p>
                 Keep property owner and guest contact details organized. Link them to invoices for easy owner reimbursement and pass-through billing.
@@ -141,7 +142,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">📄</div>
+              <div className="feature-icon"><Icon name="document" size={22} /></div>
               <h3>Owner Invoicing</h3>
               <p>
                 Bill property owners for supplies used at their rentals. Create invoices, export to PDF, and keep billing organized across all your managed properties.
@@ -149,7 +150,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">🏠</div>
+              <div className="feature-icon"><Icon name="home" size={22} /></div>
               <h3>Turnover Tracking</h3>
               <p>
                 Log what's used after each guest checkout. Track consumption per property so you know which listings use more supplies and can bill owners accurately.
@@ -157,7 +158,7 @@ export const LandingPage: React.FC = () => {
             </div>
 
             <div className="feature-card">
-              <div className="feature-icon">👥</div>
+              <div className="feature-icon"><Icon name="clients" size={22} /></div>
               <h3>Team for Cleaners & Co-hosts</h3>
               <p>
                 Invite your cleaning crew or co-hosts with role-based access. Control who sees which properties and pages. Perfect for STR management teams.
@@ -237,7 +238,7 @@ export const LandingPage: React.FC = () => {
                   "Up to 30 inventory items",
                   "No credit card required",
                 ]).map((line) => (
-                  <li key={line}>✓ {line}</li>
+                  <li key={line}><Icon name="check" size={14} /> {line}</li>
                 ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
@@ -247,7 +248,7 @@ export const LandingPage: React.FC = () => {
 
             {/* Starter Plan */}
             <div className="pricing-card featured">
-              <div className="pricing-badge">⭐ Most Popular</div>
+              <div className="pricing-badge"><Icon name="star" size={13} /> Most Popular</div>
               <div className="pricing-header">
                 <h3>{starter?.name || "Starter"}</h3>
                 <div className="pricing-price">
@@ -276,7 +277,7 @@ export const LandingPage: React.FC = () => {
                   "Up to 2 extra users",
                   "Everything in Free",
                 ]).map((line) => (
-                  <li key={line}>✓ {line}</li>
+                  <li key={line}><Icon name="check" size={14} /> {line}</li>
                 ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button primary">
@@ -287,10 +288,10 @@ export const LandingPage: React.FC = () => {
             {/* Pro Plan */}
             <div className="pricing-card">
               <div className="pricing-header">
-                <div className="plan-icon">🔥</div>
+                <div className="plan-icon"><Icon name="flame" size={22} /></div>
                 <h3>{pro?.name || "Pro"}</h3>
                 <p style={{ color: '#10b981', fontWeight: '600', fontSize: '14px', margin: '0 0 12px 0' }}>
-                  🎁 Free 14 day trial
+                  <Icon name="gift" size={15} /> Free 14 day trial
                 </p>
                 <div className="pricing-price">
                   {billingPeriod === 'monthly' ? (
@@ -317,7 +318,7 @@ export const LandingPage: React.FC = () => {
                   "5 users included",
                   "Everything in Starter",
                 ]).map((line) => (
-                  <li key={line}>✓ {line}</li>
+                  <li key={line}><Icon name="check" size={14} /> {line}</li>
                 ))}
               </ul>
               <button onClick={handleGetStarted} className="pricing-button">
@@ -416,7 +417,7 @@ export const LandingPage: React.FC = () => {
                 }}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <p style={{ margin: "0 0 20px", fontSize: "0.9rem", color: "#64748b" }}>

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../contexts/useAuth";
 import { useToast } from "../contexts/useToast";
 import { apiRequest } from "../config/api";
+import { Icon } from "../components/ui/Icon";
 import { authApi } from "../services/authApi";
 import { teamApi } from "../services/teamApi";
 import { propertiesApi } from "../services/propertiesApi";
@@ -1477,7 +1478,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => setShowInviteModal(false)}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <form onSubmit={handleInviteSubmit} className="inventory-form">
@@ -1541,7 +1542,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => setShowOrgEditModal(false)}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
@@ -1682,7 +1683,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => !supportSending && setShowSupportModal(false)}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
@@ -1759,7 +1760,7 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => { setEditingMember(null); setEditingInvitation(null); }}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             {editingMember && (

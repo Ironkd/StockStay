@@ -16,6 +16,7 @@ import { ReturnStockModal } from "../components/ReturnStockModal";
 import { TransferStockModal } from "../components/TransferStockModal";
 import { clientsApi } from "../services/clientsApi";
 import { stockLocationsApi } from "../services/stockLocationsApi";
+import { Icon } from "../components/ui/Icon";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { supplyItemsApi } from "../services/catalogueApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
@@ -422,7 +423,7 @@ export const PropertyDetailPage: React.FC = () => {
                           Save
                         </button>
                         <button type="button" className="icon-button" onClick={() => setParEditId("")} aria-label="Cancel">
-                          ✕
+                          <Icon name="close" size={16} />
                         </button>
                       </div>
                     ) : (
@@ -532,7 +533,7 @@ export const PropertyDetailPage: React.FC = () => {
                 onClick={() => setShowEditModal(false)}
                 aria-label="Close"
               >
-                ✕
+                <Icon name="close" size={16} />
               </button>
             </div>
             <PropertyForm

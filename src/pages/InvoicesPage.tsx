@@ -4,6 +4,7 @@ import { useInvoices } from "../hooks/useInvoices";
 import { useClients } from "../hooks/useClients";
 import { invoicesApi } from "../services/invoicesApi";
 import { teamApi } from "../services/teamApi";
+import { Icon } from "../components/ui/Icon";
 import { replenishmentApi } from "../services/replenishmentApi";
 import { Invoice, InvoiceItem, UnbilledLine } from "../types";
 import { useAuth } from "../contexts/useAuth";
@@ -441,7 +442,7 @@ export const InvoicesPage: React.FC = () => {
                 title="Export CSV"
                 aria-label="Export CSV"
               >
-                ⬇️
+                <Icon name="download" size={16} />
               </button>
               {canWrite && (
                 <>
@@ -451,7 +452,7 @@ export const InvoicesPage: React.FC = () => {
                     title="Edit"
                     aria-label="Edit invoice"
                   >
-                    ✏️
+                    <Icon name="edit" size={16} />
                   </button>
                   <button
                     className="icon-button"
@@ -459,7 +460,7 @@ export const InvoicesPage: React.FC = () => {
                     title="Delete"
                     aria-label="Delete invoice"
                   >
-                    🗑️
+                    <Icon name="delete" size={16} />
                   </button>
                 </>
               )}
@@ -897,7 +898,7 @@ export const InvoicesPage: React.FC = () => {
                             onClick={() => item.id && removeItemFromInvoice(item.id)}
                             className="icon-button"
                           >
-                            🗑️
+                            <Icon name="delete" size={16} />
                           </button>
                         </td>
                       </tr>

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { fetchPlansConfig } from "../services/plansApi";
+import { Icon } from "../components/ui/Icon";
 import type { PlansConfig } from "../types";
 
 function formatCap(n: number | null | undefined, unlimitedLabel = "Unlimited"): string {
@@ -108,7 +109,7 @@ export const PricingPage: React.FC = () => {
                         `${formatCap(plan.maxSkus)} SKUs`,
                       ]
                   ).map((line) => (
-                    <li key={line}>✓ {line}</li>
+                    <li key={line}><Icon name="check" size={14} /> {line}</li>
                   ))}
                 </ul>
                 {config && plan.id !== "free" && (plan.maxExtraUserSlots ?? 0) > 0 && (

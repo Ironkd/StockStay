@@ -6,6 +6,7 @@ import { replenishmentApi } from "../services/replenishmentApi";
 import { propertySupplyItemsApi } from "../services/propertySupplyItemsApi";
 import { effectiveMarkup, estimateBillBack, formatMoney } from "../utils/billBack";
 import { StockFlowModal } from "./StockFlowModal";
+import { Icon } from "./ui/Icon";
 
 type LineDraft = {
   id: string;
@@ -322,7 +323,7 @@ export const ReplenishModal: React.FC<Props> = ({
                   disabled={lines.length <= 1}
                   aria-label="Remove line"
                 >
-                  ✕
+                  <Icon name="close" size={16} />
                 </button>
                 {sku && base > 0 && (
                   <div style={{ gridColumn: "1 / -1", fontSize: "12px", color: "#64748b" }}>

@@ -19,6 +19,13 @@ import {
   ChevronRight,
   ArrowLeft,
   LogOut,
+  RefreshCw,
+  User,
+  FileText,
+  Star,
+  Flame,
+  Gift,
+  Download,
   type LucideProps,
 } from "lucide-react";
 
@@ -42,6 +49,13 @@ const registry = {
   "chevron-right": ChevronRight,
   back: ArrowLeft,
   "log-out": LogOut,
+  refresh: RefreshCw,
+  user: User,
+  document: FileText,
+  star: Star,
+  flame: Flame,
+  gift: Gift,
+  download: Download,
 } as const;
 
 export type IconName = keyof typeof registry;

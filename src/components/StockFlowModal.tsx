@@ -1,4 +1,5 @@
 import React from "react";
+import { Icon } from "./ui/Icon";
 
 type Props = {
   title: string;
@@ -53,7 +54,7 @@ export const StockFlowModal: React.FC<Props> = ({
             aria-label="Close"
             disabled={loading}
           >
-            ✕
+            <Icon name="close" size={16} />
           </button>
         </div>
         {subtitle && (
