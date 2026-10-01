@@ -171,7 +171,6 @@ export const HomePage: React.FC = () => {
         <div
           className="stat-card warning clickable-stat-card"
           onClick={() => navigate("/stock")}
-          style={{ cursor: "pointer" }}
         >
           <div className="stat-icon"><Icon name="warning" size={26} /></div>
           <div className="stat-content">
@@ -182,7 +181,6 @@ export const HomePage: React.FC = () => {
         <div
           className="stat-card clickable-stat-card"
           onClick={() => navigate("/billing")}
-          style={{ cursor: "pointer" }}
         >
           <div className="stat-icon"><Icon name="billing" size={26} /></div>
           <div className="stat-content">
@@ -194,7 +192,6 @@ export const HomePage: React.FC = () => {
           <div
             className="stat-card danger clickable-stat-card"
             onClick={() => navigate("/stock")}
-            style={{ cursor: "pointer" }}
           >
             <div className="stat-icon"><Icon name="stock" size={26} /></div>
             <div className="stat-content">

@@ -2287,16 +2287,13 @@ button.btn-sm {
 }
 
 .clickable-stat-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  cursor: pointer;
+  transition: box-shadow var(--duration-fast) ease, border-color var(--duration-fast) ease;
 }
 
 .clickable-stat-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lg);
-}
-
-.clickable-stat-card:active {
-  transform: translateY(0);
+  box-shadow: var(--shadow-md);
+  border-color: var(--color-border-strong);
 }
 
 .stat-icon {
