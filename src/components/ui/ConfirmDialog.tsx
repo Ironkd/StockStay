@@ -1,5 +1,6 @@
 import React from "react";
 import { Modal } from "./Modal";
+import { Button } from "./Button";
 
 type ConfirmDialogProps = {
   open: boolean;
@@ -29,23 +30,13 @@ export const ConfirmDialog: React.FC<ConfirmDialogProps> = ({
     <Modal open={open} onClose={onCancel} title={title} busy={busy} maxWidth="420px">
       <div className="confirm-dialog-body">
         {typeof message === "string" ? <p>{message}</p> : message}
-        <div className="form-actions" style={{ marginTop: "20px" }}>
-          <button
-            type="button"
-            className="secondary"
-            onClick={onCancel}
-            disabled={busy}
-          >
+        <div className="form-actions">
+          <Button variant="secondary" onClick={onCancel} disabled={busy}>
             {cancelLabel}
-          </button>
-          <button
-            type="button"
-            className={danger ? "danger" : "primary"}
-            onClick={onConfirm}
-            disabled={busy}
-          >
+          </Button>
+          <Button variant={danger ? "danger" : "primary"} onClick={onConfirm} disabled={busy}>
             {busy ? "Please wait…" : confirmLabel}
-          </button>
+          </Button>
         </div>
       </div>
     </Modal>

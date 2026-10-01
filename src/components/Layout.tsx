@@ -5,6 +5,10 @@ import { teamApi } from "../services/teamApi";
 import { apiRequest } from "../config/api";
 import { track } from "../lib/analytics";
 import { OverLimitBanner } from "./OverLimitBanner";
+import { Icon, type IconName } from "./ui/Icon";
+import { Modal } from "./ui/Modal";
+import { Button } from "./ui/Button";
+import { FormField } from "./ui/FormField";
 
 function userInitials(name?: string | null, email?: string | null): string {
   const trimmed = (name || "").trim();
@@ -158,14 +162,14 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
     (headerTeamName ?? user?.teamName ?? "").trim() ||
     (user?.name?.trim() ? `${user.name.trim().split(/\s+/)[0]}'s Team` : "My Team");
 
-  const navItems: Array<{ path: string; label: string; icon: string; pageKey: string; proOnly?: boolean }> = [
-    { path: "/dashboard", label: "Home", icon: "🏠", pageKey: "home" },
-    { path: "/stock", label: "Stock", icon: "📦", pageKey: "inventory" },
-    { path: "/properties", label: "Properties", icon: "🏘️", pageKey: "inventory" },
-    { path: "/clients", label: "Clients", icon: "👥", pageKey: "clients" },
-    { path: "/shopping-list", label: "Shopping List", icon: "🛒", pageKey: "shopping-list", proOnly: true },
-    { path: "/billing", label: "Billing", icon: "🧾", pageKey: "invoices" },
-    { path: "/reports", label: "Reports", icon: "📊", pageKey: "reports" },
+  const navItems: Array<{ path: string; label: string; icon: IconName; pageKey: string; proOnly?: boolean }> = [
+    { path: "/dashboard", label: "Home", icon: "home", pageKey: "home" },
+    { path: "/stock", label: "Stock", icon: "stock", pageKey: "inventory" },
+    { path: "/properties", label: "Properties", icon: "properties", pageKey: "inventory" },
+    { path: "/clients", label: "Clients", icon: "clients", pageKey: "clients" },
+    { path: "/shopping-list", label: "Shopping List", icon: "shopping-list", pageKey: "shopping-list", proOnly: true },
+    { path: "/billing", label: "Billing", icon: "billing", pageKey: "invoices" },
+    { path: "/reports", label: "Reports", icon: "reports", pageKey: "reports" },
   ];
 
   const canSeePage = (item: { pageKey: string; proOnly?: boolean }) => {
@@ -180,7 +184,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
   return (
     <div className="app-shell">
       <header className="app-header">
-        <Link to="/dashboard" className="app-header-brand" style={{ textDecoration: "none", color: "inherit" }}>
+        <Link to="/dashboard" className="app-header-brand">
           <img src="/logo.png" alt="StockStay" className="app-logo" />
           <div>
             <h1 className="brand-name">
@@ -189,7 +193,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
             </h1>
           <p className="welcome-line">Welcome back, {user?.name?.trim() ? user.name.trim().split(/\s+/)[0] : "User"}</p>
           {memberships.length > 1 ? (
-            <label className="team-line" style={{ display: "block" }}>
+            <label className="team-line team-switcher">
               <span className="sr-only">Active team</span>
               <select
                 value={activeTeamId}
@@ -199,17 +203,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
                   void handleSwitchTeam(e.target.value);
                 }}
                 onClick={(e) => e.stopPropagation()}
-                style={{
-                  marginTop: "2px",
-                  maxWidth: "220px",
-                  fontSize: "inherit",
-                  fontWeight: 600,
-                  border: "1px solid rgba(148, 163, 184, 0.5)",
-                  borderRadius: "6px",
-                  padding: "2px 6px",
-                  background: "transparent",
-                  color: "inherit",
-                }}
               >
                 {memberships.map((m) => (
                   <option key={m.teamId} value={m.teamId}>
@@ -280,7 +273,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               }`}
               onClick={() => setNavOpen(false)}
             >
-              <span className="nav-icon">{item.icon}</span>
+              <span className="nav-icon">
+                <Icon name={item.icon} size={18} />
+              </span>
               <span>{item.label}</span>
             </Link>
           ))}
@@ -309,84 +304,67 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
       </footer>
 
       {showFeedback && (
-        <div className="modal-overlay" onClick={() => !feedbackSending && setShowFeedback(false)}>
-          <div
-            className="modal-content"
-            onClick={(e) => e.stopPropagation()}
-            style={{ maxWidth: "440px", maxHeight: "90vh", overflowY: "auto" }}
-          >
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-              <h3>Send feedback</h3>
-              <button
-                type="button"
-                className="icon-button close-button"
-                onClick={() => !feedbackSending && setShowFeedback(false)}
-                aria-label="Close"
-              >
-                ✕
-              </button>
-            </div>
-            <p style={{ fontSize: "13px", color: "#64748b", marginBottom: "16px" }}>
-              Send us a message and we&apos;ll get back to you at support@stockstay.com.
+        <Modal
+          open={showFeedback}
+          onClose={() => setShowFeedback(false)}
+          title="Send feedback"
+          busy={feedbackSending}
+          maxWidth="440px"
+        >
+          <p className="modal-intro">
+            Send us a message and we&apos;ll get back to you at support@stockstay.com.
+          </p>
+          {feedbackResult && (
+            <p className={feedbackResult.ok ? "form-banner success" : "form-banner error"}>
+              {feedbackResult.message}
             </p>
-            {feedbackResult && (
-              <p
-                style={{
-                  margin: "0 0 16px",
-                  padding: "12px",
-                  borderRadius: "8px",
-                  fontSize: "14px",
-                  backgroundColor: feedbackResult.ok ? "#dcfce7" : "#fee2e2",
-                  color: feedbackResult.ok ? "#166534" : "#b91c1c",
-                }}
-              >
-                {feedbackResult.message}
-              </p>
-            )}
-            <form onSubmit={handleFeedbackSubmit} style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Name</span>
+          )}
+          <form onSubmit={handleFeedbackSubmit} className="stacked-form">
+            <FormField label="Name">
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="text"
                   value={feedbackForm.name}
                   onChange={(e) => setFeedbackForm((f) => ({ ...f, name: e.target.value }))}
                   placeholder="Your name"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
                 />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Email *</span>
+              )}
+            </FormField>
+            <FormField label="Email" required>
+              {(inputProps) => (
                 <input
+                  {...inputProps}
                   type="email"
                   required
                   value={feedbackForm.email}
                   onChange={(e) => setFeedbackForm((f) => ({ ...f, email: e.target.value }))}
                   placeholder="you@example.com"
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", boxSizing: "border-box" }}
                 />
-              </label>
-              <label>
-                <span style={{ fontSize: "13px", color: "#64748b", display: "block", marginBottom: "4px" }}>Message *</span>
+              )}
+            </FormField>
+            <FormField label="Message" required>
+              {(inputProps) => (
                 <textarea
+                  {...inputProps}
                   required
                   value={feedbackForm.message}
                   onChange={(e) => setFeedbackForm((f) => ({ ...f, message: e.target.value }))}
                   placeholder="Ideas, bugs, or questions..."
                   rows={4}
-                  style={{ width: "100%", padding: "8px 12px", borderRadius: "8px", border: "1px solid rgba(148, 163, 184, 0.7)", resize: "vertical", boxSizing: "border-box" }}
                 />
-              </label>
-              <div className="form-actions" style={{ marginTop: "4px" }}>
-                <button type="button" className="secondary" onClick={() => !feedbackSending && setShowFeedback(false)}>
-                  Cancel
-                </button>
-                <button type="submit" className="primary" disabled={feedbackSending}>
-                  {feedbackSending ? "Sending..." : "Send"}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+              )}
+            </FormField>
+            <div className="form-actions">
+              <Button variant="secondary" onClick={() => setShowFeedback(false)} disabled={feedbackSending}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={feedbackSending}>
+                {feedbackSending ? "Sending..." : "Send"}
+              </Button>
+            </div>
+          </form>
+        </Modal>
       )}
     </div>
   );

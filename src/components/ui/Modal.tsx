@@ -1,5 +1,6 @@
 import React, { useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
+import { Icon } from "./Icon";
 
 type ModalProps = {
   open: boolean;
@@ -86,18 +87,8 @@ export const Modal: React.FC<ModalProps> = ({
         style={{ maxWidth }}
       >
         {title != null && (
-          <div
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: "16px",
-              gap: "12px",
-            }}
-          >
-            <h3 id={titleId} style={{ margin: 0 }}>
-              {title}
-            </h3>
+          <div className="modal-header">
+            <h3 id={titleId}>{title}</h3>
             <button
               type="button"
               className="icon-button close-button"
@@ -105,7 +96,7 @@ export const Modal: React.FC<ModalProps> = ({
               disabled={busy}
               aria-label="Close"
             >
-              ✕
+              <Icon name="close" size={16} />
             </button>
           </div>
         )}
