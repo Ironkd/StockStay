@@ -10,6 +10,7 @@ import type {
   UnbilledLine,
 } from "../types";
 import { useProperties } from "../hooks/useProperties";
+import { useToast } from "../contexts/useToast";
 import { PropertyForm } from "../components/PropertyForm";
 import { ReplenishModal } from "../components/ReplenishModal";
 import { ReturnStockModal } from "../components/ReturnStockModal";
@@ -30,16 +31,19 @@ import {
   Icon,
   Modal,
   SectionHeader,
+  ActionMenu,
 } from "../components/ui";
 
 export const PropertyDetailPage: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
   const { user, canWrite } = useAuth();
   const {
     properties,
     isLoaded: propertiesLoaded,
     updateProperty,
+    setPropertyArchived,
     getPropertyById,
     refresh: refreshProperties,
   } = useProperties();
@@ -61,6 +65,10 @@ export const PropertyDetailPage: React.FC = () => {
   const [replenishSupplyItemId, setReplenishSupplyItemId] = useState("");
   const [showReturnModal, setShowReturnModal] = useState(false);
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [returnSupplyItemId, setReturnSupplyItemId] = useState("");
+  const [transferSupplyItemId, setTransferSupplyItemId] = useState("");
+  const [showArchiveConfirm, setShowArchiveConfirm] = useState(false);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   const [addItemSupplyItemId, setAddItemSupplyItemId] = useState("");
   const [addItemParQty, setAddItemParQty] = useState("");
@@ -72,6 +80,9 @@ export const PropertyDetailPage: React.FC = () => {
   const [removeTarget, setRemoveTarget] = useState<PropertySupplyItem | null>(null);
 
   const property = getPropertyById(id);
+  const isArchived = Boolean(property?.archivedAt);
+  const canManageProperty = canWrite && !isArchived;
+  const canManagePropertySettings = canWrite && user?.teamRole === "owner";
 
   const canAccessProperty = useMemo(() => {
     if (!property || !user) return false;
@@ -174,7 +185,7 @@ export const PropertyDetailPage: React.FC = () => {
   }, [propertyUnbilled]);
 
   const handlePropertySubmit = async (values: PropertyFormValues) => {
-    if (!property) return;
+    if (!property || isArchived) return;
     try {
       await updateProperty(property.id, values);
       setShowEditModal(false);
@@ -184,9 +195,23 @@ export const PropertyDetailPage: React.FC = () => {
     }
   };
 
+  const handlePropertyArchive = async () => {
+    if (!property) return;
+    setArchiveBusy(true);
+    try {
+      await setPropertyArchived(property.id, !isArchived);
+      setShowArchiveConfirm(false);
+      toast.success(isArchived ? "Property restored" : "Property archived");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update property status");
+    } finally {
+      setArchiveBusy(false);
+    }
+  };
+
   const handleLinkLocation = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!linkLocationId || !id) {
+    if (!linkLocationId || !id || isArchived) {
       setLinkError("Select a stock location.");
       return;
     }
@@ -206,7 +231,7 @@ export const PropertyDetailPage: React.FC = () => {
 
   const handleAddStockedItem = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!id || !addItemSupplyItemId) {
+    if (!id || !addItemSupplyItemId || isArchived) {
       setAddItemError("Select a supply item.");
       return;
     }
@@ -227,12 +252,13 @@ export const PropertyDetailPage: React.FC = () => {
   };
 
   const handleStartParEdit = (row: PropertySupplyItem) => {
+    if (isArchived) return;
     setParEditId(row.id);
     setParEditValue(row.parQuantity);
   };
 
   const handleSaveParEdit = async (row: PropertySupplyItem) => {
-    if (!id) return;
+    if (!id || isArchived) return;
     setItemActionBusyId(row.id);
     try {
       await propertySupplyItemsApi.upsert(id, row.supplyItemId, { parQuantity: parEditValue || 0 });
@@ -246,7 +272,7 @@ export const PropertyDetailPage: React.FC = () => {
   };
 
   const handleConfirmRemoveStockedItem = async () => {
-    if (!id || !removeTarget) return;
+    if (!id || !removeTarget || isArchived) return;
     setItemActionBusyId(removeTarget.id);
     try {
       await propertySupplyItemsApi.remove(id, removeTarget.supplyItemId);
@@ -278,6 +304,18 @@ export const PropertyDetailPage: React.FC = () => {
 
   return (
     <div className="inventory-page">
+      <ConfirmDialog
+        open={showArchiveConfirm}
+        title="Archive property"
+        message={`Archive "${property?.name || "this property"}"? It will remain viewable with its audit and billing history, but cannot be changed or used for stock operations.`}
+        confirmLabel="Archive"
+        danger
+        busy={archiveBusy}
+        onConfirm={() => void handlePropertyArchive()}
+        onCancel={() => {
+          if (!archiveBusy) setShowArchiveConfirm(false);
+        }}
+      />
       <ConfirmDialog
         open={Boolean(removeTarget)}
         title="Remove stocked item"
@@ -317,52 +355,66 @@ export const PropertyDetailPage: React.FC = () => {
           </>
         }
         actions={
-          canWrite ? (
-            <>
-              <Button variant="secondary" onClick={() => setShowEditModal(true)}>
-                <Icon name="edit" size={16} />
-                Edit property
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => {
-                  setLinkLocationId("");
-                  setLinkError("");
-                  setShowLinkModal(true);
-                }}
-              >
-                <Icon name="add" size={16} />
-                Link location
-              </Button>
-            </>
-          ) : null
+          <div className="property-detail-manage">
+            {isArchived ? <Badge>Archived</Badge> : null}
+            <ActionMenu
+              ariaLabel={`Manage ${property.name}`}
+              items={[
+                {
+                  label: "View on billing",
+                  onSelect: () => navigate(`/billing?propertyId=${property.id}`),
+                },
+                ...(canWrite
+                  ? [
+                      ...(canManagePropertySettings
+                        ? isArchived
+                          ? [
+                              {
+                                label: "Restore property",
+                                onSelect: () => void handlePropertyArchive(),
+                              },
+                            ]
+                          : [
+                              {
+                                label: "Edit property",
+                                onSelect: () => setShowEditModal(true),
+                              },
+                              {
+                                label: "Archive property",
+                                onSelect: () => setShowArchiveConfirm(true),
+                                danger: true,
+                              },
+                            ]
+                        : []),
+                      ...(!isArchived
+                        ? [
+                            {
+                              label: "Link stock location",
+                              onSelect: () => {
+                                setLinkLocationId("");
+                                setLinkError("");
+                                setShowLinkModal(true);
+                              },
+                            },
+                          ]
+                        : []),
+                    ]
+                  : []),
+              ]}
+            />
+          </div>
         }
       />
 
-      {!property.clientId && (
+      {isArchived ? (
+        <div className="property-warning-banner">
+          This property is archived. Its billing and stock history remain available, but stock and property changes are disabled.
+        </div>
+      ) : !property.clientId ? (
         <div className="property-warning-banner">
           This property has no billing client. Assign one via Edit property before replenishing — bill-back can&apos;t be queued without a client.
         </div>
-      )}
-
-      <div className="stock-toolbar property-secondary-actions">
-        {canWrite && (
-          <>
-            <Button variant="secondary" onClick={() => setShowReturnModal(true)}>
-              Return
-            </Button>
-            <Button variant="secondary" onClick={() => setShowTransferModal(true)}>
-              Transfer
-            </Button>
-          </>
-        )}
-        <Button
-          variant="ghost"
-          onClick={() => navigate(`/billing?propertyId=${property.id}`)}
-        >
-          View on Billing
-        </Button>
-      </div>
+      ) : null}
 
       <Card className="property-allocation-panel">
         <SectionHeader
@@ -371,7 +423,104 @@ export const PropertyDetailPage: React.FC = () => {
           compact
         />
 
-        {canWrite && (
+        {sortedStockedItems.length === 0 ? (
+          <EmptyState
+            title="No stocked items yet"
+            body="Add the supply items this property receives, so everyone can see what it's stocked with at a glance."
+          />
+        ) : (
+          <div className="property-supply-grid">
+            {sortedStockedItems.map((item) => {
+              const allocated = Number(item.allocatedSinceInvoice) || 0;
+              const isEditingPar = parEditId === item.id;
+              const isBusy = itemActionBusyId === item.id;
+              return (
+                <article key={item.id} className="property-supply-card">
+                  <div className="property-supply-card-header">
+                    <strong>{item.supplyItem?.name || "Supply item"}</strong>
+                    {canManageProperty ? (
+                      <ActionMenu
+                        label="Actions"
+                        ariaLabel={`Actions for ${item.supplyItem?.name || "stocked item"}`}
+                        items={[
+                          {
+                            label: "Return",
+                            onSelect: () => {
+                              setReturnSupplyItemId(item.supplyItemId);
+                              setShowReturnModal(true);
+                            },
+                          },
+                          {
+                            label: "Transfer",
+                            onSelect: () => {
+                              setTransferSupplyItemId(item.supplyItemId);
+                              setShowTransferModal(true);
+                            },
+                          },
+                          {
+                            label: "Remove from property",
+                            onSelect: () => setRemoveTarget(item),
+                            danger: true,
+                          },
+                        ]}
+                      />
+                    ) : null}
+                  </div>
+                  <p>
+                    {allocated > 0.000001
+                      ? `${allocated.toFixed(2)} base units allocated since last invoice`
+                      : "No allocations since last invoice"}
+                    {item.recentSkuNames.length > 0 ? ` · ${item.recentSkuNames.join(", ")}` : ""}
+                  </p>
+                  <div className="property-supply-card-par">
+                    <span>Par quantity</span>
+                    {isEditingPar ? (
+                      <div className="property-supply-card-par-edit">
+                        <input
+                          type="number"
+                          min="0"
+                          step="any"
+                          value={parEditValue}
+                          onChange={(e) => setParEditValue(e.target.value)}
+                          autoFocus
+                        />
+                        <Button type="button" variant="secondary" size="sm" onClick={() => handleSaveParEdit(item)} disabled={isBusy}>
+                          Save
+                        </Button>
+                        <Button type="button" variant="ghost" size="sm" onClick={() => setParEditId("")} aria-label="Cancel">
+                          <Icon name="close" size={16} />
+                        </Button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="property-supply-card-par-value"
+                        onClick={() => canManageProperty && handleStartParEdit(item)}
+                        disabled={!canManageProperty}
+                      >
+                        {Number(item.parQuantity) > 0 ? Number(item.parQuantity).toFixed(2) : "Not set"}
+                      </button>
+                    )}
+                  </div>
+                  {canManageProperty ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => {
+                        setReplenishSupplyItemId(item.supplyItemId);
+                        setShowReplenishModal(true);
+                      }}
+                    >
+                      {allocated > 0.000001 ? "Allocate more" : "Allocate stock"}
+                    </Button>
+                  ) : null}
+                </article>
+              );
+            })}
+          </div>
+        )}
+        {canManageProperty ? (
           <form className="property-add-item-form" onSubmit={handleAddStockedItem}>
             <FormField label="Add a stocked item" className="property-add-item-field">
               {(inputProps) => (
@@ -408,91 +557,8 @@ export const PropertyDetailPage: React.FC = () => {
               {addItemBusy ? "Adding…" : "Add item"}
             </Button>
           </form>
-        )}
+        ) : null}
         {addItemError && <p className="property-form-error">{addItemError}</p>}
-
-        {sortedStockedItems.length === 0 ? (
-          <EmptyState
-            title="No stocked items yet"
-            body="Add the supply items this property receives, so everyone can see what it's stocked with at a glance."
-          />
-        ) : (
-          <div className="property-supply-grid">
-            {sortedStockedItems.map((item) => {
-              const allocated = Number(item.allocatedSinceInvoice) || 0;
-              const isEditingPar = parEditId === item.id;
-              const isBusy = itemActionBusyId === item.id;
-              return (
-                <article key={item.id} className="property-supply-card">
-                  <div className="property-supply-card-header">
-                    <strong>{item.supplyItem?.name || "Supply item"}</strong>
-                    {canWrite ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="property-supply-card-remove"
-                        onClick={() => setRemoveTarget(item)}
-                        disabled={isBusy}
-                      >
-                        Remove
-                      </Button>
-                    ) : null}
-                  </div>
-                  <p>
-                    {allocated > 0.000001
-                      ? `${allocated.toFixed(2)} base units allocated since last invoice`
-                      : "No allocations since last invoice"}
-                    {item.recentSkuNames.length > 0 ? ` · ${item.recentSkuNames.join(", ")}` : ""}
-                  </p>
-                  <div className="property-supply-card-par">
-                    <span>Par quantity</span>
-                    {isEditingPar ? (
-                      <div className="property-supply-card-par-edit">
-                        <input
-                          type="number"
-                          min="0"
-                          step="any"
-                          value={parEditValue}
-                          onChange={(e) => setParEditValue(e.target.value)}
-                          autoFocus
-                        />
-                        <Button type="button" variant="secondary" size="sm" onClick={() => handleSaveParEdit(item)} disabled={isBusy}>
-                          Save
-                        </Button>
-                        <Button type="button" variant="ghost" size="sm" onClick={() => setParEditId("")} aria-label="Cancel">
-                          <Icon name="close" size={16} />
-                        </Button>
-                      </div>
-                    ) : (
-                      <button
-                        type="button"
-                        className="property-supply-card-par-value"
-                        onClick={() => canWrite && handleStartParEdit(item)}
-                        disabled={!canWrite}
-                      >
-                        {Number(item.parQuantity) > 0 ? Number(item.parQuantity).toFixed(2) : "Not set"}
-                      </button>
-                    )}
-                  </div>
-                  {canWrite ? (
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setReplenishSupplyItemId(item.supplyItemId);
-                        setShowReplenishModal(true);
-                      }}
-                    >
-                      {allocated > 0.000001 ? "Allocate more" : "Allocate stock"}
-                    </Button>
-                  ) : null}
-                </article>
-              );
-            })}
-          </div>
-        )}
       </Card>
 
       <Card>
@@ -625,9 +691,9 @@ export const PropertyDetailPage: React.FC = () => {
         </form>
       </Modal>
 
-      {showReplenishModal && (
+      {showReplenishModal && canManageProperty && (
         <ReplenishModal
-          properties={properties}
+          properties={properties.filter((row) => !row.archivedAt)}
           clients={clients}
           stockLocations={stockLocations}
           initialPropertyId={property.id}
@@ -637,18 +703,21 @@ export const PropertyDetailPage: React.FC = () => {
         />
       )}
 
-      {showReturnModal && (
+      {showReturnModal && canManageProperty && (
         <ReturnStockModal
+          propertyId={property.id}
+          supplyItemId={returnSupplyItemId}
           onClose={() => setShowReturnModal(false)}
           onSuccess={handleStockFlowSuccess}
         />
       )}
-
-      {showTransferModal && (
+      {showTransferModal && canManageProperty && (
         <TransferStockModal
-          properties={properties}
+          properties={properties.filter((row) => !row.archivedAt)}
           clients={clients}
           stockLocations={stockLocations}
+          initialFromPropertyId={property.id}
+          supplyItemId={transferSupplyItemId}
           onClose={() => setShowTransferModal(false)}
           onSuccess={handleStockFlowSuccess}
         />

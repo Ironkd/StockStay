@@ -25,4 +25,12 @@ export const propertiesApi = {
       method: "DELETE",
     });
   },
+
+  archive: async (id: string): Promise<Property> => {
+    return apiRequest<Property>(`/properties/${id}/archive`, { method: "POST" });
+  },
+
+  restore: async (id: string): Promise<Property> => {
+    return apiRequest<Property>(`/properties/${id}/restore`, { method: "POST" });
+  },
 };

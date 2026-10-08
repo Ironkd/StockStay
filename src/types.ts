@@ -4,6 +4,7 @@ export type Property = {
   location: string;
   clientId?: string | null;
   markupPercentage?: string | number | null;
+  archivedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

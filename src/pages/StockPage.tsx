@@ -21,7 +21,7 @@ import { useAuth } from "../contexts/useAuth";
 import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
 import { EditStockLocationModal } from "../components/EditStockLocationModal";
 import { OverflowNameList } from "../components/OverflowNameList";
-import { Badge, Button, EmptyState, FormField, Icon, Modal, Tabs } from "../components/ui";
+import { ActionMenu, Badge, Button, EmptyState, FormField, Icon, Modal, Tabs } from "../components/ui";
 import { isCategoryVisible } from "../utils/stockLocationVisibility";
 import { formatQty as formatQtyShared } from "../utils/format";
 
@@ -657,14 +657,15 @@ export const StockPage: React.FC = () => {
                         </td>
                         <td>
                           <div className="row-actions stock-row-actions" onClick={(e) => e.stopPropagation()}>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              size="sm"
-                              onClick={() => openEditLocation(loc)}
-                            >
-                              Edit
-                            </Button>
+                            <ActionMenu
+                              ariaLabel={`Manage ${loc.name}`}
+                              items={[
+                                {
+                                  label: "Edit stock location",
+                                  onSelect: () => openEditLocation(loc),
+                                },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>
@@ -696,24 +697,17 @@ export const StockPage: React.FC = () => {
       <div className="stock-page-detail-header">
         <h2 className="stock-page-title">{detailLocation?.name || "Stock location"}</h2>
         <div className="stock-page-actions">
-          {canWrite && routeLocationId ? (
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => openReceiveModal(routeLocationId)}
-              disabled={busy}
-            >
-              Receive packs
-            </Button>
+          {canWrite && detailLocation ? (
+            <ActionMenu
+              ariaLabel={`Manage ${detailLocation.name}`}
+              items={[
+                {
+                  label: "Edit stock location",
+                  onSelect: () => openEditLocation(detailLocation),
+                },
+              ]}
+            />
           ) : null}
-          <Button
-            type="button"
-            variant="secondary"
-            onClick={() => detailLocation && openEditLocation(detailLocation)}
-            disabled={!detailLocation}
-          >
-            Edit
-          </Button>
         </div>
       </div>
       <p className="stock-page-description">

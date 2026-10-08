@@ -185,6 +185,9 @@ app.post("/api/stock-locations/:id/properties", authenticateToken, requireCatalo
     if (!property) {
       return res.status(400).json({ message: "Property must belong to the same team." });
     }
+    if (property.archivedAt) {
+      return res.status(409).json({ message: "Archived properties cannot be changed.", code: "PROPERTY_ARCHIVED" });
+    }
     const link = await stockLocationOps.linkProperty(location.id, propertyId);
     res.status(201).json(link);
   } catch (error) {
@@ -203,8 +206,12 @@ app.delete("/api/stock-locations/:id/properties/:propertyId", authenticateToken,
       return res.status(404).json({ message: "Stock location not found." });
     }
     const teamProperties = await propertyOps.findAllByTeam(req.currentUser.teamId);
-    if (!teamProperties.some((p) => p.id === req.params.propertyId)) {
+    const property = teamProperties.find((p) => p.id === req.params.propertyId);
+    if (!property) {
       return res.status(404).json({ message: "Property not found." });
+    }
+    if (property.archivedAt) {
+      return res.status(409).json({ message: "Archived properties cannot be changed.", code: "PROPERTY_ARCHIVED" });
     }
     await stockLocationOps.unlinkProperty(location.id, req.params.propertyId);
     res.json({ message: "Property unlinked" });

@@ -151,6 +151,7 @@ model Property {
   location         String?
   clientId         String?
   markupPercentage Decimal? @db.Decimal(9, 4)
+  archivedAt       DateTime?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -163,6 +164,7 @@ model Property {
 
   @@index([teamId])
   @@index([clientId])
+  @@index([archivedAt])
 }
 
 model PropertySupplyItem {

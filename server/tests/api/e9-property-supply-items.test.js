@@ -127,4 +127,44 @@ describe("Property supply items", () => {
       .set(authHeader(scenario.token));
     expect(res.status).toBe(404);
   });
+
+  it("archives a property without hiding its history and blocks write actions until restored", async () => {
+    const scenario = await createStockScenario();
+    const archive = await request(app)
+      .post(`/api/properties/${scenario.property.id}/archive`)
+      .set(authHeader(scenario.token));
+    expect(archive.status).toBe(200);
+    expect(archive.body.archivedAt).toBeTruthy();
+
+    const list = await request(app)
+      .get("/api/properties")
+      .set(authHeader(scenario.token));
+    expect(list.status).toBe(200);
+    expect(list.body.find((property) => property.id === scenario.property.id).archivedAt).toBeTruthy();
+
+    const edit = await request(app)
+      .put(`/api/properties/${scenario.property.id}`)
+      .set(authHeader(scenario.token))
+      .send({ name: "Changed name" });
+    expect(edit.status).toBe(409);
+
+    const supplyItem = await request(app)
+      .put(`/api/properties/${scenario.property.id}/supply-items/${scenario.supplyItem.id}`)
+      .set(authHeader(scenario.token))
+      .send({ parQuantity: 5 });
+    expect(supplyItem.status).toBe(400);
+    expect(supplyItem.body.message).toContain("Archived");
+
+    const restore = await request(app)
+      .post(`/api/properties/${scenario.property.id}/restore`)
+      .set(authHeader(scenario.token));
+    expect(restore.status).toBe(200);
+    expect(restore.body.archivedAt).toBeNull();
+
+    const restoredEdit = await request(app)
+      .put(`/api/properties/${scenario.property.id}`)
+      .set(authHeader(scenario.token))
+      .send({ name: "Changed name" });
+    expect(restoredEdit.status).toBe(200);
+  });
 });

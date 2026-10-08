@@ -87,7 +87,7 @@ export const EditStockLocationModal: React.FC<Props> = ({
       .filter((p) => initialLinkedPropertyIds.has(p.id))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     const other = teamProperties
-      .filter((p) => !initialLinkedPropertyIds.has(p.id))
+      .filter((p) => !p.archivedAt && !initialLinkedPropertyIds.has(p.id))
       .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: "base" }));
     return { linked, other };
   }, [teamProperties, initialLinkedPropertyIds]);
@@ -122,11 +122,24 @@ export const EditStockLocationModal: React.FC<Props> = ({
   };
 
   const selectAllProperties = () => {
-    setSelectedPropertyIds(new Set(teamProperties.map((p) => p.id)));
+    setSelectedPropertyIds(
+      new Set([
+        ...teamProperties
+          .filter((p) => p.archivedAt && initialLinkedPropertyIds.has(p.id))
+          .map((p) => p.id),
+        ...teamProperties.filter((p) => !p.archivedAt).map((p) => p.id),
+      ])
+    );
   };
 
   const deselectAllProperties = () => {
-    setSelectedPropertyIds(new Set());
+    setSelectedPropertyIds(
+      new Set(
+        teamProperties
+          .filter((p) => p.archivedAt && initialLinkedPropertyIds.has(p.id))
+          .map((p) => p.id)
+      )
+    );
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -300,10 +313,11 @@ export const EditStockLocationModal: React.FC<Props> = ({
                             className="checklist-checkbox"
                             checked={selectedPropertyIds.has(p.id)}
                             onChange={() => togglePropertySelection(p.id)}
-                            disabled={busy || !canWrite}
+                            disabled={busy || !canWrite || Boolean(p.archivedAt)}
                           />
                           <span className="checklist-label">
                             {p.name}
+                            {p.archivedAt ? " (Archived)" : ""}
                             {p.location ? (
                               <span className="checklist-label-meta"> · {p.location}</span>
                             ) : null}

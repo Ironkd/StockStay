@@ -799,6 +799,9 @@ export const propertySupplyItemOps = {
     if (!property) {
       throw new LedgerValidationError("Property not found for team");
     }
+    if (property.archivedAt) {
+      throw new LedgerValidationError("Archived properties cannot be changed.");
+    }
     const supplyItem = await prisma.supplyItem.findFirst({
       where: { id: supplyItemId, teamId, archivedAt: null },
     });
@@ -838,6 +841,9 @@ export const propertySupplyItemOps = {
     const property = await prisma.property.findFirst({ where: { id: propertyId, teamId } });
     if (!property) {
       throw new LedgerValidationError("Property not found for team");
+    }
+    if (property.archivedAt) {
+      throw new LedgerValidationError("Archived properties cannot be changed.");
     }
     const result = await prisma.propertySupplyItem.deleteMany({
       where: { propertyId, supplyItemId },

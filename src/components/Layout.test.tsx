@@ -67,4 +67,23 @@ describe("E1-10 Layout Send feedback + legal links", () => {
     expect(await screen.findByRole("heading", { name: /Send feedback/i })).toBeInTheDocument();
     expect(screen.getByDisplayValue("owner@example.com")).toBeInTheDocument();
   });
+
+  it.each([
+    ["/properties/property-1", "Properties"],
+    ["/stock/location-1", "Stock"],
+    ["/billing/invoice-1", "Billing"],
+  ])("keeps the %s parent section active on a nested route", async (path, label) => {
+    render(
+      <MemoryRouter initialEntries={[path]}>
+        <Layout>
+          <div>child</div>
+        </Layout>
+      </MemoryRouter>
+    );
+
+    const sectionLink = await screen.findByRole("link", {
+      name: new RegExp(`^${label}$`),
+    });
+    expect(sectionLink).toHaveClass("active");
+  });
 });

@@ -5,6 +5,8 @@ import { StockFlowModal } from "./StockFlowModal";
 import { Button, EmptyState, FormField } from "./ui";
 
 type Props = {
+  propertyId?: string;
+  supplyItemId?: string;
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -15,7 +17,12 @@ type ChargeOption = {
   remaining: number;
 };
 
-export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
+export const ReturnStockModal: React.FC<Props> = ({
+  propertyId,
+  supplyItemId,
+  onClose,
+  onSuccess,
+}) => {
   const [options, setOptions] = useState<ChargeOption[]>([]);
   const [lineId, setLineId] = useState("");
   const [baseQty, setBaseQty] = useState("");
@@ -28,11 +35,13 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     (async () => {
       setLoadingList(true);
       try {
-        const rows = await replenishmentApi.list({ limit: 100 });
+        const rows = await replenishmentApi.list({ limit: 100, propertyId });
         const opts: ChargeOption[] = [];
         for (const rep of rows) {
+          if (propertyId && rep.propertyId !== propertyId) continue;
           if (rep.direction !== "replenish") continue;
           for (const line of rep.lines || []) {
+            if (supplyItemId && line.supplyItemId !== supplyItemId) continue;
             if (line.reversesLineId) continue;
             const returned = (line.reversedBy || []).reduce(
               (sum, l) => sum + Math.abs(Number(l.baseQtyDeployed) || 0),
@@ -54,7 +63,7 @@ export const ReturnStockModal: React.FC<Props> = ({ onClose, onSuccess }) => {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [propertyId, supplyItemId]);
 
   const selected = useMemo(
     () => options.find((o) => o.line.id === lineId) || null,

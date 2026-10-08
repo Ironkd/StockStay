@@ -135,7 +135,7 @@ export function mapStockDomainError(res, error) {
     const status =
       error.code === "NOT_FOUND"
         ? 404
-        : error.code === "INSUFFICIENT"
+        : error.code === "INSUFFICIENT" || error.code === "PROPERTY_ARCHIVED"
           ? 409
           : 400;
     res.status(status).json({

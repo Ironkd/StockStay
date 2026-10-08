@@ -11,6 +11,8 @@ type Props = {
   properties: Property[];
   clients?: Client[];
   stockLocations?: StockLocation[];
+  initialFromPropertyId?: string;
+  supplyItemId?: string;
   onClose: () => void;
   onSuccess: () => void;
 };
@@ -19,10 +21,12 @@ export const TransferStockModal: React.FC<Props> = ({
   properties,
   clients = [],
   stockLocations: stockLocationsProp,
+  initialFromPropertyId = "",
+  supplyItemId,
   onClose,
   onSuccess,
 }) => {
-  const [fromPropertyId, setFromPropertyId] = useState("");
+  const [fromPropertyId, setFromPropertyId] = useState(initialFromPropertyId);
   const [toPropertyId, setToPropertyId] = useState("");
   const [stockLocationId, setStockLocationId] = useState("");
   const [skuId, setSkuId] = useState("");
@@ -32,6 +36,10 @@ export const TransferStockModal: React.FC<Props> = ({
   const [availableBase, setAvailableBase] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    setFromPropertyId(initialFromPropertyId);
+  }, [initialFromPropertyId]);
 
   useEffect(() => {
     if (stockLocationsProp) {
@@ -89,9 +97,15 @@ export const TransferStockModal: React.FC<Props> = ({
     }
     skusApi
       .getAll({ stockLocationId })
-      .then(setSkus)
+      .then((rows) => {
+        const matching = supplyItemId
+          ? rows.filter((sku) => sku.supplyItemId === supplyItemId)
+          : rows;
+        setSkus(matching);
+        setSkuId(matching.length === 1 ? matching[0].id : "");
+      })
       .catch(() => setSkus([]));
-  }, [stockLocationId]);
+  }, [stockLocationId, supplyItemId]);
 
   const selectedSku = skus.find((s) => s.id === skuId);
 
@@ -119,7 +133,7 @@ export const TransferStockModal: React.FC<Props> = ({
   const creditEst = estimateBillBack(qty, unitRate, fromMarkup.pct, { credit: true });
   const chargeEst = estimateBillBack(qty, unitRate, toMarkup.pct);
 
-  const toOptions = properties.filter((p) => p.id !== fromPropertyId);
+  const toOptions = properties.filter((p) => p.id !== fromPropertyId && !p.archivedAt);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -177,7 +191,7 @@ export const TransferStockModal: React.FC<Props> = ({
                 value={fromPropertyId}
                 onChange={(e) => setFromPropertyId(e.target.value)}
                 required
-                disabled={loading}
+                disabled={loading || Boolean(initialFromPropertyId)}
               >
                 <option value="">Select…</option>
                 {properties.map((p) => (

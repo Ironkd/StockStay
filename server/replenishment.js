@@ -172,6 +172,9 @@ async function loadPropertyWithClient(teamId, propertyId, label = "Property") {
   if (!property) {
     throw new ReplenishmentError(`${label} not found`, "NOT_FOUND");
   }
+  if (property.archivedAt) {
+    throw new ReplenishmentError(`${label} is archived and cannot be changed.`, "PROPERTY_ARCHIVED");
+  }
   if (!property.clientId || !property.client) {
     throw new ReplenishmentError(`${label} must have a billing client.`, "NO_CLIENT");
   }

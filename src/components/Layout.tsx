@@ -269,7 +269,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
               key={item.path}
               to={item.path}
               className={`nav-link ${
-                location.pathname === item.path ? "active" : ""
+                location.pathname === item.path || location.pathname.startsWith(`${item.path}/`)
+                  ? "active"
+                  : ""
               }`}
               onClick={() => setNavOpen(false)}
             >

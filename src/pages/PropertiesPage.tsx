@@ -17,17 +17,19 @@ import {
   Icon,
   Modal,
   SectionHeader,
+  ActionMenu,
 } from "../components/ui";
 
 export const PropertiesPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, canWrite } = useAuth();
   const toast = useToast();
+  const canManageProperties = canWrite && user?.teamRole === "owner";
   const {
     properties,
     addProperty,
     updateProperty,
-    removeProperty,
+    setPropertyArchived,
     refresh: refreshProperties,
   } = useProperties();
 
@@ -38,8 +40,8 @@ export const PropertiesPage: React.FC = () => {
   const [showUpgradeModal, setShowUpgradeModal] = useState(false);
   const [showPropertyModal, setShowPropertyModal] = useState(false);
   const [editingProperty, setEditingProperty] = useState<Property | null>(null);
-  const [deleteTarget, setDeleteTarget] = useState<Property | null>(null);
-  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [archiveTarget, setArchiveTarget] = useState<Property | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
 
   useEffect(() => {
     clientsApi.getAll().then(setClients).catch(() => setClients([]));
@@ -77,7 +79,8 @@ export const PropertiesPage: React.FC = () => {
     clients.find((c) => c.id === clientId)?.name || null;
 
   const handleAddProperty = () => {
-    if (teamLimitsLoaded && properties.length >= maxProperties) {
+    const activePropertyCount = properties.filter((property) => !property.archivedAt).length;
+    if (teamLimitsLoaded && activePropertyCount >= maxProperties) {
       setShowUpgradeModal(true);
       return;
     }
@@ -85,8 +88,7 @@ export const PropertiesPage: React.FC = () => {
     setShowPropertyModal(true);
   };
 
-  const handleEditProperty = (property: Property, e?: React.MouseEvent) => {
-    e?.stopPropagation();
+  const handleEditProperty = (property: Property) => {
     setEditingProperty(property);
     setShowPropertyModal(true);
   };
@@ -112,43 +114,47 @@ export const PropertiesPage: React.FC = () => {
     }
   };
 
-  const handleDeleteProperty = (property: Property, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setDeleteTarget(property);
+  const handleConfirmArchive = async () => {
+    if (!archiveTarget) return;
+    setArchiveBusy(true);
+    try {
+      await setPropertyArchived(archiveTarget.id, true);
+      toast.success("Property archived");
+      setArchiveTarget(null);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to archive property");
+    } finally {
+      setArchiveBusy(false);
+    }
   };
 
-  const handleConfirmDelete = async () => {
-    if (!deleteTarget) return;
-    setDeleteBusy(true);
+  const handleRestoreProperty = async (property: Property) => {
     try {
-      await removeProperty(deleteTarget.id);
-      toast.success("Property deleted");
-      setDeleteTarget(null);
+      await setPropertyArchived(property.id, false);
+      toast.success("Property restored");
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete property");
-    } finally {
-      setDeleteBusy(false);
+      toast.error(err instanceof Error ? err.message : "Failed to restore property");
     }
   };
 
   return (
     <div className="inventory-page">
       <ConfirmDialog
-        open={Boolean(deleteTarget)}
-        title="Delete property"
+        open={Boolean(archiveTarget)}
+        title="Archive property"
         message={
-          deleteTarget
-            ? `Are you sure you want to delete the property "${deleteTarget.name}"?\n\nThis action cannot be undone.`
+          archiveTarget
+            ? `Archive "${archiveTarget.name}"? It will remain viewable with its audit and billing history, but cannot be changed or used for stock operations.`
             : ""
         }
-        confirmLabel="Delete"
+        confirmLabel="Archive"
         danger
-        busy={deleteBusy}
+        busy={archiveBusy}
         onConfirm={() => {
-          void handleConfirmDelete();
+          void handleConfirmArchive();
         }}
         onCancel={() => {
-          if (!deleteBusy) setDeleteTarget(null);
+          if (!archiveBusy) setArchiveTarget(null);
         }}
       />
 
@@ -156,7 +162,7 @@ export const PropertiesPage: React.FC = () => {
         title="Properties"
         description="Deploy stock to properties and bill clients back for what they use."
         actions={
-          canWrite ? (
+          canManageProperties ? (
             <Button onClick={handleAddProperty}>
               <Icon name="add" size={16} />
               Add property
@@ -210,8 +216,8 @@ export const PropertiesPage: React.FC = () => {
           <EmptyState
             title="No properties yet"
             body="Add your first property to start replenishing and billing clients back."
-            primaryLabel={canWrite ? "Add property" : undefined}
-            onPrimary={canWrite ? handleAddProperty : undefined}
+            primaryLabel={canManageProperties ? "Add property" : undefined}
+            onPrimary={canManageProperties ? handleAddProperty : undefined}
           />
         ) : (
           <div className="table-wrapper">
@@ -222,7 +228,7 @@ export const PropertiesPage: React.FC = () => {
                   <th>Location</th>
                   <th>Client</th>
                   <th>Linked stock locations</th>
-                  <th aria-label="Actions" />
+                  <th aria-label="Manage" />
                 </tr>
               </thead>
               <tbody>
@@ -232,7 +238,12 @@ export const PropertiesPage: React.FC = () => {
                     className="property-table-row"
                     onClick={() => navigate(`/properties/${property.id}`)}
                   >
-                    <td>{property.name}</td>
+                    <td>
+                      <span className="property-name-cell">
+                        {property.name}
+                        {property.archivedAt ? <Badge>Archived</Badge> : null}
+                      </span>
+                    </td>
                     <td>{property.location || "—"}</td>
                     <td>
                       {clientName(property.clientId) || (
@@ -240,27 +251,32 @@ export const PropertiesPage: React.FC = () => {
                       )}
                     </td>
                     <td>{locationCountByProperty.get(property.id) || 0}</td>
-                    <td>
-                      {canWrite ? (
+                    <td onClick={(event) => event.stopPropagation()}>
+                      {canManageProperties ? (
                         <div className="property-table-actions">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            title="Edit"
-                            onClick={(e) => handleEditProperty(property, e)}
-                          >
-                            <Icon name="edit" size={16} />
-                            Edit
-                          </Button>
-                          <Button
-                            variant="danger"
-                            size="sm"
-                            title="Delete"
-                            onClick={(e) => handleDeleteProperty(property, e)}
-                          >
-                            <Icon name="delete" size={16} />
-                            Delete
-                          </Button>
+                          <ActionMenu
+                            ariaLabel={`Manage ${property.name}`}
+                            items={
+                              property.archivedAt
+                                ? [
+                                    {
+                                      label: "Restore property",
+                                      onSelect: () => void handleRestoreProperty(property),
+                                    },
+                                  ]
+                                : [
+                                    {
+                                      label: "Edit property",
+                                      onSelect: () => handleEditProperty(property),
+                                    },
+                                    {
+                                      label: "Archive property",
+                                      onSelect: () => setArchiveTarget(property),
+                                      danger: true,
+                                    },
+                                  ]
+                            }
+                          />
                         </div>
                       ) : null}
                     </td>

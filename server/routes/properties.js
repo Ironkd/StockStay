@@ -188,6 +188,9 @@ app.put("/api/properties/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Property not found." });
     }
     if (!assertPropertyAccess(res, currentUser, property.id)) return;
+    if (property.archivedAt) {
+      return res.status(409).json({ message: "Archived properties cannot be edited.", code: "PROPERTY_ARCHIVED" });
+    }
     const { name, location, clientId, markupPercentage } = req.body;
     if (clientId) {
       const client = await clientOps.findById(clientId);
@@ -213,6 +216,62 @@ app.put("/api/properties/:id", authenticateToken, async (req, res) => {
   }
 });
 
+app.post("/api/properties/:id/archive", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You do not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can archive properties." });
+    }
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const property = teamProperties.find((row) => row.id === req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: "Property not found." });
+    }
+    if (!assertPropertyAccess(res, currentUser, property.id)) return;
+    const archived = property.archivedAt
+      ? property
+      : await propertyOps.setArchived(property.id, true);
+    res.json(archived);
+  } catch (error) {
+    console.error("Error archiving property:", error);
+    res.status(500).json({ message: "Error archiving property" });
+  }
+});
+
+app.post("/api/properties/:id/restore", authenticateToken, async (req, res) => {
+  try {
+    const currentUser = await loadCurrentUser(req);
+    if (!currentUser?.teamId) {
+      return res.status(400).json({ message: "You do not belong to a team." });
+    }
+    if (!userHasPageAccess(currentUser, "inventory")) {
+      return res.status(403).json({ message: "You do not have access to Inventory." });
+    }
+    if (currentUser.teamRole !== "owner") {
+      return res.status(403).json({ message: "Only team owners can restore properties." });
+    }
+    const teamProperties = await propertyOps.findAllByTeam(currentUser.teamId);
+    const property = teamProperties.find((row) => row.id === req.params.id);
+    if (!property) {
+      return res.status(404).json({ message: "Property not found." });
+    }
+    if (!assertPropertyAccess(res, currentUser, property.id)) return;
+    const restored = property.archivedAt
+      ? await propertyOps.setArchived(property.id, false)
+      : property;
+    res.json(restored);
+  } catch (error) {
+    console.error("Error restoring property:", error);
+    res.status(500).json({ message: "Error restoring property" });
+  }
+});
+
 app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
   try {
     const currentUser = await loadCurrentUser(req);
@@ -231,6 +290,9 @@ app.delete("/api/properties/:id", authenticateToken, async (req, res) => {
       return res.status(404).json({ message: "Property not found." });
     }
     if (!assertPropertyAccess(res, currentUser, property.id)) return;
+    if (property.archivedAt) {
+      return res.status(409).json({ message: "Archived properties cannot be changed.", code: "PROPERTY_ARCHIVED" });
+    }
     try {
       await propertyOps.delete(req.params.id);
     } catch (err) {

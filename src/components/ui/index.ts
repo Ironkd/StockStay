@@ -12,3 +12,5 @@ export { EmptyState } from "./EmptyState";
 export { Tabs } from "./Tabs";
 export type { TabItem } from "./Tabs";
 export { FormField } from "./FormField";
+export { ActionMenu } from "./ActionMenu";
+export type { ActionMenuItem } from "./ActionMenu";

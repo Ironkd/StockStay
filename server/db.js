@@ -422,7 +422,7 @@ export const propertyOps = {
   },
 
   async countByTeam(teamId) {
-    return await prisma.property.count({ where: { teamId } });
+    return await prisma.property.count({ where: { teamId, archivedAt: null } });
   },
 
   async createForTeam(teamId, data) {
@@ -448,6 +448,7 @@ export const propertyOps = {
     if (data.name !== undefined) payload.name = data.name;
     if (data.location !== undefined) payload.location = data.location;
     if (data.clientId !== undefined) payload.clientId = data.clientId || null;
+    if (data.archivedAt !== undefined) payload.archivedAt = data.archivedAt;
     if (data.markupPercentage !== undefined) {
       payload.markupPercentage =
         data.markupPercentage === null || data.markupPercentage === ""
@@ -457,6 +458,13 @@ export const propertyOps = {
     return await prisma.property.update({
       where: { id },
       data: payload,
+    });
+  },
+
+  async setArchived(id, archived) {
+    return await prisma.property.update({
+      where: { id },
+      data: { archivedAt: archived ? new Date() : null },
     });
   },
 

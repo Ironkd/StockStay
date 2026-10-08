@@ -163,6 +163,28 @@ export const useProperties = () => {
     }
   };
 
+  const setPropertyArchived = async (id: string, archived: boolean) => {
+    try {
+      if (isMountedRef.current) {
+        setError(null);
+      }
+      const updated = archived
+        ? await propertiesApi.archive(id)
+        : await propertiesApi.restore(id);
+      if (isMountedRef.current) {
+        setProperties((prev) =>
+          prev.map((property) => (property.id === id ? normalizeProperty(updated) : property))
+        );
+      }
+      return updated;
+    } catch (err) {
+      if (isMountedRef.current) {
+        setError(err instanceof Error ? err.message : "Failed to update property status");
+      }
+      throw err;
+    }
+  };
+
   const getPropertyById = (id: string | undefined): Property | undefined => {
     if (!id) return undefined;
     return properties.find((w) => w.id === id);
@@ -175,6 +197,7 @@ export const useProperties = () => {
     addProperty,
     updateProperty,
     removeProperty,
+    setPropertyArchived,
     getPropertyById,
     refresh: loadProperties,
   };
