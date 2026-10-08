@@ -833,7 +833,7 @@ export const StockPage: React.FC = () => {
                                           const item = supplyItems.find(
                                             (s) => s.id === group.supplyItemId
                                           );
-                                          if (item) openEditSupplyItem(item);
+                                          if (item) setManagingSkusFor(item);
                                         }
                                       : undefined
                                   }
