@@ -19,6 +19,7 @@ import {
 } from "../services/catalogueApi";
 import { useAuth } from "../contexts/useAuth";
 import { EditSupplyItemModal } from "../components/EditSupplyItemModal";
+import { ManageSupplyItemSkusModal } from "../components/ManageSupplyItemSkusModal";
 import { EditStockLocationModal } from "../components/EditStockLocationModal";
 import { OverflowNameList } from "../components/OverflowNameList";
 import { ActionMenu, Badge, Button, EmptyState, FormField, Icon, Modal, Tabs } from "../components/ui";
@@ -97,6 +98,7 @@ export const StockPage: React.FC = () => {
   const [supplyItemBaseUnitId, setSupplyItemBaseUnitId] = useState("");
 
   const [editingSupplyItem, setEditingSupplyItem] = useState<SupplyItem | null>(null);
+  const [managingSkusFor, setManagingSkusFor] = useState<SupplyItem | null>(null);
   const [editingLocation, setEditingLocation] = useState<StockLocation | null>(null);
   const [receiveStockedSkuIds, setReceiveStockedSkuIds] = useState<Set<string>>(new Set());
   const [thresholds, setThresholds] = useState<LocationSupplyThreshold[]>([]);
@@ -979,14 +981,19 @@ export const StockPage: React.FC = () => {
                             </td>
                             <td>
                               {canWrite && (
-                                <Button
-                                  type="button"
-                                  variant="secondary"
-                                  size="sm"
-                                  onClick={() => openEditSupplyItem(item)}
-                                >
-                                  Edit
-                                </Button>
+                                <ActionMenu
+                                  ariaLabel={`Manage ${item.name}`}
+                                  items={[
+                                    {
+                                      label: "Manage SKUs",
+                                      onSelect: () => setManagingSkusFor(item),
+                                    },
+                                    {
+                                      label: "Edit supply item",
+                                      onSelect: () => openEditSupplyItem(item),
+                                    },
+                                  ]}
+                                />
                               )}
                             </td>
                           </tr>
@@ -1371,6 +1378,16 @@ export const StockPage: React.FC = () => {
                 : null
             }
             onClose={() => setEditingSupplyItem(null)}
+            onSaved={refreshAfterSupplyEdit}
+          />
+        )}
+
+        {managingSkusFor && (
+          <ManageSupplyItemSkusModal
+            supplyItem={managingSkusFor}
+            units={units}
+            locationId={routeLocationId}
+            onClose={() => setManagingSkusFor(null)}
             onSaved={refreshAfterSupplyEdit}
           />
         )}
