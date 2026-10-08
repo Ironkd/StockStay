@@ -177,7 +177,6 @@ export const TransferStockModal: React.FC<Props> = ({
   return (
     <StockFlowModal
       title="Transfer between properties"
-      subtitle="Pass-through a stock location: return from source (credit) then replenish destination (charge). Both legs queue to unbilled / next invoice."
       error={error}
       loading={loading}
       onClose={onClose}

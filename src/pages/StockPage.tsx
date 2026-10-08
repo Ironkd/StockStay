@@ -618,7 +618,6 @@ export const StockPage: React.FC = () => {
           ) : locations.length === 0 ? (
             <EmptyState
               title="No stock locations yet"
-              body="Create a stock location to start receiving packs."
               primaryLabel={canWrite ? "New location" : undefined}
               onPrimary={canWrite ? openNewLocationModal : undefined}
             />
@@ -736,7 +735,6 @@ export const StockPage: React.FC = () => {
               supplyItems.length === 0 ? (
                 <EmptyState
                   title="Nothing here yet"
-                  body="Add a supply item, then receive packs to see stock on hand."
                   primaryLabel={canWrite ? "New supply item" : undefined}
                   onPrimary={canWrite ? openSupplyItemModal : undefined}
                 />
@@ -826,7 +824,6 @@ export const StockPage: React.FC = () => {
                               <div className="stock-group-card-body">
                                 <EmptyState
                                   title="No SKUs"
-                                  body="Add a SKU to start receiving packs for this item."
                                   primaryLabel={canWrite ? "Add SKU" : undefined}
                                   onPrimary={
                                     canWrite
@@ -933,7 +930,6 @@ export const StockPage: React.FC = () => {
             {supplyItems.length === 0 ? (
               <EmptyState
                 title="No supply items yet"
-                body="Add a supply item to start building your catalogue."
                 primaryLabel={canWrite ? "New supply item" : undefined}
                 onPrimary={canWrite ? openSupplyItemModal : undefined}
               />
@@ -1037,7 +1033,6 @@ export const StockPage: React.FC = () => {
             ) : transactions.length === 0 ? (
               <EmptyState
                 title="No activity yet"
-                body="Receipts, adjustments, and replenishments will show up here."
               />
             ) : (
               <div className="table-wrapper">
@@ -1088,7 +1083,6 @@ export const StockPage: React.FC = () => {
   );
 
   function renderModals() {
-    const actionLocation = locations.find((l) => l.id === selectedLocationId);
     return (
       <>
         <Modal
@@ -1148,12 +1142,6 @@ export const StockPage: React.FC = () => {
           maxWidth="480px"
           busy={busy}
         >
-          <p className="modal-intro">
-            Record what you paid for this purchase. The SKU’s unit rate updates for future
-            replenish bill-back.
-            {actionLocation ? ` · ${actionLocation.name}` : ""}
-            {" "}You can also receive a catalogue SKU that is not tracked here yet.
-          </p>
           <form className="inventory-form stacked-form" onSubmit={handleReceive}>
             <FormField label="SKU" required>
               {(inputProps) => (

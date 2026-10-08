@@ -180,7 +180,6 @@ export const ReplenishModal: React.FC<Props> = ({
   return (
     <StockFlowModal
       title="Replenish property"
-      subtitle="Move stock from a linked stock location to a property. Bill-back is queued as an unbilled charge."
       error={error}
       loading={loading}
       maxWidth={640}

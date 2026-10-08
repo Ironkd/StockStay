@@ -419,14 +419,12 @@ export const PropertyDetailPage: React.FC = () => {
       <Card className="property-allocation-panel">
         <SectionHeader
           title="Stocked items"
-          description="The supply items this property is stocked with. Allocate stock without re-selecting the property, and see what's gone out since the last invoice."
           compact
         />
 
         {sortedStockedItems.length === 0 ? (
           <EmptyState
             title="No stocked items yet"
-            body="Add the supply items this property receives, so everyone can see what it's stocked with at a glance."
           />
         ) : (
           <div className="property-supply-grid">
@@ -540,7 +538,7 @@ export const PropertyDetailPage: React.FC = () => {
                 </select>
               )}
             </FormField>
-            <FormField label="Par quantity" className="property-add-item-field" hint="Optional">
+            <FormField label="Par quantity" className="property-add-item-field">
               {(inputProps) => (
                 <input
                   {...inputProps}
@@ -574,7 +572,6 @@ export const PropertyDetailPage: React.FC = () => {
         {propertyUnbilled.length === 0 ? (
           <EmptyState
             title="No unbilled lines"
-            body="No unbilled charges or credits for this property."
           />
         ) : (
           <>
@@ -616,7 +613,6 @@ export const PropertyDetailPage: React.FC = () => {
         {propertyMoves.length === 0 ? (
           <EmptyState
             title="No recent moves"
-            body="No replenishments, returns, or transfers yet."
           />
         ) : (
           <ul className="property-moves-list">
@@ -660,9 +656,6 @@ export const PropertyDetailPage: React.FC = () => {
         busy={linkBusy}
       >
         <form className="stacked-form" onSubmit={handleLinkLocation}>
-          <p className="modal-intro">
-            Link an existing stock location so this property can replenish from it.
-          </p>
           <FormField label="Stock location" required error={linkError || undefined}>
             {(inputProps) => (
               <select

@@ -28,21 +28,30 @@ export const Modal: React.FC<ModalProps> = ({
 }) => {
   const titleId = useId();
   const panelRef = useRef<HTMLDivElement>(null);
-  const previouslyFocused = useRef<HTMLElement | null>(null);
+  const onCloseRef = useRef(onClose);
+  const busyRef = useRef(busy);
+
+  onCloseRef.current = onClose;
+  busyRef.current = busy;
 
   useEffect(() => {
     if (!open) return;
-    previouslyFocused.current = document.activeElement as HTMLElement | null;
+    const previouslyFocused = document.activeElement as HTMLElement | null;
     const panel = panelRef.current;
-    const focusable = panel?.querySelector<HTMLElement>(
-      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+    const input = panel?.querySelector<HTMLElement>(
+      'input:not([disabled]), select:not([disabled]), textarea:not([disabled])'
     );
+    const focusable =
+      input ??
+      panel?.querySelector<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
     focusable?.focus();
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape" && !busy) {
+      if (e.key === "Escape" && !busyRef.current) {
         e.preventDefault();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !panel) return;
@@ -64,9 +73,9 @@ export const Modal: React.FC<ModalProps> = ({
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
-      previouslyFocused.current?.focus?.();
+      previouslyFocused?.focus?.();
     };
-  }, [open, busy, onClose]);
+  }, [open]);
 
   if (!open) return null;
 

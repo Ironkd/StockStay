@@ -204,7 +204,7 @@ export const PropertyForm: React.FC<Props> = ({
           )}
         </FormField>
 
-        <FormField label="Markup % override" hint="Use client default if blank">
+        <FormField label="Markup % override">
           {(inputProps) => (
             <input
               {...inputProps}

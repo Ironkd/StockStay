@@ -231,9 +231,6 @@ export const EditSupplyItemModal: React.FC<Props> = ({
 
   return (
     <Modal open onClose={onClose} title="Edit supply item" maxWidth="560px" busy={busy}>
-      <p className="modal-intro">
-        Update properties{locationId ? ", reorder for this location," : ""} and manage SKUs.
-      </p>
 
       <form className="inventory-form stacked-form" onSubmit={handleSave}>
         <div>
@@ -287,9 +284,6 @@ export const EditSupplyItemModal: React.FC<Props> = ({
             <div className="checklist-group-heading">
               Reorder at {locationName || "this location"}
             </div>
-            <p className="stock-form-note">
-              Thresholds are in {baseUnitLabel}. Set reorder point to 0 to turn alerts off.
-            </p>
             <div className="form-grid stock-modal-grid">
               <FormField label="Reorder point">
                 {(inputProps) => (
@@ -321,11 +315,7 @@ export const EditSupplyItemModal: React.FC<Props> = ({
               </FormField>
             </div>
           </div>
-        ) : (
-          <p className="stock-form-note">
-            Reorder thresholds are set per stock location. Open a location to configure them.
-          </p>
-        )}
+        ) : null}
 
         <div className="form-actions">
           <Button type="button" variant="secondary" onClick={onClose} disabled={busy}>
@@ -418,7 +408,6 @@ export const EditSupplyItemModal: React.FC<Props> = ({
       ) : sortedSkus.length === 0 ? (
         <EmptyState
           title="No SKUs yet"
-          body="Add a purchasable pack size for this supply item."
         />
       ) : (
         <table className="inventory-table">

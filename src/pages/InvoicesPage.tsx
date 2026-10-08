@@ -658,11 +658,6 @@ export const InvoicesPage: React.FC = () => {
         title={editingInvoice ? "Edit invoice" : "Create invoice"}
         maxWidth="960px"
       >
-        <p className="modal-intro">
-          {editingInvoice
-            ? "Update invoice dates, status, line items, and notes before sending or exporting."
-            : "Create a one-off invoice for a client. Scheduled draft invoices still come from Generate drafts."}
-        </p>
         {editingInvoice?.status === "sent" ? (
           <p className="form-banner error">
             This invoice has already been emailed. Saving updates the record only and does not
@@ -866,7 +861,7 @@ export const InvoicesPage: React.FC = () => {
                 </table>
               </div>
             ) : (
-              <EmptyState title="No items yet" body="Add line items to build the invoice total." />
+              <EmptyState title="No items yet" />
             )}
 
             <div className="invoice-totals">
@@ -916,7 +911,6 @@ export const InvoicesPage: React.FC = () => {
       >
         {sendPreviewInvoice && (
           <div className="invoice-send-preview">
-            <p className="modal-intro">This is how the invoice will look when sent by email.</p>
             <div className="invoice-preview-sheet">
               {senderBranding &&
               (senderBranding.companyName ||
@@ -1028,15 +1022,9 @@ export const InvoicesPage: React.FC = () => {
       <SectionHeader
         title="Billing"
         description={
-          <>
-            Generate scheduled drafts from unbilled replenishment, then review, email (PDF), or export CSV.
-            <span className="billing-generate-message">
-              Saving edits never silently re-sends a sent invoice.
-            </span>
-            {generateMessage ? (
-              <span className="billing-generate-message">{generateMessage}</span>
-            ) : null}
-          </>
+          generateMessage ? (
+            <span className="billing-generate-message">{generateMessage}</span>
+          ) : undefined
         }
         actions={
           <div className="invoice-totals-bar">
@@ -1136,7 +1124,6 @@ export const InvoicesPage: React.FC = () => {
           {visibleUnbilledLines.length === 0 ? (
             <EmptyState
               title="No unbilled charges or credits"
-              body="Closed-period replenishment will appear here before draft invoices are generated."
             />
           ) : (
             <>
@@ -1232,7 +1219,6 @@ export const InvoicesPage: React.FC = () => {
               {soldByMonth.length === 0 ? (
                 <EmptyState
                   title={`No invoices in ${MONTH_NAMES[selectedMonth - 1]} ${selectedYear}`}
-                  body="Create invoices to see billed items per client here."
                 />
               ) : (
                 <div className="sold-by-month-clients">
@@ -1303,7 +1289,6 @@ export const InvoicesPage: React.FC = () => {
               {activeInvoices.length === 0 ? (
                 <EmptyState
                   title="No active invoices"
-                  body="Sent invoices are archived below. Drafts, overdue, and paid invoices stay here until sent."
                   primaryLabel={canWrite ? "Create Invoice" : undefined}
                   onPrimary={canWrite ? openCreateForm : undefined}
                 />
@@ -1364,7 +1349,6 @@ export const InvoicesPage: React.FC = () => {
               {sentInvoices.length === 0 ? (
                 <EmptyState
                   title="No sent invoices yet"
-                  body="Invoices are automatically archived here once they are sent to clients."
                 />
               ) : (
                 <>

@@ -3,7 +3,6 @@ import { Modal } from "./ui/Modal";
 
 type Props = {
   title: string;
-  subtitle?: React.ReactNode;
   error?: string;
   loading?: boolean;
   maxWidth?: number | string;
@@ -18,7 +17,6 @@ type Props = {
  */
 export const StockFlowModal: React.FC<Props> = ({
   title,
-  subtitle,
   error,
   loading = false,
   maxWidth = 560,
@@ -35,7 +33,6 @@ export const StockFlowModal: React.FC<Props> = ({
       busy={loading}
       className="modal-content stock-modal"
     >
-      {subtitle ? <p className="modal-intro">{subtitle}</p> : null}
       {children}
       {error ? (
         <p className="form-banner error" role="alert">

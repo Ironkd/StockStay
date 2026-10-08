@@ -193,10 +193,6 @@ export const EditStockLocationModal: React.FC<Props> = ({
 
   return (
     <Modal open onClose={onClose} title="Edit stock location" maxWidth="560px" busy={busy}>
-      <p className="modal-intro">
-        Update address, which categories appear here, and linked properties.
-      </p>
-
       <form className="inventory-form stacked-form" onSubmit={handleSave}>
         <div>
           <div className="checklist-group-heading">Details</div>
@@ -228,10 +224,6 @@ export const EditStockLocationModal: React.FC<Props> = ({
 
         <div>
           <div className="checklist-group-heading">Visible categories</div>
-          <p className="stock-form-note">
-            Choose which supply-item categories appear on this location’s On hand and Catalogue
-            tabs.
-          </p>
           <div className="checklist-box">
             <label className="checklist-row">
               <input
@@ -243,12 +235,7 @@ export const EditStockLocationModal: React.FC<Props> = ({
               />
               <span className="checklist-label">Uncategorized Items</span>
             </label>
-            {availableCategories.length === 0 ? (
-              <p className="stock-form-note">
-                No named categories yet. Add categories on supply items to filter by them here.
-              </p>
-            ) : (
-              availableCategories.map((category) => (
+            {availableCategories.map((category) => (
                 <label key={category} className="checklist-row">
                   <input
                     type="checkbox"
@@ -259,8 +246,7 @@ export const EditStockLocationModal: React.FC<Props> = ({
                   />
                   <span className="checklist-label">{category}</span>
                 </label>
-              ))
-            )}
+              ))}
           </div>
           {canWrite && availableCategories.length > 0 ? (
             <div className="checklist-bulk-actions">
@@ -288,18 +274,9 @@ export const EditStockLocationModal: React.FC<Props> = ({
 
         <div>
           <div className="checklist-group-heading">Linked properties</div>
-          <p className="stock-form-note">
-            {canWrite
-              ? "Choose which properties this stock location can supply."
-              : "Properties this stock location can supply."}
-          </p>
           {loading ? (
             <p className="stock-form-note">Loading properties…</p>
-          ) : teamProperties.length === 0 ? (
-            <p className="stock-form-note">
-              No properties yet. Add properties from the Properties page.
-            </p>
-          ) : (
+          ) : teamProperties.length === 0 ? null : (
             <>
               <div className="checklist-box checklist-box--tall">
                 <div className="stacked-form">

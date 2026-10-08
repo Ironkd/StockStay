@@ -160,7 +160,6 @@ export const PropertiesPage: React.FC = () => {
 
       <SectionHeader
         title="Properties"
-        description="Deploy stock to properties and bill clients back for what they use."
         actions={
           canManageProperties ? (
             <Button onClick={handleAddProperty}>
@@ -177,9 +176,6 @@ export const PropertiesPage: React.FC = () => {
         title="Property limit reached"
         maxWidth="480px"
       >
-        <p className="modal-intro">
-          You can&apos;t add more properties on your current plan (limit: {maxProperties}). Upgrade your plan to unlock more properties.
-        </p>
         <div className="form-actions">
           <Button variant="secondary" onClick={() => setShowUpgradeModal(false)}>
             Cancel
@@ -215,7 +211,6 @@ export const PropertiesPage: React.FC = () => {
         {visibleProperties.length === 0 ? (
           <EmptyState
             title="No properties yet"
-            body="Add your first property to start replenishing and billing clients back."
             primaryLabel={canManageProperties ? "Add property" : undefined}
             onPrimary={canManageProperties ? handleAddProperty : undefined}
           />

@@ -155,11 +155,6 @@ export const ClientsPage: React.FC = () => {
         title={editingClient ? "Edit client" : "Add client"}
         maxWidth="760px"
       >
-        <p className="modal-intro">
-          {editingClient
-            ? "Update billing details, markup defaults, and notes for this client."
-            : "Add a client so you can assign properties and bill for supply usage."}
-        </p>
         <form onSubmit={handleSubmit} className="stacked-form">
           <div className="form-grid client-form-grid">
             <FormField label="Name" required>
@@ -347,7 +342,6 @@ export const ClientsPage: React.FC = () => {
 
       <SectionHeader
         title="Clients"
-        description="Manage the people and companies you bill for stock usage."
         actions={
           canWrite ? (
             <Button onClick={openCreateForm}>Add Client</Button>
@@ -364,11 +358,6 @@ export const ClientsPage: React.FC = () => {
         {clients.length === 0 ? (
           <EmptyState
             title="No clients yet"
-            body={
-              canWrite
-                ? "Add your first client to start billing for stock usage."
-                : "Ask a team member with edit access to add clients."
-            }
             primaryLabel={canWrite ? "Add Client" : undefined}
             onPrimary={canWrite ? openCreateForm : undefined}
           />

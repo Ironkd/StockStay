@@ -2,7 +2,6 @@ import React, { useId } from "react";
 
 type FormFieldProps = {
   label: string;
-  hint?: string;
   error?: string;
   required?: boolean;
   children: (inputProps: { id: string; "aria-describedby"?: string }) => React.ReactNode;
@@ -10,19 +9,18 @@ type FormFieldProps = {
 };
 
 /**
- * Wraps a single form control with a consistent label + optional hint/error.
+ * Wraps a single form control with a consistent label and optional error.
  * Pass a render function so the field can inject a matching `id` into the input/select/textarea.
  */
 export const FormField: React.FC<FormFieldProps> = ({
   label,
-  hint,
   error,
   required,
   children,
   className,
 }) => {
   const id = useId();
-  const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const describedBy = error ? `${id}-error` : undefined;
   const classes = ["field"];
   if (className) classes.push(className);
   return (
@@ -35,10 +33,6 @@ export const FormField: React.FC<FormFieldProps> = ({
       {error ? (
         <span className="field-error" id={`${id}-error`}>
           {error}
-        </span>
-      ) : hint ? (
-        <span className="field-hint" id={`${id}-hint`}>
-          {hint}
         </span>
       ) : null}
     </div>

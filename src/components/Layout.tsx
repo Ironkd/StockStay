@@ -313,9 +313,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({
           busy={feedbackSending}
           maxWidth="440px"
         >
-          <p className="modal-intro">
-            Send us a message and we&apos;ll get back to you at support@stockstay.com.
-          </p>
           {feedbackResult && (
             <p className={feedbackResult.ok ? "form-banner success" : "form-banner error"}>
               {feedbackResult.message}

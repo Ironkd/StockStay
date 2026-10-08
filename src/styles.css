@@ -91,11 +91,12 @@ select {
   filter: none;
 }
 
-.action-menu-item.danger {
+.action-menu-items button.action-menu-item.danger {
   color: var(--color-danger);
+  background: transparent;
 }
 
-.action-menu-item.danger:hover:not(:disabled) {
+.action-menu-items button.action-menu-item.danger:hover:not(:disabled) {
   background: var(--color-danger-bg);
   color: var(--color-danger);
 }
@@ -486,6 +487,7 @@ button.property-supply-card-remove:hover:not(:disabled) {
 
 .property-add-item-form .field {
   flex: 1 1 220px;
+  align-self: flex-end;
 }
 
 .property-add-item-form select,
@@ -3525,7 +3527,8 @@ button.clickable-stat-card.danger:hover:not(:disabled) {
   font-size: var(--text-sm);
 }
 
-.settings-helper-text {
+.settings-plan-summary,
+.settings-empty-note {
   margin: 0;
   color: var(--color-gray-500);
   font-size: var(--text-sm);

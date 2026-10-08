@@ -56,7 +56,7 @@ export const ShoppingListPage: React.FC = () => {
   if (loading) {
     return (
       <div className="shopping-list-page">
-        <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
+        <SectionHeader title="Shopping List" />
         <EmptyState title="Loading…" />
       </div>
     );
@@ -65,7 +65,7 @@ export const ShoppingListPage: React.FC = () => {
   if (error) {
     return (
       <div className="shopping-list-page">
-        <SectionHeader title="Shopping List" description="Items at or below their stock location reorder point." />
+        <SectionHeader title="Shopping List" />
         <EmptyState error title="Could not load shopping list" body={error} />
       </div>
     );
@@ -80,7 +80,6 @@ export const ShoppingListPage: React.FC = () => {
     <div className="shopping-list-page">
       <SectionHeader
         title="Shopping List"
-        description="Supply items at stock locations at or below reorder point. Receive packs at the location to clear items off the list."
         actions={
           <Button variant="secondary" size="sm" onClick={() => navigate("/stock")}>
             View Stock
@@ -91,7 +90,6 @@ export const ShoppingListPage: React.FC = () => {
       {totalLowStock === 0 ? (
         <EmptyState
           title="Nothing on the shopping list"
-          body="Set reorder points on supply items at a stock location, or receive stock to raise on-hand levels."
         />
       ) : (
         <div className="shopping-list-by-category">

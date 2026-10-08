@@ -124,7 +124,6 @@ export const ReturnStockModal: React.FC<Props> = ({
   return (
     <StockFlowModal
       title="Return stock"
-      subtitle="Return property stock to the stock location and queue an unbilled credit for the next invoice."
       error={error}
       loading={loading}
       onClose={onClose}
@@ -134,12 +133,6 @@ export const ReturnStockModal: React.FC<Props> = ({
       ) : options.length === 0 ? (
         <EmptyState
           title="No returnable replenishment lines"
-          body={
-            <>
-              Use <strong>Replenish</strong> to deploy stock to a property first; returns credit
-              the next invoice.
-            </>
-          }
           secondaryLabel="Close"
           onSecondary={onClose}
         />

@@ -206,7 +206,7 @@ export const HomePage: React.FC = () => {
   if ((!statsLoaded && !statsError) || !propertiesLoaded || invoicesLoading) {
     return (
       <div className="home-page">
-        <SectionHeader title="Dashboard" description="A quick view of stock, billing, and workspace activity." />
+        <SectionHeader title="Dashboard" />
         <div className="stats-grid" aria-busy="true" aria-label="Loading dashboard">
           <div className="skeleton skeleton-block" />
           <div className="skeleton skeleton-block" />
@@ -231,13 +231,6 @@ export const HomePage: React.FC = () => {
     <div className="home-page">
       <SectionHeader
         title="Dashboard"
-        description="A quick view of stock, billing, and workspace activity."
-        actions={
-          <>
-            <Link className="nav-button secondary" to="/stock">View stock</Link>
-            <Link className="nav-button secondary" to="/billing">View billing</Link>
-          </>
-        }
       />
 
       {propertiesError && (
@@ -253,7 +246,6 @@ export const HomePage: React.FC = () => {
       {showOnboarding && (
         <section className="onboarding-checklist" aria-label="Getting started">
           <h3>Get started</h3>
-          <p>Set up your workspace in a few steps so you can track stock and bill clients.</p>
           <ol>
             <li>
               <Link to="/properties">Add property</Link>

@@ -385,9 +385,6 @@ export const LandingPage: React.FC = () => {
         busy={supportSending}
         maxWidth="440px"
       >
-        <p className="modal-intro">
-          Send us a message and we&apos;ll get back to you at support@stockstay.com.
-        </p>
         {supportResult && (
           <p className={supportResult.ok ? "form-banner success" : "form-banner error"}>
             {supportResult.message}

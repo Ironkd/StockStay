@@ -764,9 +764,6 @@ export const SettingsPage: React.FC = () => {
         </FormField>
 
         <div className="settings-access-group">
-          <p className="settings-helper-text">
-            Pages they can view. Leave Selected empty for full access.
-          </p>
           <div className="settings-access-grid">
             <AccessSelectionColumn
               title="Available"
@@ -797,9 +794,6 @@ export const SettingsPage: React.FC = () => {
 
         {properties.length > 0 ? (
           <div className="settings-access-group">
-            <p className="settings-helper-text">
-              Properties they can access. Leave Selected empty for all properties.
-            </p>
             <div className="settings-access-grid">
               <AccessSelectionColumn
                 title="Available"
@@ -876,7 +870,6 @@ export const SettingsPage: React.FC = () => {
 
       <SectionHeader
         title="Settings"
-        description="Manage your account, organization, billing, client-facing defaults, and support access."
       />
 
       {error ? <p className="form-banner error">{error}</p> : null}
@@ -898,7 +891,6 @@ export const SettingsPage: React.FC = () => {
           <Card>
             <SectionHeader
               title="Profile"
-              description="Update your personal details and contact information."
               compact
             />
             {profileError ? <p className="form-banner error">{profileError}</p> : null}
@@ -1027,7 +1019,6 @@ export const SettingsPage: React.FC = () => {
                 <Card>
                   <SectionHeader
                     title="Organization & Team"
-                    description="Switch teams, review membership, and manage organization-level teams."
                     compact
                     actions={
                       switchingTeam ? <span className="settings-inline-status">Opening team...</span> : undefined
@@ -1087,7 +1078,6 @@ export const SettingsPage: React.FC = () => {
                   <Card>
                     <SectionHeader
                       title="Create team"
-                      description="Add another team under this organization. You can switch teams from the header anytime."
                       compact
                     />
                     {createTeamError ? <p className="form-banner error">{createTeamError}</p> : null}
@@ -1188,7 +1178,7 @@ export const SettingsPage: React.FC = () => {
                           </Button>
                         ) : null}
                       </div>
-                      <p className="settings-helper-text">
+                      <p className="settings-plan-summary">
                         Plan: <strong className="settings-capitalize">{team.effectivePlan}</strong>
                         {typeof team.propertyCount === "number"
                           ? ` · ${team.propertyCount} propert${team.propertyCount === 1 ? "y" : "ies"}`
@@ -1200,7 +1190,6 @@ export const SettingsPage: React.FC = () => {
                       <div className="settings-inline-form">
                         <FormField
                           label="Billing timezone"
-                          hint="Weekly / biweekly / monthly invoice periods close at midnight in this timezone."
                           className="settings-inline-field"
                         >
                           {({ id, "aria-describedby": describedBy }) =>
@@ -1251,7 +1240,6 @@ export const SettingsPage: React.FC = () => {
                 <Card>
                   <SectionHeader
                     title="Team members"
-                    description="Manage accepted members and pending invitations for this team."
                     compact
                     actions={
                       isOwner ? (
@@ -1266,7 +1254,6 @@ export const SettingsPage: React.FC = () => {
                   {members.length === 0 && invitations.length === 0 ? (
                     <EmptyState
                       title="No members or invitations"
-                      body="Invite teammates to collaborate on this team."
                       primaryLabel={isOwner ? "Invite member" : undefined}
                       onPrimary={isOwner ? openInviteModal : undefined}
                     />
@@ -1305,7 +1292,7 @@ export const SettingsPage: React.FC = () => {
                       <div>
                         <h3 className="settings-subsection-title">Pending invitations</h3>
                         {invitations.length === 0 ? (
-                          <p className="settings-helper-text">No pending invitations.</p>
+                          <p className="settings-empty-note">No pending invitations.</p>
                         ) : (
                           <ul className="settings-member-list">
                             {invitations.map((invitation) => (
@@ -1357,7 +1344,6 @@ export const SettingsPage: React.FC = () => {
             <Card>
               <SectionHeader
                 title="Billing & Plan"
-                description="Review your plan, seat limits, and subscription management options."
                 compact
               />
               <div className="settings-summary-card settings-summary-card-split">
@@ -1377,9 +1363,6 @@ export const SettingsPage: React.FC = () => {
 
               {isOrgOwner ? (
                 <div className="settings-detail-stack">
-                  <p className="settings-helper-text">
-                    You are an organization admin. Billing, plan changes, and extra seats are managed here.
-                  </p>
                   <div className="settings-actions">
                     {team.billingPortalAvailable ? (
                       <Button
@@ -1420,7 +1403,6 @@ export const SettingsPage: React.FC = () => {
                     <div className="settings-inline-form settings-inline-form-compact">
                       <FormField
                         label="Extra user slots"
-                        hint="Seats update as soon as your subscription change is saved."
                         className="settings-inline-field"
                       >
                         {({ id, "aria-describedby": describedBy }) => (
@@ -1466,9 +1448,6 @@ export const SettingsPage: React.FC = () => {
                 </div>
               ) : (
                 <div className="settings-detail-stack">
-                  <p className="settings-helper-text">
-                    Contact your organization admin for billing, subscription, or seat changes.
-                  </p>
                   {(teamData?.organization?.owners?.length ?? 0) > 0 ? (
                     <ul className="settings-owner-list">
                       {teamData?.organization?.owners.map((owner) => (
@@ -1501,7 +1480,6 @@ export const SettingsPage: React.FC = () => {
             <Card>
               <SectionHeader
                 title="Clients"
-                description="Manage billing clients and their default markup and billing frequency."
                 compact
                 actions={
                   <Link to="/clients" className="settings-link-button">
@@ -1516,7 +1494,6 @@ export const SettingsPage: React.FC = () => {
               <Card>
                 <SectionHeader
                   title="Invoice style"
-                  description="Organization name and invoice branding used on emailed invoices."
                   compact
                   actions={
                     isOrgOwner ? (
@@ -1551,11 +1528,6 @@ export const SettingsPage: React.FC = () => {
                     <Badge tone="neutral">Accent {invoiceStyle?.accentColor ?? "#1e40af"}</Badge>
                     {team.invoiceLogoUrl ? <Badge tone="success">Logo configured</Badge> : null}
                   </div>
-                  {!isOrgOwner ? (
-                    <p className="settings-helper-text">
-                      Contact your organization admin to update invoice branding and organization details.
-                    </p>
-                  ) : null}
                 </div>
               </Card>
             ) : null}
@@ -1566,7 +1538,6 @@ export const SettingsPage: React.FC = () => {
           <Card>
             <SectionHeader
               title="Support"
-              description="Have a question or need help? Send us a message and we'll reply at support@stockstay.com."
               compact
               actions={
                 <Button
@@ -1595,7 +1566,6 @@ export const SettingsPage: React.FC = () => {
         title="Invite team member"
         maxWidth="520px"
       >
-        <p className="modal-intro">Set the teammate's role and optional page or property limits.</p>
         <form onSubmit={handleInviteSubmit} className="stacked-form">
           <FormField label="Email" required>
             {({ id, "aria-describedby": describedBy }) => (
@@ -1657,9 +1627,6 @@ export const SettingsPage: React.FC = () => {
         title="Edit organization"
         maxWidth="480px"
       >
-        <p className="modal-intro">
-          Update organization details and invoice branding used on emailed invoices.
-        </p>
         <div className="stacked-form">
           <FormField label="Organization name">
             {({ id, "aria-describedby": describedBy }) => (
@@ -1841,9 +1808,6 @@ export const SettingsPage: React.FC = () => {
         maxWidth="440px"
         busy={supportSending}
       >
-        <p className="modal-intro">
-          Send us a message and we'll get back to you at support@stockstay.com.
-        </p>
         {supportResult ? (
           <p className={`form-banner ${supportResult.ok ? "success" : "error"}`}>
             {supportResult.message}

@@ -330,7 +330,6 @@ export const ReportsPage: React.FC = () => {
         <SectionHeader
           compact
           title="Location stock on hand"
-          description="Supply-item totals at stock locations (sum of packs × pack size). Low stock uses location reorder thresholds."
           actions={
             locationOnHandRows.length > 0 ? (
               <Button
@@ -463,7 +462,6 @@ export const ReportsPage: React.FC = () => {
         <SectionHeader
           compact
           title="Recent stock transactions"
-          description="Ledger of stock movements: receipts, adjustments, and replenishment in/out. Historical property_stock rows are labeled archived."
           actions={
             transactions.length > 0 ? (
               <Button
@@ -535,7 +533,6 @@ export const ReportsPage: React.FC = () => {
         ) : transactions.length === 0 ? (
           <EmptyState
             title="No transactions found"
-            body="Receive stock, replenish properties, or adjust quantities to see history."
           />
         ) : (
           <div className="table-wrapper">
